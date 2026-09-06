@@ -1,0 +1,13 @@
+*.local.*
+.DS_Store
+.claude
+
+skills-lock.json
+
+research/code_sources/
+research/papers/*.pdf
+
+.claude/
+.agents/
+scratch/
+tools/mrs_golden/build/
