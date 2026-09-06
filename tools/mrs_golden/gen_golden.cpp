@@ -19,9 +19,9 @@ static void writeStateHeader(FILE* f, const char* cmd_names) {
   fprintf(f, ",w0,w1,w2,rpm0,rpm1,rpm2,rpm3\n");
 }
 
-static void writeStateRow(FILE* f, int k, const Eigen::Vector4d& cmd, const MultirotorModel::State& st) {
+static void writeStateRow(FILE* f, int k, const Eigen::VectorXd& cmd, const MultirotorModel::State& st) {
   fprintf(f, "%d", k);
-  for (int i = 0; i < 4; i++) fprintf(f, ",%.17g", cmd(i));
+  for (int i = 0; i < cmd.size(); i++) fprintf(f, ",%.17g", cmd(i));
   for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.x(i));
   for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.v(i));
   for (int i = 0; i < 3; i++)
@@ -118,6 +118,92 @@ static void runRateLoop(const std::string& dir, const std::string& name, int ste
   printf("%-12s %4d steps -> %s.csv, mixer_allocation.txt\n", name.c_str(), steps, name.c_str());
 }
 
+// Attitude command: attitude controller -> rate -> mixer -> model, as in UavSystem.
+static void runAttitude(const std::string& dir, const std::string& name, int steps,
+                        const Eigen::Matrix3d& orientation, double throttle,
+                        const MultirotorModel::ModelParams& p, double dt) {
+
+  UavSystem uav(p, Eigen::Vector3d::Zero(), 0.0);
+
+  reference::Attitude cmd;
+  cmd.orientation = orientation;
+  cmd.throttle    = throttle;
+
+  Eigen::VectorXd row(10);
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++) row(3 * i + j) = orientation(i, j);
+  row(9) = throttle;
+
+  FILE* f = fopen((dir + "/" + name + ".csv").c_str(), "w");
+  std::string names;
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++) names += "Rd" + std::to_string(i) + std::to_string(j) + ",";
+  names += "throttle";
+  writeStateHeader(f, names.c_str());
+
+  for (int k = 0; k <= steps; k++) {
+    writeStateRow(f, k, row, uav.getState());
+    if (k == steps) break;
+    uav.setInput(cmd);
+    uav.makeStep(dt);
+  }
+  fclose(f);
+
+  printf("%-12s %4d steps -> %s.csv\n", name.c_str(), steps, name.c_str());
+}
+
+// Velocity command: velocity -> acceleration -> attitude -> rate -> mixer -> model.
+static void runVelocity(const std::string& dir, const std::string& name, int steps,
+                        const Eigen::Vector3d& velocity, double heading,
+                        const MultirotorModel::ModelParams& p, double dt) {
+
+  UavSystem uav(p, Eigen::Vector3d::Zero(), 0.0);
+
+  reference::VelocityHdg cmd(velocity, heading);
+
+  Eigen::VectorXd row(4);
+  row << velocity(0), velocity(1), velocity(2), heading;
+
+  FILE* f = fopen((dir + "/" + name + ".csv").c_str(), "w");
+  writeStateHeader(f, "vx,vy,vz,heading");
+
+  for (int k = 0; k <= steps; k++) {
+    writeStateRow(f, k, row, uav.getState());
+    if (k == steps) break;
+    uav.setInput(cmd);
+    uav.makeStep(dt);
+  }
+  fclose(f);
+  printf("%-14s %4d steps -> %s.csv\n", name.c_str(), steps, name.c_str());
+}
+
+// Position command: the whole cascade.
+static void runPosition(const std::string& dir, const std::string& name, int steps,
+                        const Eigen::Vector3d& position, double heading,
+                        const MultirotorModel::ModelParams& p, double dt) {
+
+  UavSystem uav(p, Eigen::Vector3d::Zero(), 0.0);
+
+  reference::Position cmd;
+  cmd.position = position;
+  cmd.heading  = heading;
+
+  Eigen::VectorXd row(4);
+  row << position(0), position(1), position(2), heading;
+
+  FILE* f = fopen((dir + "/" + name + ".csv").c_str(), "w");
+  writeStateHeader(f, "px,py,pz,heading");
+
+  for (int k = 0; k <= steps; k++) {
+    writeStateRow(f, k, row, uav.getState());
+    if (k == steps) break;
+    uav.setInput(cmd);
+    uav.makeStep(dt);
+  }
+  fclose(f);
+  printf("%-14s %4d steps -> %s.csv\n", name.c_str(), steps, name.c_str());
+}
+
 static MultirotorModel::State restState(double rpm) {
   MultirotorModel::State s;
   s.x         = Eigen::Vector3d::Zero();
@@ -185,6 +271,13 @@ int main(int argc, char** argv) {
   for (const Scenario& s : scenarios) run(dir, s, p, dt);
 
   runRateLoop(dir, "rate_step", 300, Eigen::Vector3d(0.0, 1.0, 0.0), hover_throttle, p, dt);
+
+  runAttitude(dir, "attitude_step", 300,
+              Eigen::AngleAxisd(0.25, Eigen::Vector3d(0.6, 0.8, 0.0)).toRotationMatrix(),
+              hover_throttle, p, dt);
+
+  runVelocity(dir, "velocity_step", 500, Eigen::Vector3d(1.0, -0.5, 0.8), 0.4, p, dt);
+  runPosition(dir, "position_step", 1500, Eigen::Vector3d(3.0, -2.0, 5.0), 0.5, p, dt);
 
   printf("hover_rpm %.17g  hover_throttle %.17g\n", hover_rpm, hover_throttle);
   return 0;

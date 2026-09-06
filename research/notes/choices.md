@@ -102,6 +102,18 @@ A `test_vmap_matches_loop` gate makes this real rather than aspirational.
   JAX evaluates both sides of a `where`.
 - Rate gains `kp = 4.0`, `kd = 0.04`, `ki = 0.0`, each scaled by the matching
   diagonal element of `J`.
+- The upper rungs are plain 3-axis PIDs on the error, with MRS's gains and
+  saturations: position `2.0 / 0.15 / 0.2`, clamped to 6 m/s; velocity
+  `2.0 / 0.05 / 0.01`, clamped to 4 m/s^2; attitude `6.0 / 0.05 / 0.01`, clamped to
+  10 rad/s in roll and pitch and 1 rad/s in yaw. Unlike the rate loop these do
+  clamp, and their integrals are live.
+- The acceleration rung has no PID. It turns a desired force into an orientation
+  by oblique projection, and into a throttle by projecting that force on the
+  *current* body z. MRS takes the square root of that unguarded, so an inverted
+  drone yields NaN. Replicated as-is.
+- Only the heading branch of the cascade is implemented, not the heading-rate
+  branch. A position command flows through the heading branch; the `TiltHdgRate`
+  variant and its `getYawRateIntrinsic` machinery are unused.
 
 ## Testing
 

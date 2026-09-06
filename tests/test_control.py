@@ -19,13 +19,18 @@ GOLDEN = ROOT / "tests" / "golden"
 DT = 0.01
 TOL = 1e-9
 
-COLS = {
-    "x": slice(5, 8),
-    "v": slice(8, 11),
-    "R": slice(11, 20),
-    "omega": slice(20, 23),
-    "rpm": slice(23, 27),
-}
+
+def state_cols(n_cmd):
+    o = 1 + n_cmd
+    return {"x": slice(o, o + 3), "v": slice(o + 3, o + 6), "R": slice(o + 6, o + 15),
+            "omega": slice(o + 15, o + 18), "rpm": slice(o + 18, o + 22)}
+
+
+def assert_matches(traj, rows, cols):
+    for field, sl in cols.items():
+        want = rows[1:, sl]
+        got = np.asarray(getattr(traj, field)).reshape(len(want), -1)
+        np.testing.assert_allclose(got, want, atol=TOL, rtol=0, err_msg=field)
 
 
 def rate_rollout(state, throttle, rate_ref, params, steps):
@@ -38,6 +43,57 @@ def rate_rollout(state, throttle, rate_ref, params, steps):
         return (st, pid), st
 
     return jax.lax.scan(body, (state, c.pid_init()), None, length=steps)[1]
+
+
+def attitude_rollout(state, orientation_ref, throttle, params, steps):
+    att, rate = c.attitude_gains(), c.rate_gains(params)
+    inv = c.mixer_allocation(params)
+
+    def body(carry, _):
+        st, att_pid, rate_pid = carry
+        rate_ref, att_pid = c.attitude_controller(st, orientation_ref, att_pid, att, DT)
+        group, rate_pid = c.rate_controller(st, rate_ref, throttle, rate_pid, rate, DT)
+        st = d.step(st, c.mixer(group, inv), params, DT)
+        return (st, att_pid, rate_pid), st
+
+    init = (state, c.pid_init(), c.pid_init())
+    return jax.lax.scan(body, init, None, length=steps)[1]
+
+
+def velocity_rollout(state, velocity_ref, heading, params, steps):
+    vel, att, rate = c.velocity_gains(), c.attitude_gains(), c.rate_gains(params)
+    inv = c.mixer_allocation(params)
+
+    def body(carry, _):
+        st, vel_pid, att_pid, rate_pid = carry
+        accel_ref, vel_pid = c.velocity_controller(st, velocity_ref, vel_pid, vel, DT)
+        orientation, throttle = c.acceleration_controller(st, accel_ref, heading, params)
+        rate_ref, att_pid = c.attitude_controller(st, orientation, att_pid, att, DT)
+        group, rate_pid = c.rate_controller(st, rate_ref, throttle, rate_pid, rate, DT)
+        st = d.step(st, c.mixer(group, inv), params, DT)
+        return (st, vel_pid, att_pid, rate_pid), st
+
+    init = (state, c.pid_init(), c.pid_init(), c.pid_init())
+    return jax.lax.scan(body, init, None, length=steps)[1]
+
+
+def position_rollout(state, position_ref, heading, params, steps):
+    pos, vel = c.position_gains(), c.velocity_gains()
+    att, rate = c.attitude_gains(), c.rate_gains(params)
+    inv = c.mixer_allocation(params)
+
+    def body(carry, _):
+        st, pos_pid, vel_pid, att_pid, rate_pid = carry
+        velocity_ref, pos_pid = c.position_controller(st, position_ref, pos_pid, pos, DT)
+        accel_ref, vel_pid = c.velocity_controller(st, velocity_ref, vel_pid, vel, DT)
+        orientation, throttle = c.acceleration_controller(st, accel_ref, heading, params)
+        rate_ref, att_pid = c.attitude_controller(st, orientation, att_pid, att, DT)
+        group, rate_pid = c.rate_controller(st, rate_ref, throttle, rate_pid, rate, DT)
+        st = d.step(st, c.mixer(group, inv), params, DT)
+        return (st, pos_pid, vel_pid, att_pid, rate_pid), st
+
+    init = (state,) + tuple(c.pid_init() for _ in range(4))
+    return jax.lax.scan(body, init, None, length=steps)[1]
 
 
 def test_mixer_allocation_matches_reference():
@@ -55,11 +111,26 @@ def test_matches_rate_step_golden():
     throttle, rate_ref = rows[0, 1], jnp.asarray(rows[0, 2:5])
 
     traj = rate_rollout(d.rest_state(0.0), throttle, rate_ref, d.default_params(), len(rows) - 1)
+    assert_matches(traj, rows, state_cols(4))
 
-    for field, cols in COLS.items():
-        want = rows[1:, cols]
-        got = np.asarray(getattr(traj, field)).reshape(len(want), -1)
-        np.testing.assert_allclose(got, want, atol=TOL, rtol=0, err_msg=field)
+
+def test_matches_attitude_step_golden():
+    rows = np.genfromtxt(GOLDEN / "attitude_step.csv", delimiter=",", skip_header=1)
+    orientation_ref, throttle = jnp.asarray(rows[0, 1:10]).reshape(3, 3), rows[0, 10]
+
+    traj = attitude_rollout(d.rest_state(0.0), orientation_ref, throttle,
+                            d.default_params(), len(rows) - 1)
+    assert_matches(traj, rows, state_cols(10))
+
+
+def test_attitude_converges_to_the_reference():
+    rows = np.genfromtxt(GOLDEN / "attitude_step.csv", delimiter=",", skip_header=1)
+    orientation_ref, throttle = jnp.asarray(rows[0, 1:10]).reshape(3, 3), rows[0, 10]
+
+    traj = attitude_rollout(d.rest_state(0.0), orientation_ref, throttle, d.default_params(), 300)
+
+    assert float(jnp.abs(traj.R[-1] - orientation_ref).max()) < 1e-3
+    assert float(jnp.abs(traj.omega[-1]).max()) < 1e-3
 
 
 def test_level_throttle_maps_to_equal_motors():
@@ -117,3 +188,43 @@ def test_rate_step_converges_without_steady_state_error():
     assert abs(omega[-1, 0]) < 1e-12 and abs(omega[-1, 2]) < 1e-12
     assert omega[:, 1].max() < 1.25, "overshoot above 25%"
     assert np.all(np.abs(omega[150:, 1] - 1.0) < 1e-6), "still moving after 1.5 s"
+
+
+def test_matches_velocity_step_golden():
+    rows = np.genfromtxt(GOLDEN / "velocity_step.csv", delimiter=",", skip_header=1)
+    velocity_ref, heading = jnp.asarray(rows[0, 1:4]), rows[0, 4]
+
+    traj = velocity_rollout(d.rest_state(0.0), velocity_ref, heading,
+                            d.default_params(), len(rows) - 1)
+    assert_matches(traj, rows, state_cols(4))
+
+
+def test_matches_position_step_golden():
+    rows = np.genfromtxt(GOLDEN / "position_step.csv", delimiter=",", skip_header=1)
+    position_ref, heading = jnp.asarray(rows[0, 1:4]), rows[0, 4]
+
+    traj = position_rollout(d.rest_state(0.0), position_ref, heading,
+                            d.default_params(), len(rows) - 1)
+    assert_matches(traj, rows, state_cols(4))
+
+
+def test_flies_a_to_b_and_settles():
+    target = jnp.array([3.0, -2.0, 5.0])
+    traj = position_rollout(d.rest_state(0.0), target, 0.5, d.default_params(), 1500)
+
+    assert float(jnp.linalg.norm(traj.x[-1] - target)) < 0.02
+    assert float(jnp.linalg.norm(traj.v[-1])) < 0.01
+    assert float(jnp.abs(traj.x[-200:] - target).max()) < 0.02, "still drifting"
+
+
+def test_hovers_from_a_perturbed_start():
+    p = d.default_params()
+    start = d.rest_state(0.0).replace(
+        x=jnp.array([0.8, -0.5, 0.4]),
+        v=jnp.array([-1.0, 0.6, 0.5]),
+        omega=jnp.array([0.3, -0.2, 0.1]),
+    )
+    traj = position_rollout(start, jnp.zeros(3), 0.0, p, 1500)
+
+    assert float(jnp.linalg.norm(traj.x[-1])) < 0.02
+    assert float(jnp.linalg.norm(traj.v[-1])) < 0.01

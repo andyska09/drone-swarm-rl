@@ -40,9 +40,14 @@ test asserts the Python defaults match it, so the two cannot drift apart.
 | `spin_down` | 200 | the gyroscopic term `ω × Jω`, isolated from the allocation matrix |
 | `random` | 200 | everything nonzero, command changing every step |
 | `rate_step` | 300 | the closed rate loop: PID, mixer, plant |
+| `attitude_step` | 300 | attitude rung on top of the rate loop |
+| `velocity_step` | 500 | velocity and acceleration rungs |
+| `position_step` | 1500 | the whole cascade, flying to (3, -2, 5) |
 
 All use `dt = 0.01`, ground and takeoff patch off, x500 defaults.
 
-`rate_step` runs through `UavSystem` with an `AttitudeRate` command, so its four
-command columns are `throttle, rate_x, rate_y, rate_z` rather than motor
-throttles. `mixer_allocation.txt` is MRS's normalized inverse allocation.
+The closed-loop scenarios run through `UavSystem`, so their command columns hold
+the reference rather than motor throttles: `throttle, rate_x, rate_y, rate_z` for
+`rate_step`, the nine entries of `Rd` plus `throttle` for `attitude_step`, and
+`vx, vy, vz, heading` / `px, py, pz, heading` for the other two.
+`mixer_allocation.txt` is MRS's normalized inverse allocation.

@@ -1,5 +1,6 @@
-"""Bottom two rungs of the MRS cascade: the PID, the rate controller, the mixer.
-Reimplements controllers/{pid,rate_controller,mixer}.hpp."""
+"""The MRS controller cascade: position -> velocity -> acceleration -> attitude ->
+rate -> mixer. Reimplements controllers/*.hpp. Only the heading (not heading-rate)
+branch is here; that is the one the position command flows through."""
 
 import flax.struct
 import jax.numpy as jnp
@@ -16,8 +17,8 @@ class Gains:
     kp: jnp.ndarray
     kd: jnp.ndarray
     ki: jnp.ndarray
-    saturation: float
-    antiwindup: float
+    saturation: jnp.ndarray
+    antiwindup: jnp.ndarray
 
 
 def pid_init(n=3):
@@ -37,10 +38,69 @@ def pid_update(pid, error, gains, dt):
     return out, PIDState(integral=integral, last_error=error)
 
 
+def _gains(kp, kd, ki, saturation, antiwindup):
+    return Gains(kp=jnp.full(3, kp), kd=jnp.full(3, kd), ki=jnp.full(3, ki),
+                 saturation=jnp.asarray(saturation) * jnp.ones(3),
+                 antiwindup=jnp.full(3, antiwindup))
+
+
+def position_gains(kp=2.0, kd=0.15, ki=0.2, max_velocity=6.0):
+    return _gains(kp, kd, ki, max_velocity, 1.0)
+
+
+def position_controller(state, position_ref, pid, gains, dt):
+    return pid_update(pid, position_ref - state.x, gains, dt)
+
+
+def velocity_gains(kp=2.0, kd=0.05, ki=0.01, max_acceleration=4.0):
+    return _gains(kp, kd, ki, max_acceleration, 1.0)
+
+
+def velocity_controller(state, velocity_ref, pid, gains, dt):
+    return pid_update(pid, velocity_ref - state.v, gains, dt)
+
+
+def acceleration_controller(state, acceleration_ref, heading, params):
+    """Desired force to (orientation, throttle). No PID — pure geometry.
+
+    The throttle is derived from the force projected on the *current* body z, and
+    MRS takes its square root unguarded: an inverted drone gives NaN."""
+
+    fd = (acceleration_ref + jnp.array([0.0, 0.0, params.g])) * params.mass
+    body_z = fd / jnp.linalg.norm(fd)
+
+    # Oblique projection of the desired heading onto the plane normal to body z.
+    complement = jnp.eye(3) - jnp.outer(body_z, body_z)
+    square = complement[:2, :2]
+    projector = complement[:, :2] @ (jnp.linalg.inv(square.T @ square) @ square.T) @ jnp.eye(3)[:2]
+
+    body_x = projector @ jnp.array([jnp.cos(heading), jnp.sin(heading), 0.0])
+    body_x = body_x / jnp.linalg.norm(body_x)
+    body_y = jnp.cross(body_z, body_x)
+    body_y = body_y / jnp.linalg.norm(body_y)
+
+    thrust = fd @ state.R[:, 2]
+    throttle = (jnp.sqrt(thrust / (params.kf * params.n_motors)) - params.min_rpm) / (
+        params.max_rpm - params.min_rpm
+    )
+
+    return jnp.column_stack([body_x, body_y, body_z]), throttle
+
+
+def attitude_gains(kp=6.0, kd=0.05, ki=0.01, max_rate_roll_pitch=10.0, max_rate_yaw=1.0):
+    return _gains(kp, kd, ki, [max_rate_roll_pitch, max_rate_roll_pitch, max_rate_yaw], 0.1)
+
+
+def attitude_controller(state, orientation_ref, pid, gains, dt):
+    e = 0.5 * (orientation_ref.T @ state.R - state.R.T @ orientation_ref)
+    return pid_update(pid, jnp.array([e[1, 2], e[2, 0], e[0, 1]]), gains, dt)
+
+
 def rate_gains(params, kp=4.0, kd=0.04, ki=0.0):
     # saturation < 0 disables the clamp, so the mixer is what bounds the output.
     j = jnp.diag(params.J)
-    return Gains(kp=kp * j, kd=kd * j, ki=ki * j, saturation=-1.0, antiwindup=1.0)
+    return Gains(kp=kp * j, kd=kd * j, ki=ki * j,
+                 saturation=jnp.full(3, -1.0), antiwindup=jnp.full(3, 1.0))
 
 
 def rate_controller(state, rate_ref, throttle, pid, gains, dt):
