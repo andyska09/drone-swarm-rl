@@ -8,8 +8,28 @@
 #include <eigen3/Eigen/Dense>
 
 #include "multirotor_model.hpp"
+#include "uav_system.hpp"
 
 using namespace mrs_multirotor_simulator;
+
+static void writeStateHeader(FILE* f, const char* cmd_names) {
+  fprintf(f, "step,%s,x0,x1,x2,v0,v1,v2", cmd_names);
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++) fprintf(f, ",R%d%d", i, j);
+  fprintf(f, ",w0,w1,w2,rpm0,rpm1,rpm2,rpm3\n");
+}
+
+static void writeStateRow(FILE* f, int k, const Eigen::Vector4d& cmd, const MultirotorModel::State& st) {
+  fprintf(f, "%d", k);
+  for (int i = 0; i < 4; i++) fprintf(f, ",%.17g", cmd(i));
+  for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.x(i));
+  for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.v(i));
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++) fprintf(f, ",%.17g", st.R(i, j));
+  for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.omega(i));
+  for (int i = 0; i < 4; i++) fprintf(f, ",%.17g", st.motor_rpm(i));
+  fprintf(f, "\n");
+}
 
 static MultirotorModel::ModelParams makeParams() {
   MultirotorModel::ModelParams p;  // x500 defaults
@@ -44,25 +64,12 @@ static void run(const std::string& dir, const Scenario& s, const MultirotorModel
   m.setState(s.init);
 
   FILE* f = fopen((dir + "/" + s.name + ".csv").c_str(), "w");
-  fprintf(f, "step,u0,u1,u2,u3,x0,x1,x2,v0,v1,v2");
-  for (int i = 0; i < 3; i++)
-    for (int j = 0; j < 3; j++) fprintf(f, ",R%d%d", i, j);
-  fprintf(f, ",w0,w1,w2,rpm0,rpm1,rpm2,rpm3\n");
+  writeStateHeader(f, "u0,u1,u2,u3");
 
   for (int k = 0; k <= s.steps; k++) {
 
-    const MultirotorModel::State& st = m.getState();
-    const Eigen::Vector4d&        u  = s.cmd[k < s.steps ? k : s.steps - 1];
-
-    fprintf(f, "%d", k);
-    for (int i = 0; i < 4; i++) fprintf(f, ",%.17g", u(i));
-    for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.x(i));
-    for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.v(i));
-    for (int i = 0; i < 3; i++)
-      for (int j = 0; j < 3; j++) fprintf(f, ",%.17g", st.R(i, j));
-    for (int i = 0; i < 3; i++) fprintf(f, ",%.17g", st.omega(i));
-    for (int i = 0; i < 4; i++) fprintf(f, ",%.17g", st.motor_rpm(i));
-    fprintf(f, "\n");
+    const Eigen::Vector4d& u = s.cmd[k < s.steps ? k : s.steps - 1];
+    writeStateRow(f, k, u, m.getState());
 
     if (k == s.steps) break;
 
@@ -74,6 +81,41 @@ static void run(const std::string& dir, const Scenario& s, const MultirotorModel
 
   fclose(f);
   printf("%-12s %4d steps -> %s.csv\n", s.name.c_str(), s.steps, s.name.c_str());
+}
+
+// Closed rate loop: rate controller -> mixer -> model, all at dt, as in UavSystem.
+static void runRateLoop(const std::string& dir, const std::string& name, int steps,
+                        const Eigen::Vector3d& rate_ref, double throttle,
+                        const MultirotorModel::ModelParams& p, double dt) {
+
+  UavSystem uav(p, Eigen::Vector3d::Zero(), 0.0);
+
+  reference::AttitudeRate cmd;
+  cmd.rate_x = rate_ref(0);
+  cmd.rate_y = rate_ref(1);
+  cmd.rate_z = rate_ref(2);
+  cmd.throttle = throttle;
+
+  const Eigen::Vector4d row(throttle, rate_ref(0), rate_ref(1), rate_ref(2));
+
+  FILE* f = fopen((dir + "/" + name + ".csv").c_str(), "w");
+  writeStateHeader(f, "throttle,rate_x,rate_y,rate_z");
+
+  for (int k = 0; k <= steps; k++) {
+    writeStateRow(f, k, row, uav.getState());
+    if (k == steps) break;
+    uav.setInput(cmd);
+    uav.makeStep(dt);
+  }
+  fclose(f);
+
+  FILE* a = fopen((dir + "/mixer_allocation.txt").c_str(), "w");
+  Eigen::MatrixXd alloc = uav.getMixerAllocation();
+  for (int i = 0; i < alloc.rows(); i++)
+    for (int j = 0; j < alloc.cols(); j++) fprintf(a, "M%d%d %.17g\n", i, j, alloc(i, j));
+  fclose(a);
+
+  printf("%-12s %4d steps -> %s.csv, mixer_allocation.txt\n", name.c_str(), steps, name.c_str());
 }
 
 static MultirotorModel::State restState(double rpm) {
@@ -141,6 +183,8 @@ int main(int argc, char** argv) {
   }
 
   for (const Scenario& s : scenarios) run(dir, s, p, dt);
+
+  runRateLoop(dir, "rate_step", 300, Eigen::Vector3d(0.0, 1.0, 0.0), hover_throttle, p, dt);
 
   printf("hover_rpm %.17g  hover_throttle %.17g\n", hover_rpm, hover_throttle);
   return 0;

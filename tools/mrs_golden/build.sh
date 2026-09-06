@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Patches the vendored MRS header, builds the generator, writes tests/golden/*.csv.
+# Patches the vendored MRS headers, builds the generator, writes tests/golden/*.csv.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -18,11 +18,12 @@ boost_inc=${BOOST_INC:-$(brew --prefix boost)/include}
 rm -rf "$here/build"
 mkdir -p "$here/build" "$root/tests/golden"
 
-cp "$mrs/multirotor_model.hpp" "$here/build/multirotor_model.hpp"
-patch -s "$here/build/multirotor_model.hpp" < "$here/transpose.diff"
+# The whole tree is copied so uav_system.hpp picks up the patched model beside it.
+cp -R "$mrs" "$here/build/uav_system"
+patch -s "$here/build/uav_system/multirotor_model.hpp" < "$here/transpose.diff"
 
 g++ -std=c++17 -O2 \
-  -I"$eigen_inc" -I"$boost_inc" -I"$here/build" -I"$mrs" \
+  -I"$eigen_inc" -I"$boost_inc" -I"$here/build/uav_system" \
   "$here/gen_golden.cpp" -o "$here/build/gen_golden"
 
 "$here/build/gen_golden" "$root/tests/golden"

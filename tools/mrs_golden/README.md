@@ -39,5 +39,10 @@ test asserts the Python defaults match it, so the two cannot drift apart.
 | `tumble` | 500 | all three torque axes, orthonormalization under rotation |
 | `spin_down` | 200 | the gyroscopic term `ω × Jω`, isolated from the allocation matrix |
 | `random` | 200 | everything nonzero, command changing every step |
+| `rate_step` | 300 | the closed rate loop: PID, mixer, plant |
 
 All use `dt = 0.01`, ground and takeoff patch off, x500 defaults.
+
+`rate_step` runs through `UavSystem` with an `AttitudeRate` command, so its four
+command columns are `throttle, rate_x, rate_y, rate_z` rather than motor
+throttles. `mixer_allocation.txt` is MRS's normalized inverse allocation.
