@@ -55,8 +55,9 @@ Milestones and their pass/fail gates live in
 fresh clone does not have it). The short version:
 
 1. **M1** rigid body — 6-DOF state `(x, v, R, ω, rpm)`, RK4, motor lag, mixer.
+   *Done — `swarm/dynamics.py`, gated on the golden trajectories.*
 2. **M2** control cascade — hover and A→B with hand-tuned gains, *no learning*.
-   This is also how M1's physics gets validated.
+   *In progress — `swarm/control.py` has the rate loop and mixer.*
 3. **M3/M4** RL env — gymnax contract, CTBR actions (collective thrust + body
    rates), hover then waypoints, learned with PPO_example's PPO unmodified.
 4. **M5/M6** many drones (`vmap` over agents), then an attention neighbour
@@ -67,14 +68,60 @@ Physics and control-stack reference: [ctu-mrs/mrs_multirotor_simulator](https://
 cascade). We reimplement it in JAX; we do not wrap the C++.
 
 
+## swarm/ — our simulator
+
+`conda run -n drone-swarm`. Pins in `requirements.txt` (jax 0.11.1, flax 0.12.9).
+
+```bash
+pytest                              # THE GATE — golden replay + analytic checks
+python run/sim.py tumble --steps 500 --every 50
+bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
+```
+
+- `dynamics.py` — `Params`/`State` as `flax.struct.dataclass`,
+  `step(state, throttle, params, dt)` with `throttle ∈ [0,1]⁴`. RK4 over the 18
+  rigid-body states, then re-orthonormalize, then the exponential motor lag.
+- `control.py` — `pid_update`, `rate_controller`, `mixer`. M2, in progress.
+- Written for **one drone**; batching is `jax.vmap` at the env boundary. No Python
+  branches on array values, no `.item()`, no value-dependent shapes —
+  `test_vmap_matches_python_loop` enforces it.
+- Every design decision, deviation, and "revisit later" lives in
+  [research/notes/choices.md](research/notes/choices.md). **Read it before
+  changing the physics, and update it when a decision changes.**
+
+**The golden trajectories are the gate.** `tools/mrs_golden/` runs the patched C++
+once per scenario and dumps the full state at every step to
+`tests/golden/*.csv`; the test replays the same throttles in JAX and demands 1e-9
+(worst measured: 1.1e-13). `research/code_sources/` is gitignored, so those CSVs
+are the only copy of the reference in a fresh clone — never regenerate them to
+make a failing test pass. `conftest.py` turns on `jax_enable_x64` because the C++
+is double precision.
+
+One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
+MRS re-orthonormalizes as `R·L⁻¹`, which is not orthonormal and drifts ~3e-3 off
+SO(3); we use `R·L⁻ᵀ`. Hover is not a gate — it is an equilibrium, so a
+transposed allocation matrix or a missing `ω × Jω` sails through it. Only
+`tumble` and `spin_down` exercise the torque path.
+
 ## Layout and conventions
 
 ```
+swarm/             our implementation
+├── dynamics.py     the plant: Params, State, derivative, RK4 step
+└── control.py      PID, rate controller, mixer
+run/sim.py         open-loop rollout CLI
+tests/
+├── test_dynamics.py  the M1 gate
+└── golden/           C++ reference trajectories (CSV) + params.txt
+tools/mrs_golden/   C++ harness that generated tests/golden/
 research/
 ├── notes/          working notes (Czech is fine here)
+│   ├── choices.md    every design decision and deviation from the C++
+│   ├── learning/     explainers: ODE/RK4, plant, cascade, sim loop
 │   └── experiments/  one tracked <exp>.md per experiment
 ├── papers/         PDFs + .md transcripts — GITIGNORED except bibliography_index.md
-└── code_sources/   vendored reference code, NOT our implementation
+└── code_sources/   vendored reference code, NOT our implementation — GITIGNORED
+    ├── mrs_multirotor_simulator/  the C++ we reimplement
     ├── PPO_example/     JAX/gymnax single-agent PPO (supervisor's teaching repo)
     └── quad-swarm-rl/   PyTorch/Sample-Factory quadrotor swarm (upstream clone)
 ```
@@ -93,8 +140,8 @@ research/
   never `git add -f` anything under it. Only add an index row for a paper that is
   publicly published. See `CLAUDE.local.md` (untracked) for anything specific.
 - `quad-swarm-rl` is a **live clone with its own `.git` and an `origin` pointing at
-  the upstream GitHub repo**. Never commit or push from inside it. Treat both
-  `code_sources/` trees as read-only references unless the user says otherwise.
+  the upstream GitHub repo**. Never commit or push from inside it. Treat every
+  `code_sources/` tree as a read-only reference unless the user says otherwise.
 
 ## PPO_example — JAX learner (the baseline we build on)
 
@@ -109,7 +156,7 @@ PureJaxRL-style PPO where the entire training loop is a single XLA program.
 
 ```bash
 # PPO_example/CLAUDE.md names a conda env `agiflight`; it does NOT exist here.
-# Use `conda run -n mrs-swarm` — same pins, that is where they came from.
+# Use `conda run -n drone-swarm`.
 python tests/test_smoke.py     # ~15 s, THE GATE: env checks + a learning gate
 python run/train.py --steps 3e6 --num-envs 256 --num-steps 64 --num-minibatches 8   # CPU
 python run/train.py            # GPU defaults: 4096 envs, 50M steps
