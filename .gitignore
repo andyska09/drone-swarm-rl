@@ -11,3 +11,9 @@ research/papers/*.pdf
 .agents/
 scratch/
 tools/mrs_golden/build/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+
+*.pyc
