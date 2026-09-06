@@ -1,0 +1,20 @@
+--- multirotor_model.hpp
++++ multirotor_model.hpp
+@@ -249,7 +249,7 @@
+   Eigen::LLT<Eigen::Matrix3d> llt(state_.R.transpose() * state_.R);
+ 
+   Eigen::Matrix3d P = llt.matrixL();
+-  Eigen::Matrix3d R = state_.R * P.inverse();
++  Eigen::Matrix3d R = state_.R * P.inverse().transpose();
+   state_.R          = R;
+ 
+   // simulate the ground
+@@ -313,7 +313,7 @@
+ 
+   Eigen::LLT<Eigen::Matrix3d> llt(cur_state.R.transpose() * cur_state.R);
+   Eigen::Matrix3d             P = llt.matrixL();
+-  Eigen::Matrix3d             R = cur_state.R * P.inverse();
++  Eigen::Matrix3d             R = cur_state.R * P.inverse().transpose();
+ 
+   Eigen::Vector3d x_dot;
+   Eigen::Vector3d v_dot;
