@@ -130,3 +130,27 @@ def mixer(control_group, allocation_inv):
     divided = motors / jnp.where(top > 0.0, top, 1.0)
 
     return jnp.where(top > 1.0, jnp.where(throttle > 1e-2, rescaled, divided), motors)
+
+
+def cascade_gains(params):
+    return (position_gains(), velocity_gains(), attitude_gains(),
+            rate_gains(params), mixer_allocation(params))
+
+
+def cascade_init():
+    return tuple(pid_init() for _ in range(4))
+
+
+def cascade_step(state, position_ref, heading, pids, gains, params, dt):
+    """Position reference to four motor throttles, through all six rungs."""
+
+    pos, vel, att, rate, allocation_inv = gains
+    pos_pid, vel_pid, att_pid, rate_pid = pids
+
+    velocity_ref, pos_pid = position_controller(state, position_ref, pos_pid, pos, dt)
+    accel_ref, vel_pid = velocity_controller(state, velocity_ref, vel_pid, vel, dt)
+    orientation, throttle = acceleration_controller(state, accel_ref, heading, params)
+    rate_ref, att_pid = attitude_controller(state, orientation, att_pid, att, dt)
+    group, rate_pid = rate_controller(state, rate_ref, throttle, rate_pid, rate, dt)
+
+    return mixer(group, allocation_inv), (pos_pid, vel_pid, att_pid, rate_pid)

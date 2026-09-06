@@ -78,22 +78,15 @@ def velocity_rollout(state, velocity_ref, heading, params, steps):
 
 
 def position_rollout(state, position_ref, heading, params, steps):
-    pos, vel = c.position_gains(), c.velocity_gains()
-    att, rate = c.attitude_gains(), c.rate_gains(params)
-    inv = c.mixer_allocation(params)
+    gains = c.cascade_gains(params)
 
     def body(carry, _):
-        st, pos_pid, vel_pid, att_pid, rate_pid = carry
-        velocity_ref, pos_pid = c.position_controller(st, position_ref, pos_pid, pos, DT)
-        accel_ref, vel_pid = c.velocity_controller(st, velocity_ref, vel_pid, vel, DT)
-        orientation, throttle = c.acceleration_controller(st, accel_ref, heading, params)
-        rate_ref, att_pid = c.attitude_controller(st, orientation, att_pid, att, DT)
-        group, rate_pid = c.rate_controller(st, rate_ref, throttle, rate_pid, rate, DT)
-        st = d.step(st, c.mixer(group, inv), params, DT)
-        return (st, pos_pid, vel_pid, att_pid, rate_pid), st
+        st, pids = carry
+        throttles, pids = c.cascade_step(st, position_ref, heading, pids, gains, params, DT)
+        st = d.step(st, throttles, params, DT)
+        return (st, pids), st
 
-    init = (state,) + tuple(c.pid_init() for _ in range(4))
-    return jax.lax.scan(body, init, None, length=steps)[1]
+    return jax.lax.scan(body, (state, c.cascade_init()), None, length=steps)[1]
 
 
 def test_mixer_allocation_matches_reference():
