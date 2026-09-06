@@ -57,7 +57,7 @@ fresh clone does not have it). The short version:
 1. **M1** rigid body — 6-DOF state `(x, v, R, ω, rpm)`, RK4, motor lag, mixer.
    *Done — `swarm/dynamics.py`, gated on the golden trajectories.*
 2. **M2** control cascade — hover and A→B with hand-tuned gains, *no learning*.
-   *In progress — `swarm/control.py` has the rate loop and mixer.*
+   *Done — `swarm/control.py`, all six rungs, gated on the cascade goldens.*
 3. **M3/M4** RL env — gymnax contract, CTBR actions (collective thrust + body
    rates), hover then waypoints, learned with PPO_example's PPO unmodified.
 4. **M5/M6** many drones (`vmap` over agents), then an attention neighbour
@@ -74,14 +74,18 @@ cascade). We reimplement it in JAX; we do not wrap the C++.
 
 ```bash
 pytest                              # THE GATE — golden replay + analytic checks
-python run/sim.py tumble --steps 500 --every 50
+python run/sim.py tumble --steps 500 --every 50        # open loop, you give throttles
+python run/fly.py --target 3 -2 5                      # closed loop, the cascade flies
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
 - `dynamics.py` — `Params`/`State` as `flax.struct.dataclass`,
   `step(state, throttle, params, dt)` with `throttle ∈ [0,1]⁴`. RK4 over the 18
   rigid-body states, then re-orthonormalize, then the exponential motor lag.
-- `control.py` — `pid_update`, `rate_controller`, `mixer`. M2, in progress.
+- `control.py` — the cascade, read top to bottom in the order it runs:
+  `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
+  `cascade_step` which chains all six. PID state is carried explicitly in
+  `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
 - Written for **one drone**; batching is `jax.vmap` at the env boundary. No Python
   branches on array values, no `.item()`, no value-dependent shapes —
   `test_vmap_matches_python_loop` enforces it.
@@ -91,8 +95,11 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 
 **The golden trajectories are the gate.** `tools/mrs_golden/` runs the patched C++
 once per scenario and dumps the full state at every step to
-`tests/golden/*.csv`; the test replays the same throttles in JAX and demands 1e-9
-(worst measured: 1.1e-13). `research/code_sources/` is gitignored, so those CSVs
+`tests/golden/*.csv`; the test replays the same input in JAX and demands 1e-9
+(worst measured: 1.1e-13). Five open-loop scenarios drive the plant directly;
+`rate_step`, `attitude_step`, `velocity_step` and `position_step` come from
+`UavSystem` and check the controllers too, so their command columns hold the
+reference, not motor throttles. `research/code_sources/` is gitignored, so those CSVs
 are the only copy of the reference in a fresh clone — never regenerate them to
 make a failing test pass. `conftest.py` turns on `jax_enable_x64` because the C++
 is double precision.
@@ -108,10 +115,13 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 ```
 swarm/             our implementation
 ├── dynamics.py     the plant: Params, State, derivative, RK4 step
-└── control.py      PID, rate controller, mixer
-run/sim.py         open-loop rollout CLI
+└── control.py      the six-rung cascade + cascade_step
+run/
+├── sim.py          open-loop rollout CLI
+└── fly.py          closed-loop cascade CLI
 tests/
 ├── test_dynamics.py  the M1 gate
+├── test_control.py   the M2 gate
 └── golden/           C++ reference trajectories (CSV) + params.txt
 tools/mrs_golden/   C++ harness that generated tests/golden/
 research/
