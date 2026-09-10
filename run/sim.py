@@ -13,7 +13,7 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 
-from swarm import dynamics
+from swarm.sim import dynamics
 
 SCENARIOS = ("free_fall", "hover", "tumble", "spin_down")
 

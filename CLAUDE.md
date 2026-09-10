@@ -55,11 +55,12 @@ Milestones and their pass/fail gates live in
 fresh clone does not have it). The short version:
 
 1. **M1** rigid body — 6-DOF state `(x, v, R, ω, rpm)`, RK4, motor lag, mixer.
-   *Done — `swarm/dynamics.py`, gated on the golden trajectories.*
+   *Done — `swarm/sim/dynamics.py`, gated on the golden trajectories.*
 2. **M2** control cascade — hover and A→B with hand-tuned gains, *no learning*.
-   *Done — `swarm/control.py`, all six rungs, gated on the cascade goldens.*
-3. **M3/M4** RL env — gymnax contract, CTBR actions (collective thrust + body
-   rates), hover then waypoints, learned with PPO_example's PPO unmodified.
+   *Done — `swarm/sim/control.py`, all six rungs, gated on the cascade goldens.*
+3. **M3/M4** RL env — CTBR actions (collective thrust + body rates), hover then
+   waypoints. *Env done — `swarm/envs/hover.py`, gated on the cascade flying it.*
+   The learner is ours, in `swarm/learn/`, not vendored.
 4. **M5/M6** many drones (`vmap` over agents), then an attention neighbour
    encoder.
 
@@ -79,13 +80,15 @@ python run/fly.py --target 3 -2 5                      # closed loop, the cascad
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
-- `dynamics.py` — `Params`/`State` as `flax.struct.dataclass`,
+- `sim/dynamics.py` — `Params`/`State` as `flax.struct.dataclass`,
   `step(state, throttle, params, dt)` with `throttle ∈ [0,1]⁴`. RK4 over the 18
   rigid-body states, then re-orthonormalize, then the exponential motor lag.
-- `control.py` — the cascade, read top to bottom in the order it runs:
+- `sim/control.py` — the cascade, read top to bottom in the order it runs:
   `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
+- `envs/hover.py` — the RL env: `reset`, `step`, `get_obs`, and `PRESETS`. Plain
+  functions, no gymnax; auto-reset belongs to the trainer, not the env.
 - Written for **one drone**; batching is `jax.vmap` at the env boundary. No Python
   branches on array values, no `.item()`, no value-dependent shapes —
   `test_vmap_matches_python_loop` enforces it.
@@ -114,14 +117,19 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 
 ```
 swarm/             our implementation
-├── dynamics.py     the plant: Params, State, derivative, RK4 step
-└── control.py      the six-rung cascade + cascade_step
+├── sim/
+│   ├── dynamics.py   the plant: Params, State, derivative, RK4 step
+│   └── control.py    the six-rung cascade + cascade_step
+├── envs/
+│   └── hover.py      the RL env: reset, step, get_obs, PRESETS
+└── learn/            our PPO (not written yet)
 run/
 ├── sim.py          open-loop rollout CLI
 └── fly.py          closed-loop cascade CLI
 tests/
 ├── test_dynamics.py  the M1 gate
 ├── test_control.py   the M2 gate
+├── test_env.py       the M3 gate
 └── golden/           C++ reference trajectories (CSV) + params.txt
 tools/mrs_golden/   C++ harness that generated tests/golden/
 research/
@@ -129,7 +137,7 @@ research/
 │   ├── choices.md    every design decision and deviation from the C++
 │   ├── learning/     explainers: ODE/RK4, plant, cascade, sim loop
 │   └── experiments/  one tracked <exp>.md per experiment
-├── papers/         PDFs + .md transcripts — GITIGNORED except bibliography_index.md
+├── papers/         PDFs (gitignored) + .md transcripts and the index (tracked)
 └── code_sources/   vendored reference code, NOT our implementation — GITIGNORED
     ├── mrs_multirotor_simulator/  the C++ we reimplement
     ├── PPO_example/     JAX/gymnax single-agent PPO (supervisor's teaching repo)
@@ -142,13 +150,14 @@ research/
   entry point — a tracked table of paper → files → one-line summary. Add a row
   whenever a PDF is added, and generate its transcript with
   `pdftotext -layout <file>.pdf <file>.md`.
-- `research/papers/*` is gitignored (PDFs *and* transcripts); only
-  `bibliography_index.md` is tracked, so it is the only record of what is there.
+- Only the PDFs are gitignored. Transcripts and `bibliography_index.md` are
+  tracked, so a fresh clone can grep every paper without the binaries.
 - **Some material under `research/papers/` is unpublished and must stay local.**
-  Treat that directory as need-to-know: do not add its files to the index table,
-  do not quote or summarise them in any tracked file (this one included), and
-  never `git add -f` anything under it. Only add an index row for a paper that is
-  publicly published. See `CLAUDE.local.md` (untracked) for anything specific.
+  Those files are excluded through `.git/info/exclude`, which is itself untracked
+  — so the exclusion names them and no tracked file ever does. Do not add them to
+  the index table, do not quote, summarise, or name them in any tracked file (this
+  one included), and never `git add -f` one. Only add an index row for a paper
+  that is publicly published. See `CLAUDE.local.md` (untracked) for specifics.
 - `quad-swarm-rl` is a **live clone with its own `.git` and an `origin` pointing at
   the upstream GitHub repo**. Never commit or push from inside it. Treat every
   `code_sources/` tree as a read-only reference unless the user says otherwise.

@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from swarm import dynamics as d
+from swarm.sim import dynamics as d
 
 GOLDEN = ROOT / "tests" / "golden"
 SCENARIOS = ("free_fall", "hover", "tumble", "spin_down", "random")

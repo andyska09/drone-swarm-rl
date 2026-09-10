@@ -25,8 +25,14 @@ def pid_init(n=3):
     return PIDState(integral=jnp.zeros(n), last_error=jnp.zeros(n))
 
 
-def pid_update(pid, error, gains, dt):
-    difference = (error - pid.last_error) / dt
+def pid_update(pid, error, gains, dt, measurement=None):
+    """By default D reacts to the error, like MRS. Pass `measurement` and D reacts
+    to that instead, so a reference that jumps no longer causes a spike."""
+
+    tracked = error if measurement is None else measurement
+    sign = 1.0 if measurement is None else -1.0
+    difference = sign * (tracked - pid.last_error) / dt
+
     total = gains.kp * error + gains.kd * difference + gains.ki * pid.integral
 
     clamped = jnp.clip(total, -gains.saturation, gains.saturation)
@@ -35,7 +41,7 @@ def pid_update(pid, error, gains, dt):
     winding = (gains.antiwindup > 0) & (jnp.abs(out) < gains.antiwindup)
     integral = jnp.where(winding, pid.integral + error * dt, pid.integral)
 
-    return out, PIDState(integral=integral, last_error=error)
+    return out, PIDState(integral=integral, last_error=tracked)
 
 
 def _gains(kp, kd, ki, saturation, antiwindup):
@@ -103,8 +109,9 @@ def rate_gains(params, kp=4.0, kd=0.04, ki=0.0):
                  saturation=jnp.full(3, -1.0), antiwindup=jnp.full(3, 1.0))
 
 
-def rate_controller(state, rate_ref, throttle, pid, gains, dt):
-    torque, pid = pid_update(pid, rate_ref - state.omega, gains, dt)
+def rate_controller(state, rate_ref, throttle, pid, gains, dt, d_on_measurement=False):
+    measurement = state.omega if d_on_measurement else None
+    torque, pid = pid_update(pid, rate_ref - state.omega, gains, dt, measurement)
     return jnp.append(torque, throttle), pid
 
 

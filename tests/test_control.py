@@ -12,8 +12,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from swarm import control as c
-from swarm import dynamics as d
+from swarm.sim import control as c
+from swarm.sim import dynamics as d
 
 GOLDEN = ROOT / "tests" / "golden"
 DT = 0.01

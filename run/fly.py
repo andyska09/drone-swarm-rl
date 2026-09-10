@@ -12,7 +12,7 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 
-from swarm import control, dynamics
+from swarm.sim import control, dynamics
 
 
 def rollout(state, target, heading, params, dt, steps):
