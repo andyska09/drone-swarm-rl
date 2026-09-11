@@ -65,8 +65,9 @@ fresh clone does not have it). **Read it before planning work.** The short versi
    *Env done — `swarm/envs/hover.py`, gated on the cascade flying it. The gate on
    our PPO actually learning it is still open.*
 4. **Learner** — ours, in `swarm/learn/`, not vendored. One update compiles to one
-   XLA program and a Python loop calls it, so metrics, checkpoints and an early
-   stop exist while a run is going. *No eval and no replay yet.*
+   XLA program and a Python loop calls it, so metrics and checkpoints exist while
+   a run is going. *Done, and it learns `a_to_b`/`hover` — 0.085 m against the
+   cascade's 0.021 m. Eval and the replay viewer are in.*
 5. **Then** waypoint / recover, N drones on a circle swapping sides, 1v1
    interception, Nv1 interception — plus the platform each needs (runs and
    configs, wandb, evaluation against the cascade, replay rendering, attention
@@ -86,6 +87,9 @@ pytest                              # THE GATE — golden replay + analytic chec
 python run/sim.py tumble --steps 500 --every 50        # open loop, you give throttles
 python run/fly.py --target 3 -2 5                      # closed loop, the cascade flies
 python run/train.py --task a_to_b --preset default --steps 5e6  # PPO -> runs/<name>/
+python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
+python run/eval.py runs/<name> --policy cascade        # the cascade in the same seat
+python run/replay.py                                   # serve + open the 3D viewer
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
@@ -104,8 +108,19 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
   [research/notes/plan_t1t2.md](research/notes/plan_t1t2.md).
 - `learn/` — our PPO. `ppo.py` (ActorCritic + `make`, one compiled update),
   `vecenv.py` (vmap, auto-reset, normalization), `runner.py` (the update loop, run
-  directory, checkpoints, wandb), `config.py` (hyperparameters). Knows nothing
-  about drones: it takes an env *module* and one network per role.
+  directory, checkpoints, wandb), `config.py` (hyperparameters), `evaluate.py`
+  (fixed eval seeds, mean actions, no auto-reset). Knows nothing about drones: it
+  takes an env *module* and one network per role.
+- **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
+  `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
+  arrays), `trajectory.npz` (the first 8 episodes, full state), `header.json`
+  (task, preset, arena, roles — the viewer never imports the env). Eval holds the
+  scene frozen once an episode ends; the env does not, because with `N = 1` the
+  episode ends the same step and the trainer resets it.
+- `tools/viewer/index.html` — one file, three.js from a CDN, no build step. Parses
+  the `.npz` in JS (`np.savez` writes a *stored* zip, so no inflate library).
+  `run/replay.py` serves the repo and lists every eval at `/evals.json`, so the
+  viewer opens with a dropdown; dragging the files onto the page still works.
 - Written for **one drone**; batching is `jax.vmap` at the env boundary. No Python
   branches on array values, no `.item()`, no value-dependent shapes —
   `test_vmap_matches_python_loop` enforces it.
@@ -140,19 +155,24 @@ swarm/             our implementation
 ├── envs/
 │   ├── __init__.py   the Obs layout + make(task, preset)
 │   └── a_to_b.py     task 1: reset, step, get_obs, PRESETS
-└── learn/            our PPO: ppo.py, vecenv.py, runner.py, config.py
+└── learn/            our PPO: ppo.py, vecenv.py, runner.py, config.py, evaluate.py
 run/
 ├── sim.py          open-loop rollout CLI
 ├── fly.py          closed-loop cascade CLI
-└── train.py        PPO training CLI
+├── train.py        PPO training CLI
+├── eval.py         measure a checkpoint (or the cascade) -> runs/<run>/evals/<name>/
+└── replay.py       serve the repo, list every eval, open the viewer
 tests/
 ├── test_dynamics.py  the M1 gate
 ├── test_control.py   the M2 gate
 ├── test_env.py       the env gate: the cascade flies the task
 ├── test_learn.py     the trainer gate: it learns, and it is reproducible
 ├── test_runner.py    the run gate: a run says what produced it and resumes
+├── test_eval.py      the eval gate: the cascade in the seat scores the M2 number
 └── golden/           C++ reference trajectories (CSV) + params.txt
-tools/mrs_golden/   C++ harness that generated tests/golden/
+tools/
+├── mrs_golden/     C++ harness that generated tests/golden/
+└── viewer/         index.html — three.js replay, reads trajectory.npz directly
 research/
 ├── notes/          working notes (Czech is fine here)
 │   ├── goals.local.md  task ladder, platform backlog, gates (GITIGNORED)
