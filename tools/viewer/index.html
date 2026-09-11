@@ -1,0 +1,383 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>swarm replay</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d0f13; color: #c8ccd4;
+               font: 13px ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+  #bar { position: absolute; inset: 0 0 auto 0; display: flex; gap: 12px; align-items: center;
+         padding: 8px 12px; background: #14171d; border-bottom: 1px solid #232833; }
+  #bar > * { flex: none; }
+  #time { flex: 1; min-width: 120px; }
+  select, button, input[type=file] { background: #1c212b; color: #c8ccd4;
+         border: 1px solid #2e3543; border-radius: 3px; padding: 3px 6px; font: inherit; }
+  button { cursor: pointer; width: 34px; }
+  #read { color: #7f8796; white-space: nowrap; }
+  #read b { color: #e6e9ef; font-weight: 500; }
+  #drop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          text-align: center; line-height: 1.8; color: #7f8796; pointer-events: none; }
+  #drop.hide { display: none; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <select id="pick" hidden></select>
+  <input type="file" id="files" multiple>
+  <select id="episode"></select>
+  <button id="play">▶</button>
+  <input type="range" id="time" min="0" max="0" value="0">
+  <span id="read"></span>
+</div>
+
+<div id="drop">
+  drop <b>trajectory.npz</b> and <b>header.json</b> here<br>
+  (from <code>runs/&lt;run&gt;/evals/&lt;name&gt;/</code>)<br><br>
+  drag to orbit · wheel to zoom · right-drag to pan
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---- npz reading. np.savez writes a stored (uncompressed) zip, so no inflate. ----
+
+function unzip(buffer) {
+  const view = new DataView(buffer), files = {};
+  let eocd = buffer.byteLength - 22;
+  while (view.getUint32(eocd, true) !== 0x06054b50) eocd--;
+  let p = view.getUint32(eocd + 16, true);
+
+  for (let i = 0; i < view.getUint16(eocd + 10, true); i++) {
+    const nameLen = view.getUint16(p + 28, true);
+    const name = new TextDecoder().decode(new Uint8Array(buffer, p + 46, nameLen));
+    const local = view.getUint32(p + 42, true);
+    const size = view.getUint32(p + 24, true);
+    if (view.getUint16(p + 10, true) !== 0) throw new Error("use np.savez, not savez_compressed");
+    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+    files[name.replace(/\.npy$/, "")] = buffer.slice(start, start + size);
+    p += 46 + nameLen + view.getUint16(p + 30, true) + view.getUint16(p + 32, true);
+  }
+  return files;
+}
+
+const ARRAYS = { "<f4": Float32Array, "<f8": Float64Array, "<i4": Int32Array,
+                 "<i8": BigInt64Array, "|b1": Uint8Array, "|u1": Uint8Array };
+
+function npy(buffer) {
+  const view = new DataView(buffer);
+  const major = view.getUint8(6);
+  const headLen = major === 1 ? view.getUint16(8, true) : view.getUint32(8, true);
+  const start = (major === 1 ? 10 : 12) + headLen;
+  const head = new TextDecoder().decode(new Uint8Array(buffer, major === 1 ? 10 : 12, headLen));
+
+  const descr = head.match(/'descr':\s*'([^']+)'/)[1];
+  const shape = (head.match(/'shape':\s*\(([^)]*)\)/)[1].match(/\d+/g) || []).map(Number);
+  const Type = ARRAYS[descr];
+  if (!Type) throw new Error("unsupported dtype " + descr);
+  return { data: new Type(buffer.slice(start)), shape };
+}
+
+// ---- scene ----
+
+const SKY = 0x93a7c9;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(SKY, 45, 110);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
+camera.up.set(0, 0, 1);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setClearColor(SKY);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xbcd2ff, 0x40485a, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(4, -6, 12);
+scene.add(sun);
+
+// DoubleSide: the orbit camera can drop below z=0, and a culled ground looks like a bug.
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(120, 120),
+  new THREE.MeshLambertMaterial({ color: 0x39414f, side: THREE.DoubleSide }));
+scene.add(ground);
+
+// 1 m cells, lifted clear of the plane so the two do not z-fight.
+const grid = new THREE.GridHelper(40, 40, 0x9fa9ba, 0x626c7d);
+grid.rotation.x = Math.PI / 2;
+grid.position.z = 0.005;
+scene.add(grid);
+
+const world = new THREE.Group();  // everything that a new trajectory replaces
+scene.add(world);
+
+function quadMesh(color) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.14, 0.06),
+    new THREE.MeshLambertMaterial({ color }));
+  g.add(body);
+
+  const arm = new THREE.MeshLambertMaterial({ color: 0x8d97ab });
+  const disc = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.55 });
+  for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const x = sx * 0.177, y = sy * 0.177;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.02, 0.02), arm);
+    bar.position.set(x / 2, y / 2, 0);
+    bar.rotation.z = Math.atan2(y, x);
+    g.add(bar);
+    const rotor = new THREE.Mesh(new THREE.CircleGeometry(0.15, 20), disc);
+    rotor.position.set(x, y, 0.02);
+    g.add(rotor);
+  }
+  // Nose marker, so body yaw is readable.
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.03),
+    new THREE.MeshLambertMaterial({ color: 0xffffff }));
+  nose.position.set(0.12, 0, 0.02);
+  g.add(nose);
+  return g;
+}
+
+// ---- orbit, written here so the viewer needs one script tag ----
+
+let target = new THREE.Vector3(0, 0, 3), theta = -1.0, phi = 1.15, radius = 12;
+
+function place() {
+  camera.position.set(
+    target.x + radius * Math.sin(phi) * Math.cos(theta),
+    target.y + radius * Math.sin(phi) * Math.sin(theta),
+    target.z + radius * Math.cos(phi));
+  camera.lookAt(target);
+}
+
+let drag = null;
+renderer.domElement.addEventListener("pointerdown", e => {
+  drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 };
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener("pointerup", e => {
+  drag = null;
+  renderer.domElement.releasePointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
+renderer.domElement.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) {
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+    target.addScaledVector(right, -dx * radius * 0.0015);
+    target.addScaledVector(up, dy * radius * 0.0015);
+  } else {
+    theta -= dx * 0.005;
+    phi = Math.min(Math.PI - 0.05, Math.max(0.05, phi - dy * 0.005));
+  }
+});
+renderer.domElement.addEventListener("wheel", e => {
+  e.preventDefault();
+  radius = Math.min(120, Math.max(1.5, radius * Math.exp(e.deltaY * 0.001)));
+}, { passive: false });
+
+// ---- trajectory ----
+
+let traj = null, header = {}, drones = [], goals = [], shadows = [], arrows = [];
+let trail = null, playing = false;
+const id = name => document.getElementById(name);
+const bar = { episode: id("episode"), time: id("time"), read: id("read"), play: id("play") };
+
+function at(a, idx) {  // idx: [e, t, n, ...] over a flat npy
+  let off = 0, stride = 1;
+  for (let i = a.shape.length - 1; i >= 0; i--) {
+    if (i < idx.length) off += idx[i] * stride;
+    stride *= a.shape[i];
+  }
+  return off;
+}
+
+function build() {
+  world.clear();
+  drones = []; goals = []; shadows = []; arrows = [];
+  const n = traj.x.shape[2];
+  const palette = [0x4fa3ff, 0xff8b5e, 0x62d38a, 0xd98bff, 0xffd166, 0x5edfd8, 0xff6b8a, 0x9aa7ff];
+
+  if (header.arena) {
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(header.arena, 24, 16),
+      new THREE.MeshBasicMaterial({ color: 0x2b3346, wireframe: true }));
+    world.add(sphere);
+  }
+
+  for (let i = 0; i < n; i++) {
+    const color = palette[i % palette.length];
+    const q = quadMesh(color);
+    q.matrixAutoUpdate = false;
+    world.add(q);
+    drones.push(q);
+
+    const goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
+    world.add(goal);
+    goals.push(goal);
+
+    // Height is unreadable in a 3D view without a shadow on the ground.
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.3, 24),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 }));
+    world.add(shadow);
+    shadows.push(shadow);
+
+    const arrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0xff3b30, 0.12, 0.07);
+    world.add(arrow);
+    arrows.push(arrow);
+  }
+
+  const T = traj.x.shape[1];
+  trail = new THREE.Line(
+    new THREE.BufferGeometry().setAttribute("position",
+      new THREE.BufferAttribute(new Float32Array(T * 3), 3)),
+    new THREE.LineBasicMaterial({ color: 0xffd166 }));
+  world.add(trail);
+
+  bar.episode.innerHTML = "";
+  for (let e = 0; e < traj.x.shape[0]; e++) {
+    bar.episode.innerHTML += `<option value="${e}">episode ${e}</option>`;
+  }
+  bar.time.max = T - 1;
+  bar.time.value = 0;
+  id("drop").classList.add("hide");
+  show();
+}
+
+function show() {
+  if (!traj) return;
+  const e = +bar.episode.value, t = +bar.time.value;
+  const n = traj.x.shape[2], dt = header.policy_dt || 0.01;
+  const x = traj.x.data, R = traj.R.data, g = traj.goal.data, v = traj.v.data;
+  const live = traj.live ? traj.live.data[at(traj.live, [e, t])] : 1;
+
+  let far = 0, fastest = 0;
+  for (let i = 0; i < n; i++) {
+    const p = at(traj.x, [e, t, i, 0]), r = at(traj.R, [e, t, i, 0, 0]);
+    const q = at(traj.goal, [e, i, 0]), w = at(traj.v, [e, t, i, 0]);
+    drones[i].matrix.set(
+      R[r + 0], R[r + 1], R[r + 2], x[p + 0],
+      R[r + 3], R[r + 4], R[r + 5], x[p + 1],
+      R[r + 6], R[r + 7], R[r + 8], x[p + 2],
+      0, 0, 0, 1);
+    drones[i].visible = true;
+    goals[i].position.set(g[q + 0], g[q + 1], g[q + 2]);
+
+    // Shadow spreads and fades with height, so altitude reads off the ground.
+    const z = Math.max(0, x[p + 2]);
+    shadows[i].position.set(x[p + 0], x[p + 1], 0.01);
+    shadows[i].scale.setScalar(1 + z * 0.07);
+    shadows[i].material.opacity = Math.max(0.04, 0.34 - z * 0.03);
+
+    const speed = Math.hypot(v[w], v[w + 1], v[w + 2]);
+    arrows[i].position.set(x[p + 0], x[p + 1], x[p + 2]);
+    arrows[i].visible = speed > 0.05;
+    if (arrows[i].visible) {
+      arrows[i].setDirection(new THREE.Vector3(v[w], v[w + 1], v[w + 2]).normalize());
+      arrows[i].setLength(speed * 0.4, 0.12, 0.07);
+    }
+
+    far = Math.max(far, Math.hypot(x[p] - g[q], x[p + 1] - g[q + 1], x[p + 2] - g[q + 2]));
+    fastest = Math.max(fastest, speed);
+  }
+
+  const pos = trail.geometry.attributes.position;
+  for (let k = 0; k <= t; k++) {
+    const p = at(traj.x, [e, k, 0, 0]);
+    pos.setXYZ(k, x[p], x[p + 1], x[p + 2]);
+  }
+  pos.needsUpdate = true;
+  trail.geometry.setDrawRange(0, t + 1);
+
+  bar.read.innerHTML =
+    `t <b>${(t * dt).toFixed(2)}</b>s &nbsp; dist <b>${far.toFixed(3)}</b>m &nbsp; ` +
+    `v <b>${fastest.toFixed(2)}</b>m/s &nbsp; ` +
+    (live ? `<b style="color:#62d38a">alive</b>` : `<b style="color:#ff6b8a">ended</b>`);
+}
+
+bar.time.oninput = show;
+bar.episode.onchange = () => { bar.time.value = 0; show(); };
+bar.play.onclick = () => { playing = !playing; bar.play.textContent = playing ? "❚❚" : "▶"; };
+
+// ---- files ----
+
+async function load(files) {
+  for (const f of files) {
+    const buffer = await f.arrayBuffer();
+    if (f.name.endsWith(".npz")) {
+      const raw = unzip(buffer);
+      traj = {};
+      for (const k in raw) traj[k] = npy(raw[k]);
+    } else if (f.name.endsWith(".json")) {
+      header = JSON.parse(new TextDecoder().decode(buffer));
+    }
+  }
+  seat();
+}
+
+function seat() {
+  if (traj) { target.set(...(header.center || [0, 0, 3])); build(); }
+}
+
+id("files").onchange = e => load(e.target.files);
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); load(e.dataTransfer.files); });
+
+// Served by run/replay.py: pick any eval in the repo instead of hunting for files.
+async function fetchEval(dir) {
+  const [npz, head] = await Promise.all([
+    fetch(`/${dir}/trajectory.npz`).then(r => r.arrayBuffer()),
+    fetch(`/${dir}/header.json`).then(r => r.json()),
+  ]);
+  const raw = unzip(npz);
+  traj = {};
+  for (const k in raw) traj[k] = npy(raw[k]);
+  header = head;
+  seat();
+}
+
+fetch("/evals.json").then(r => r.ok ? r.json() : null).then(list => {
+  if (!list || !list.length) return;
+  const pick = id("pick");
+  pick.innerHTML = list.map(e => {
+    const d = e.summary.distance_final;
+    const tail = d == null ? "" : ` · ${d.toFixed(3)} m`;
+    return `<option value="${e.path}">${e.run} · ${e.name}${tail}</option>`;
+  }).join("");
+  pick.onchange = () => fetchEval(pick.value);
+  pick.hidden = false;
+  id("files").hidden = true;
+  fetchEval(list[0].path);
+}).catch(() => {});
+
+// ---- loop ----
+
+function resize() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+addEventListener("resize", resize);
+resize();
+
+let last = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (playing && traj && now - last > (header.policy_dt || 0.01) * 1000) {
+    last = now;
+    const t = +bar.time.value;
+    bar.time.value = t >= +bar.time.max ? 0 : t + 1;
+    show();
+  }
+  place();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
