@@ -6,6 +6,8 @@ skills-lock.json
 
 research/code_sources/
 research/papers/*.pdf
+research/papers/*.md
+!research/papers/bibliography_index.md
 
 .claude/
 .agents/
