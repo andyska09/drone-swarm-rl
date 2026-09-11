@@ -48,21 +48,29 @@ from but do not edit.
 
 **The deliverable is a JAX multirotor simulator** fast enough to train swarm
 policies on thousands of parallel environments — written from scratch, because
-understanding the dynamics is the point of the exercise, not a side effect.
+understanding the dynamics is the point of the exercise, not a side effect. What
+it is for: **decentralized swarm interception** — N drones catching one agile
+evader, each seeing only itself, its neighbours and the target, with no
+communication between drones.
 
-Milestones and their pass/fail gates live in
+The task ladder, the platform backlog, and every pass/fail gate live in
 [research/notes/goals.local.md](research/notes/goals.local.md) (gitignored, so a
-fresh clone does not have it). The short version:
+fresh clone does not have it). **Read it before planning work.** The short version:
 
 1. **M1** rigid body — 6-DOF state `(x, v, R, ω, rpm)`, RK4, motor lag, mixer.
    *Done — `swarm/sim/dynamics.py`, gated on the golden trajectories.*
 2. **M2** control cascade — hover and A→B with hand-tuned gains, *no learning*.
    *Done — `swarm/sim/control.py`, all six rungs, gated on the cascade goldens.*
-3. **M3/M4** RL env — CTBR actions (collective thrust + body rates), hover then
-   waypoints. *Env done — `swarm/envs/hover.py`, gated on the cascade flying it.*
-   The learner is ours, in `swarm/learn/`, not vendored.
-4. **M5/M6** many drones (`vmap` over agents), then an attention neighbour
-   encoder.
+3. **M3** RL env — CTBR actions (collective thrust + body rates), hover.
+   *Env done — `swarm/envs/hover.py`, gated on the cascade flying it. The gate on
+   our PPO actually learning it is still open.*
+4. **Learner** — ours, in `swarm/learn/`, not vendored. One update compiles to one
+   XLA program and a Python loop calls it, so metrics, checkpoints and an early
+   stop exist while a run is going. *No eval and no replay yet.*
+5. **Then** waypoint / recover, N drones on a circle swapping sides, 1v1
+   interception, Nv1 interception — plus the platform each needs (runs and
+   configs, wandb, evaluation against the cascade, replay rendering, attention
+   neighbour encoder, RCI cluster).
 
 Physics and control-stack reference: [ctu-mrs/mrs_multirotor_simulator](https://github.com/ctu-mrs/mrs_multirotor_simulator)
 — `multirotor_model.hpp` (state + ODE) and `uav_system.hpp` (the six-controller
@@ -77,6 +85,7 @@ cascade). We reimplement it in JAX; we do not wrap the C++.
 pytest                              # THE GATE — golden replay + analytic checks
 python run/sim.py tumble --steps 500 --every 50        # open loop, you give throttles
 python run/fly.py --target 3 -2 5                      # closed loop, the cascade flies
+python run/train.py --task a_to_b --preset default --steps 5e6  # PPO -> runs/<name>/
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
@@ -87,8 +96,16 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
   `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
-- `envs/hover.py` — the RL env: `reset`, `step`, `get_obs`, and `PRESETS`. Plain
-  functions, no gymnax; auto-reset belongs to the trainer, not the env.
+- `envs/` — one file per task (`a_to_b.py` so far), each with `reset`, `step`,
+  `get_obs` and `PRESETS`. Plain functions, no gymnax; auto-reset belongs to the
+  trainer. `__init__.py` holds the shared `Obs` layout and `make(task, preset)`,
+  which imports the task module by name. Every task carries a drone axis, `N = 1`
+  included — the interface is spelled out in
+  [research/notes/plan_t1t2.md](research/notes/plan_t1t2.md).
+- `learn/` — our PPO. `ppo.py` (ActorCritic + `make`, one compiled update),
+  `vecenv.py` (vmap, auto-reset, normalization), `runner.py` (the update loop, run
+  directory, checkpoints, wandb), `config.py` (hyperparameters). Knows nothing
+  about drones: it takes an env *module* and one network per role.
 - Written for **one drone**; batching is `jax.vmap` at the env boundary. No Python
   branches on array values, no `.item()`, no value-dependent shapes —
   `test_vmap_matches_python_loop` enforces it.
@@ -121,20 +138,26 @@ swarm/             our implementation
 │   ├── dynamics.py   the plant: Params, State, derivative, RK4 step
 │   └── control.py    the six-rung cascade + cascade_step
 ├── envs/
-│   └── hover.py      the RL env: reset, step, get_obs, PRESETS
-└── learn/            our PPO (not written yet)
+│   ├── __init__.py   the Obs layout + make(task, preset)
+│   └── a_to_b.py     task 1: reset, step, get_obs, PRESETS
+└── learn/            our PPO: ppo.py, vecenv.py, runner.py, config.py
 run/
 ├── sim.py          open-loop rollout CLI
-└── fly.py          closed-loop cascade CLI
+├── fly.py          closed-loop cascade CLI
+└── train.py        PPO training CLI
 tests/
 ├── test_dynamics.py  the M1 gate
 ├── test_control.py   the M2 gate
-├── test_env.py       the M3 gate
+├── test_env.py       the env gate: the cascade flies the task
+├── test_learn.py     the trainer gate: it learns, and it is reproducible
+├── test_runner.py    the run gate: a run says what produced it and resumes
 └── golden/           C++ reference trajectories (CSV) + params.txt
 tools/mrs_golden/   C++ harness that generated tests/golden/
 research/
 ├── notes/          working notes (Czech is fine here)
+│   ├── goals.local.md  task ladder, platform backlog, gates (GITIGNORED)
 │   ├── choices.md    every design decision and deviation from the C++
+│   ├── lit_review.md the papers, sorted by milestone
 │   ├── learning/     explainers: ODE/RK4, plant, cascade, sim loop
 │   └── experiments/  one tracked <exp>.md per experiment
 ├── papers/         PDFs (gitignored) + .md transcripts and the index (tracked)

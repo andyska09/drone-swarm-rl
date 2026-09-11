@@ -61,7 +61,9 @@ two-line diff kept with the golden-trajectory harness.
   free fall use a params variant with `min_rpm = 0`.
 - The CTBR action is `(throttle ∈ [0,1], ω_x, ω_y, ω_z)`. Normalized throttle,
   not Newtons, matching MRS. Revisit only if we train across airframes.
-- dt = 0.01 (100 Hz). Physics, rate loop and policy all at one rate.
+- The reference trajectory tests use dt = 0.01 (100 Hz), matching MRS's test
+  harness. The environment runs physics and the rate controller at 200 Hz, and
+  the policy at 100 Hz. See the environment section below.
 
 ## Numerics
 
@@ -94,8 +96,14 @@ A `test_vmap_matches_loop` gate makes this real rather than aspirational.
     mixer's desaturation is what actually bounds them. Load-bearing.
   - **Derivative kick on the first step.** `last_error` starts at 0, so a step
     reference gives `d = 1/dt`. With `kd·J_xx` the first output is double the
-    steady-state one. Bounded, and it stops mattering at M3 when a policy rather
-    than a step generates `ω_ref`.
+    steady-state one. This is manageable with smooth commands from the cascade
+    controller. A policy that samples actions from a Gaussian can change the
+    requested rate `ω_ref` abruptly at every step, causing repeated spikes.
+    To avoid these command-induced spikes, `pid_update` accepts an optional
+    `measurement`: the derivative term then uses the negative rate of change of
+    the measured angular velocity instead of the rate error. The environment
+    enables this with `d_on_measurement=True`. The default keeps MRS's behavior
+    for the reference trajectory tests.
   - **The integral is dead** — `ki = 0.0` by default.
 - Mixer desaturation replicated exactly, branchless. Its rescale divides by
   `mean(motors)/throttle`, which can be near zero, so the divide is guarded —
@@ -140,11 +148,94 @@ A `test_vmap_matches_loop` gate makes this real rather than aspirational.
   on a rollout — once `R` tilts, the drone accelerates sideways and the test
   stops being true.
 
+## Environment
+
+Each task has its own file with `reset`, `step`, `get_obs` and a `PRESETS` dict.
+The first task is `swarm/envs/a_to_b.py`. The trainer handles automatic episode
+resets, so we do not need gymnax's auto-reset base class.
+
+`swarm/envs/__init__.py` defines the shared observation type `Obs` and two helpers:
+`flat()` combines the observation fields into a vector for networks without
+attention; `make(task, preset)` loads a task module by name. Adding a task does
+not require updating a registry.
+
+Single-drone and swarm tasks use the same interface, with a drone dimension on
+observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
+
+- **Update rates.** Physics, the rate controller and the mixer run at 200 Hz
+  (`sim_dt = 0.005`). The policy runs at 100 Hz, so each action is held for two
+  simulation steps (`steps_per_action = 2`). We chose 200 Hz to better resolve
+  the motor's 0.03 s response time: six simulation steps per time constant,
+  compared with three at 100 Hz. The rate controller is slower, with an
+  approximate time constant of 0.25 s at `kp = 4.0`, so either rate is sufficient
+  for it. The extra physics step costs roughly 1% by operation count: about
+  1,000 floating-point operations for RK4 versus 70,000 for a policy evaluation.
+- **Observation fields.** `own` contains the drone's velocity `Rᵀv`, all nine
+  entries of its rotation matrix `R`, and angular velocity `ω`. `target` contains
+  position error `Rᵀ(goal − x)` and velocity error `Rᵀ(v_goal − v)`; the A-to-B
+  task uses a stationary goal, so `v_goal = 0`. For each drone, `neighbors` has
+  shape `(K, 7)`, with a mask marking valid rows. It is empty for a single drone.
+  Keeping neighbors in a separate field lets an attention network read them
+  directly.
+- **Rotation representation.** Observations include all nine entries of `R`.
+  This choice follows SimpleFlight's reported result of roughly 64% worse
+  performance with quaternions.
+- **Coordinate frame.** Position error, velocity and velocity error use the
+  drone's body axes, matching the axes of its actions. Multiplying by `Rᵀ` does
+  this conversion explicitly, so the policy does not have to learn it. Angular
+  velocity `ω` already uses body axes. `R` still describes the drone's orientation
+  relative to the world.
+- **Motor speed is omitted from observations.** The rate controller reads the
+  measured `ω` at every simulation step and compensates for motor lag. We rely
+  on that feedback instead of giving `rpm` to the policy. `quad-swarm-rl` and
+  SimpleFlight also omit it.
+- **Actions.** Each action contains four values in `[−1,1]`: one throttle and
+  three requested angular velocities. Throttle maps to `[0,1]`; roll and pitch
+  rates map to ±4 rad/s, and yaw to ±2 rad/s. A new policy outputs values near
+  zero, which gives a throttle near 0.5, close to the hover value of 0.4654.
+  `quad-swarm-rl` allows ±31.4 rad/s for more acrobatic flight.
+- **Reward.** Each step gives `−policy_dt · ‖goal − x‖`: a penalty proportional
+  to distance from the goal and elapsed time, following the swarm paper. A crash
+  adds a one-time penalty. Penalties for spin, tilt, effort and changes in action
+  are implemented with weights of `0.0`. Enable them by changing the preset.
+- **Drone failure.** A drone fails if it hits the ground, moves more than 10 m
+  from `arena_center`, flips over (`R[2,2] < 0`), or has a NaN or infinite position.
+  Flipping over also causes problems for `acceleration_controller`, which can
+  return NaN when inverted. A failed drone's state is frozen and it receives no
+  further reward. Other drones continue until all have failed or time runs out.
+- **Episode endings.** The time limit is 500 policy steps (5 seconds). This is
+  a truncation: training stops the rollout but still uses the estimated future
+  value `V(s_T)` for surviving drones. A failed drone has zero future value.
+  `done` tells the trainer to reset the scene; `died_this_step` identifies drones
+  that just failed; `truncated` indicates that the time limit was reached.
+- **The cascade uses the policy interface.** Every action follows the same path:
+  action → rate controller → mixer → physics. There is no separate `action_mode`.
+  `control.cascade_outer` runs the cascade's position, velocity, acceleration and
+  attitude stages, producing throttle and body-rate commands (CTBR).
+  `command_to_action` converts these to the four normalized action values that a
+  network would supply. Both controllers use the same rewards, starting states
+  and episode length, so their results can be compared directly. The M3 success
+  criterion is unchanged: stay within 0.2 m of the goal for the final second.
+  In this setup, the outer controllers run at 100 Hz instead of 200 Hz, and their
+  rate commands are limited to ±4 rad/s for roll/pitch and ±2 rad/s for yaw.
+- **Controller state.** `EnvState` stores only the rate controller's `PIDState`.
+  The cascade policy stores the PID states for its position, velocity and
+  attitude controllers.
+- **Staggered clocks.** The trainer gives each scene a random clock value on the
+  first reset, and then calls `get_obs` again. Scenes that start together also end
+  together, and then most updates finish no episode and report nothing. Later
+  resets are not staggered, so no episode after the first is cut short. This is
+  the one place where the trainer uses a field of the env state by name (`time`).
+
 ## Revisit later
 
 - Quaternions instead of `R`, at M5, if a profile says the matrix costs. Note the
   cost is not just the rewrite: a quaternion model cannot be cross-checked
   against the C++ at all.
 - Euler instead of RK4, at M5, if RK4 turns out to be more than ~5% of step time.
-- The unclamped rate-controller output, at M3.
+- Rate-controller output: resolved. Keep it unclamped; the mixer rescales motor
+  commands to stay within their limits.
+- Choose the discount factor when the learner is ready. At 100 Hz, `gamma = 0.99`
+  gives an effective horizon of about 1 second, while an episode lasts 5 seconds
+  (500 decisions).
 - Attitude rate normalization, in future move it to newtons so it drone body doesnt matter. 
