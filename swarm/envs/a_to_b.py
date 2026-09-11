@@ -15,10 +15,6 @@ NEIGHBOR_FEATURES = 7
 class RewardConfig:
     distance: float = 1.0
     crash: float = 10.0
-    spin: float = 0.0
-    tilt: float = 0.0
-    effort: float = 0.0
-    smooth: float = 0.0
 
 
 @flax.struct.dataclass
@@ -36,16 +32,12 @@ class EnvParams:
     max_rate_rp: float = 4.0
     max_rate_yaw: float = 2.0
 
-    start_center: tuple = flax.struct.field(pytree_node=False, default=(0.0, 0.0, 3.0))
+    # Start, goal box and arena all sit around this point.
+    center: tuple = flax.struct.field(pytree_node=False, default=(0.0, 0.0, 3.0))
     start_pos_range: float = 0.5
     start_vel_range: float = 0.5
     start_tilt: float = 0.2
-    start_omega_range: float = 0.0
-
-    goal_center: tuple = flax.struct.field(pytree_node=False, default=(0.0, 0.0, 3.0))
     goal_range: tuple = flax.struct.field(pytree_node=False, default=(0.0, 0.0, 0.0))
-
-    arena_center: tuple = flax.struct.field(pytree_node=False, default=(0.0, 0.0, 3.0))
     arena: float = 10.0
 
     @property
@@ -66,7 +58,6 @@ class EnvState:
     drone: dynamics.State
     goal: jnp.ndarray
     rate_pid: control.PIDState
-    prev_action: jnp.ndarray
     alive: jnp.ndarray
     time: jnp.ndarray
 
@@ -92,7 +83,9 @@ def action_to_command(action, params):
 def command_to_action(throttle, rate_ref, params):
     """Convert throttle and body rates to an action clipped to [-1, 1]."""
 
-    action = jnp.concatenate([jnp.atleast_1d(2.0 * throttle - 1.0), rate_ref / _rate_scale(params)])
+    action = jnp.concatenate(
+        [jnp.atleast_1d(2.0 * throttle - 1.0), rate_ref / _rate_scale(params)]
+    )
     return jnp.clip(action, -1.0, 1.0)
 
 
@@ -115,21 +108,15 @@ def get_obs(state, params):
 def is_dead(drone, params):
     return (
         (drone.x[:, 2] < 0.0)
-        | (_norm(drone.x - jnp.asarray(params.arena_center)) > params.arena)
+        | (_norm(drone.x - jnp.asarray(params.center)) > params.arena)
         | (drone.R[:, 2, 2] < 0.0)
         | ~jnp.all(jnp.isfinite(drone.x), axis=-1)
     )
 
 
-def compute_reward(state, alive, died, action, prev_action, params):
-    cfg, d = params.reward, state.drone
-    cost = (
-        cfg.distance * _norm(state.goal - d.x)
-        + cfg.spin * _norm(d.omega)
-        + cfg.tilt * (1.0 - d.R[:, 2, 2])
-        + cfg.effort * _norm(action)
-        + cfg.smooth * _norm(action - prev_action)
-    )
+def compute_reward(state, alive, died, params):
+    cfg = params.reward
+    cost = cfg.distance * _norm(state.goal - state.drone.x)
     return jnp.where(alive, -params.policy_dt * cost, 0.0) - cfg.crash * died
 
 
@@ -143,13 +130,14 @@ def _random_tilt(key, max_angle):
 
 def reset(key, params):
     n = params.n_drones
-    k_pos, k_vel, k_att, k_omega, k_goal = jax.random.split(key, 5)
+    k_pos, k_vel, k_att, k_goal = jax.random.split(key, 4)
+    center = jnp.asarray(params.center)
 
     hover_rpm = jnp.sqrt(
         params.model.mass * params.model.g / (params.model.n_motors * params.model.kf)
     )
     drone = dynamics.State(
-        x=jnp.asarray(params.start_center)
+        x=center
         + jax.random.uniform(
             k_pos, (n, 3), minval=-params.start_pos_range, maxval=params.start_pos_range
         ),
@@ -159,21 +147,18 @@ def reset(key, params):
         R=jax.vmap(_random_tilt, in_axes=(0, None))(
             jax.random.split(k_att, n), params.start_tilt
         ),
-        omega=jax.random.uniform(
-            k_omega, (n, 3), minval=-params.start_omega_range, maxval=params.start_omega_range
-        ),
+        omega=jnp.zeros((n, 3)),
         rpm=jnp.full((n, 4), hover_rpm),
     )
 
-    goal = jnp.asarray(params.goal_center) + jnp.asarray(params.goal_range) * (
-        jax.random.uniform(k_goal, (n, 3), minval=-1.0, maxval=1.0)
+    goal = center + jnp.asarray(params.goal_range) * jax.random.uniform(
+        k_goal, (n, 3), minval=-1.0, maxval=1.0
     )
 
     state = EnvState(
         drone=drone,
         goal=goal,
         rate_pid=control.pid_init((n, 3)),
-        prev_action=jnp.zeros((n, NUM_ACTIONS)),
         alive=jnp.ones(n, bool),
         time=jnp.int32(0),
     )
@@ -191,8 +176,13 @@ def step(key, state, action, params):
         drone, pid = carry
 
         def one(d, r, t, p):
-            group, p = control.rate_controller(d, r, t, p, rate_gains, dt, d_on_measurement=True)
-            return dynamics.step(d, control.mixer(group, allocation), params.model, dt), p
+            group, p = control.rate_controller(
+                d, r, t, p, rate_gains, dt, d_on_measurement=True
+            )
+            return (
+                dynamics.step(d, control.mixer(group, allocation), params.model, dt),
+                p,
+            )
 
         return jax.vmap(one)(drone, rate_ref, throttle, pid), None
 
@@ -200,12 +190,6 @@ def step(key, state, action, params):
         substep, (state.drone, state.rate_pid), None, length=params.steps_per_action
     )
 
-    # Keep failed drones at their last state while surviving drones continue.
-    drone = jax.tree.map(
-        lambda new, old: jnp.where(state.alive.reshape((-1,) + (1,) * (new.ndim - 1)), new, old),
-        drone,
-        state.drone,
-    )
     died = state.alive & is_dead(drone, params)
     alive = state.alive & ~died
 
@@ -213,12 +197,11 @@ def step(key, state, action, params):
         drone=drone,
         goal=state.goal,
         rate_pid=rate_pid,
-        prev_action=action,
         alive=alive,
         time=state.time + 1,
     )
 
-    reward = compute_reward(new_state, state.alive, died, action, state.prev_action, params)
+    reward = compute_reward(new_state, state.alive, died, params)
     truncated = new_state.time >= params.max_steps
     done = truncated | ~jnp.any(alive)
 
@@ -234,5 +217,4 @@ def step(key, state, action, params):
 PRESETS = {
     "default": EnvParams(goal_range=(4.0, 4.0, 2.0)),
     "hover": EnvParams(),
-    "recover": EnvParams(start_tilt=1.05, start_omega_range=2.0, start_vel_range=2.0),
 }

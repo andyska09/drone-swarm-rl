@@ -98,18 +98,19 @@ def test_random_actions_stay_finite_and_terminate():
     assert jnp.any(done), "random actions never ended an episode"
 
 
-def test_dead_drone_freezes():
+def test_dead_drone_stays_dead():
     params = a_to_b.PRESETS["hover"]
     key = jax.random.PRNGKey(0)
     actions = jnp.tile(
         jnp.array([-1.0, 0.0, 0.0, 0.0]), (params.max_steps, params.n_drones, 1)
     )
-    _, (_, _, distance, alive) = rollout(params, key, replay, actions)
+    _, (reward, _, _, alive) = rollout(params, key, replay, actions)
 
     death = int(jnp.argmin(alive[:, 0]))
     assert 0 < death < params.max_steps, "motors off and the drone never died"
     assert not jnp.any(alive[death:]), "a dead drone came back"
-    assert jnp.allclose(distance[death:], distance[death]), "a dead drone kept moving"
+    assert reward[death] <= -params.reward.crash, "no crash penalty on the fatal step"
+    assert jnp.allclose(reward[death + 1 :], 0.0), "a dead drone kept scoring"
 
 
 def test_timeout_truncates_without_terminating():
