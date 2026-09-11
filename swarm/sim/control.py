@@ -1,6 +1,4 @@
-"""The MRS controller cascade: position -> velocity -> acceleration -> attitude ->
-rate -> mixer. Reimplements controllers/*.hpp. Only the heading (not heading-rate)
-branch is here; that is the one the position command flows through."""
+"""The MRS controller cascade: position -> velocity -> acceleration -> attitude -> rate -> mixer. Reimplements controllers/*.hpp. Only the heading (not heading-rate) branch is here; that is the one the position command flows through."""
 
 import flax.struct
 import jax.numpy as jnp
@@ -45,9 +43,13 @@ def pid_update(pid, error, gains, dt, measurement=None):
 
 
 def _gains(kp, kd, ki, saturation, antiwindup):
-    return Gains(kp=jnp.full(3, kp), kd=jnp.full(3, kd), ki=jnp.full(3, ki),
-                 saturation=jnp.asarray(saturation) * jnp.ones(3),
-                 antiwindup=jnp.full(3, antiwindup))
+    return Gains(
+        kp=jnp.full(3, kp),
+        kd=jnp.full(3, kd),
+        ki=jnp.full(3, ki),
+        saturation=jnp.asarray(saturation) * jnp.ones(3),
+        antiwindup=jnp.full(3, antiwindup),
+    )
 
 
 def position_gains(kp=2.0, kd=0.15, ki=0.2, max_velocity=6.0):
@@ -78,7 +80,11 @@ def acceleration_controller(state, acceleration_ref, heading, params):
     # Oblique projection of the desired heading onto the plane normal to body z.
     complement = jnp.eye(3) - jnp.outer(body_z, body_z)
     square = complement[:2, :2]
-    projector = complement[:, :2] @ (jnp.linalg.inv(square.T @ square) @ square.T) @ jnp.eye(3)[:2]
+    projector = (
+        complement[:, :2]
+        @ (jnp.linalg.inv(square.T @ square) @ square.T)
+        @ jnp.eye(3)[:2]
+    )
 
     body_x = projector @ jnp.array([jnp.cos(heading), jnp.sin(heading), 0.0])
     body_x = body_x / jnp.linalg.norm(body_x)
@@ -93,8 +99,12 @@ def acceleration_controller(state, acceleration_ref, heading, params):
     return jnp.column_stack([body_x, body_y, body_z]), throttle
 
 
-def attitude_gains(kp=6.0, kd=0.05, ki=0.01, max_rate_roll_pitch=10.0, max_rate_yaw=1.0):
-    return _gains(kp, kd, ki, [max_rate_roll_pitch, max_rate_roll_pitch, max_rate_yaw], 0.1)
+def attitude_gains(
+    kp=6.0, kd=0.05, ki=0.01, max_rate_roll_pitch=10.0, max_rate_yaw=1.0
+):
+    return _gains(
+        kp, kd, ki, [max_rate_roll_pitch, max_rate_roll_pitch, max_rate_yaw], 0.1
+    )
 
 
 def attitude_controller(state, orientation_ref, pid, gains, dt):
@@ -105,8 +115,13 @@ def attitude_controller(state, orientation_ref, pid, gains, dt):
 def rate_gains(params, kp=4.0, kd=0.04, ki=0.0):
     # saturation < 0 disables the clamp, so the mixer is what bounds the output.
     j = jnp.diag(params.J)
-    return Gains(kp=kp * j, kd=kd * j, ki=ki * j,
-                 saturation=jnp.full(3, -1.0), antiwindup=jnp.full(3, 1.0))
+    return Gains(
+        kp=kp * j,
+        kd=kd * j,
+        ki=ki * j,
+        saturation=jnp.full(3, -1.0),
+        antiwindup=jnp.full(3, 1.0),
+    )
 
 
 def rate_controller(state, rate_ref, throttle, pid, gains, dt, d_on_measurement=False):
@@ -140,24 +155,40 @@ def mixer(control_group, allocation_inv):
 
 
 def cascade_gains(params):
-    return (position_gains(), velocity_gains(), attitude_gains(),
-            rate_gains(params), mixer_allocation(params))
+    return (
+        position_gains(),
+        velocity_gains(),
+        attitude_gains(),
+        rate_gains(params),
+        mixer_allocation(params),
+    )
 
 
 def cascade_init():
     return tuple(pid_init() for _ in range(4))
 
 
-def cascade_step(state, position_ref, heading, pids, gains, params, dt):
-    """Position reference to four motor throttles, through all six rungs."""
+def cascade_outer(state, position_ref, heading, pids, gains, params, dt):
+    """The four rungs above the rate loop. Their output pair is a CTBR command, so
+    this is also how the cascade flies an env whose action is CTBR."""
 
-    pos, vel, att, rate, allocation_inv = gains
+    pos, vel, att = gains[0], gains[1], gains[2]
     pos_pid, vel_pid, att_pid, rate_pid = pids
 
     velocity_ref, pos_pid = position_controller(state, position_ref, pos_pid, pos, dt)
     accel_ref, vel_pid = velocity_controller(state, velocity_ref, vel_pid, vel, dt)
     orientation, throttle = acceleration_controller(state, accel_ref, heading, params)
     rate_ref, att_pid = attitude_controller(state, orientation, att_pid, att, dt)
-    group, rate_pid = rate_controller(state, rate_ref, throttle, rate_pid, rate, dt)
 
-    return mixer(group, allocation_inv), (pos_pid, vel_pid, att_pid, rate_pid)
+    return (throttle, rate_ref), (pos_pid, vel_pid, att_pid, rate_pid)
+
+
+def cascade_step(state, position_ref, heading, pids, gains, params, dt):
+    """Position reference to four motor throttles, through all six rungs."""
+
+    (throttle, rate_ref), pids = cascade_outer(
+        state, position_ref, heading, pids, gains, params, dt
+    )
+    group, rate_pid = rate_controller(state, rate_ref, throttle, pids[3], gains[3], dt)
+
+    return mixer(group, gains[4]), pids[:3] + (rate_pid,)
