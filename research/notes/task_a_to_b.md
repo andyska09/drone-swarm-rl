@@ -26,31 +26,30 @@ the policy replaces everything above it.
 
 ## Reset
 
-Position uniform in ±0.5 m around `(0,0,3)`, velocity ±0.5 m/s, a random tilt up
-to 0.2 rad about a random axis, `ω = 0`, motors at hover RPM. The goal is drawn
-around the same centre — `±(4,4,2)` m for `default`, a single point for `hover`.
+One `center = (0,0,3)` holds the start, the goal box and the arena. Position
+uniform in ±0.5 m around it, velocity ±0.5 m/s, a random tilt up to 0.2 rad
+about a random axis, `ω = 0`, motors at hover RPM. The goal is drawn in
+`±goal_range` about the same centre.
 
 ## Termination
 
 Death is ground contact (`z < 0`), leaving the 10 m arena, flipping over
-(`R₂₂ < 0`), or a non-finite state. A dead drone freezes and the episode ends
-(`N = 1`, so no one is left). Hitting `max_steps` is truncation, not death.
+(`R₂₂ < 0`), or a non-finite state. The episode ends there (`N = 1`, so no one
+is left) and a dead drone scores nothing further. Hitting `max_steps` is
+truncation, not death.
 
 ## Reward
 
-Per-step cost integrated over `policy_dt`, plus a one-off crash penalty:
+Distance cost integrated over `policy_dt`, plus a one-off crash penalty:
 
 ```
-r = -policy_dt · (1.0·‖g - x‖ + spin·‖ω‖ + tilt·(1 - R₂₂) + effort·‖a‖ + smooth·‖a - a_prev‖)
-    - 10.0 · died
+r = -policy_dt · 1.0·‖g - x‖ - 10.0 · died
 ```
 
-Only the distance and crash terms are on by default; the shaping weights are
-knobs in `RewardConfig`, all zero until a failure mode asks for one.
+Both weights are in `RewardConfig`. Shaping on `ω`, tilt, effort or action rate
+is deliberately absent — add one only when a failure mode asks for it.
 
 ## Presets
 
 - `default` — goal drawn in a ±(4,4,2) m box: fly there and hold.
-- `hover` — goal at the start centre: hold against the reset perturbation.
-- `recover` — start tilted up to 1.05 rad, `ω` ±2 rad/s, `v` ±2 m/s: catch it
-  first, then hold.
+- `hover` — goal at the centre: hold against the reset perturbation.
