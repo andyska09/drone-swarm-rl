@@ -196,13 +196,22 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   `quad-swarm-rl` allows ±31.4 rad/s for more acrobatic flight.
 - **Reward.** Each step gives `−policy_dt · ‖goal − x‖`: a penalty proportional
   to distance from the goal and elapsed time, following the swarm paper. A crash
-  adds a one-time penalty. Penalties for spin, tilt, effort and changes in action
-  are implemented with weights of `0.0`. Enable them by changing the preset.
+  adds a one-time penalty of `10.0`. Penalties for spin, tilt, effort and changes
+  in action had zero weights and were removed. Add them only to address an
+  observed problem.
+- **Shared centre.** `center` replaces `start_center`, `goal_center` and
+  `arena_center`, which always held the same value.
 - **Drone failure.** A drone fails if it hits the ground, moves more than 10 m
-  from `arena_center`, flips over (`R[2,2] < 0`), or has a NaN or infinite position.
+  from `center`, flips over (`R[2,2] < 0`), or has a NaN or infinite position.
   Flipping over also causes problems for `acceleration_controller`, which can
-  return NaN when inverted. A failed drone's state is frozen and it receives no
-  further reward. Other drones continue until all have failed or time runs out.
+  return NaN when inverted. After failure, `alive` stays false. The drone receives
+  no further rewards or crash penalties. Other drones continue until all have
+  failed or time runs out.
+- **State after failure.** With one drone (`N = 1`), failure ends the episode and
+  the trainer resets the scene, so the environment does not freeze its state.
+  `evaluate.py` freezes the whole scene at episode end to keep later scan steps
+  from changing metrics or replay. Restore per-drone freezing when `N > 1`, so
+  failed drones stay fixed while others continue.
 - **Episode endings.** The time limit is 500 policy steps (5 seconds). This is
   a truncation: training stops the rollout but still uses the estimated future
   value `V(s_T)` for surviving drones. A failed drone has zero future value.
@@ -226,6 +235,39 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   together, and then most updates finish no episode and report nothing. Later
   resets are not staggered, so no episode after the first is cut short. This is
   the one place where the trainer uses a field of the env state by name (`time`).
+
+## Evaluation and replay
+
+- **Evaluation metrics.** Evaluation reports a per-episode mean and final value
+  for every scalar in `info`. Task-specific pass thresholds belong in tests and
+  notes.
+- **Seeds and actions.** Evaluation uses a separate fixed seed,
+  `EVAL_SEED = 1_000_000`, and mean policy actions.
+- **No auto-reset.** Evaluation runs each episode once and freezes its final
+  state. Later scan steps add no reward. It reports each episode's `length`;
+  training reports the average length of episodes that finished.
+- **Results stay with the run.** Evaluation writes to
+  `runs/<run>/evals/<name>/`, keeping results with the run they measure.
+- **Policy selection.** Evaluation accepts this run's checkpoint, another run's
+  checkpoint, or `cascade` through the same interface. Add `--policy role=source`
+  when a task needs two roles.
+- **Replay data.** The viewer reads task, preset, arena, roles and `policy_dt`
+  from `header.json`, and state from `trajectory.npz`. It does not import the
+  environment.
+- **Trajectory format.** `np.savez` writes uncompressed ZIP files. The viewer
+  reads the NPZ and NPY headers directly in JavaScript without an unzip library.
+  Using `savez_compressed` would require adding decompression.
+- **Opening replays.** `run/replay.py` serves the repo and lists evaluations at
+  `/evals.json` for the viewer's dropdown. Opening the viewer through `file://`
+  requires drag-and-drop or the file picker because the page cannot fetch local
+  files.
+- **Recorded replay.** We save trajectories after the compiled XLA rollout and
+  replay them with a timeline and episode picker. This avoids the realtime pacing
+  and frame-dropping used by `quad-swarm-rl` to render during rollouts.
+- **Visual cues.** The shadow and velocity arrow follow
+  `quadrotor_multi_visualization.py`. The shadow helps show altitude by spreading
+  and fading as the drone rises. The arrow projects the current velocity 0.4 s
+  ahead.
 
 ## Revisit later
 
