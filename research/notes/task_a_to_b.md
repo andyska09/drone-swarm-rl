@@ -40,14 +40,21 @@ truncation, not death.
 
 ## Reward
 
-Distance cost integrated over `policy_dt`, plus a one-off crash penalty:
+Distance and spin costs integrated over `policy_dt`, plus a one-off crash penalty:
 
 ```
-r = -policy_dt · 1.0·‖g - x‖ - 10.0 · died
+r = -policy_dt · (1.0·‖g - x‖ + 0.1·‖ω‖) - 10.0 · died
 ```
 
-Both weights are in `RewardConfig`. Shaping on `ω`, tilt, effort or action rate
-is deliberately absent — add one only when a failure mode asks for it.
+All three weights are in `RewardConfig`. The `spin` term was added after the
+first trained `default` policy never settled: it orbited the goal at 0.21 m and
+0.4 m/s and still did so after 15 s. Pure distance pays the same for circling at
+0.21 m as for parking there, so nothing asked it to stop. `0.1` against a
+distance weight of `1.0` is Huang et al. 2024's ratio, whose reward has the same
+`-dt · (weighted sum)` shape.
+
+Tilt, effort and action-rate shaping stay absent — add one only when a failure
+mode asks for it.
 
 ## Presets
 

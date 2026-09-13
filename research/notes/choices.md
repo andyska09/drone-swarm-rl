@@ -194,11 +194,21 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   rates map to ±4 rad/s, and yaw to ±2 rad/s. A new policy outputs values near
   zero, which gives a throttle near 0.5, close to the hover value of 0.4654.
   `quad-swarm-rl` allows ±31.4 rad/s for more acrobatic flight.
-- **Reward.** Each step gives `−policy_dt · ‖goal − x‖`: a penalty proportional
-  to distance from the goal and elapsed time, following the swarm paper. A crash
-  adds a one-time penalty of `10.0`. Penalties for spin, tilt, effort and changes
-  in action had zero weights and were removed. Add them only to address an
+- **Reward.** `−policy_dt · (1.0·‖goal − x‖ + 0.1·‖ω‖)`, plus a one-time `10.0`
+  for a crash. Distance follows the swarm paper. Tilt, effort and action-rate
+  penalties had zero weights and were removed. Add them only to address an
   observed problem.
+- **Why `spin` is in.** The first trained `default` policy beat the cascade on
+  the objective (return −3.39 against −3.89) and still never settled. It orbited
+  the goal at 0.21 m with 0.28 m/s of tangential speed, and a 15 s rollout showed
+  a permanent limit cycle, not slow arrival. A pure distance cost pays the same
+  for circling at 0.21 m as for parking at 0.21 m, so nothing asked it to stop.
+  Both reference works carry a motion penalty at 0.1–0.2 of their own distance
+  weight: Huang et al. 2024 uses `0.1·‖ω‖` against `1.0·‖p‖`; Gavin et al. 2026
+  uses `2e-4·‖a_ω‖` against `1e-3·‖p‖`. We copy Huang's, because our reward has
+  the same `−dt · (weighted sum)` shape and the same distance weight, so the
+  number transfers with no rescaling. Gavin's term penalises the *command* and is
+  aimed at sim-to-real feasibility, not at settling.
 - **Shared centre.** `center` replaces `start_center`, `goal_center` and
   `arena_center`, which always held the same value.
 - **Drone failure.** A drone fails if it hits the ground, moves more than 10 m

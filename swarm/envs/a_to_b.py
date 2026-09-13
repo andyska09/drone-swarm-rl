@@ -15,6 +15,7 @@ NEIGHBOR_FEATURES = 7
 class RewardConfig:
     distance: float = 1.0
     crash: float = 10.0
+    spin: float = 0.1
 
 
 @flax.struct.dataclass
@@ -115,8 +116,8 @@ def is_dead(drone, params):
 
 
 def compute_reward(state, alive, died, params):
-    cfg = params.reward
-    cost = cfg.distance * _norm(state.goal - state.drone.x)
+    cfg, d = params.reward, state.drone
+    cost = cfg.distance * _norm(state.goal - d.x) + cfg.spin * _norm(d.omega)
     return jnp.where(alive, -params.policy_dt * cost, 0.0) - cfg.crash * died
 
 
