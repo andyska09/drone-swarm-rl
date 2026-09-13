@@ -16,7 +16,7 @@ class TrainConfig:
     lr: float = 3e-4
     anneal_lr: bool = True
 
-    gamma: float = 0.995
+    gamma: float = 0.998
     gae_lambda: float = 0.95
 
     num_minibatches: int = 32

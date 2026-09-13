@@ -217,6 +217,12 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   value `V(s_T)` for surviving drones. A failed drone has zero future value.
   `done` tells the trainer to reset the scene; `died_this_step` identifies drones
   that just failed; `truncated` indicates that the time limit was reached.
+- **Discount factor `gamma = 0.998`.** Resolved; it was open until the learner
+  ran. The effective horizon is `1/(1−gamma)` policy steps, and at `policy_dt =
+  0.01 s` that is 500 steps, exactly one episode. The first real run used `0.995`
+  = 2 s, which was enough for `hover` (worst leg 0.87 m) and too short for
+  `default`, where the worst leg is about 6.9 m and takes 3 to 4 s to fly. A
+  policy cannot plan for a payoff it discounts away before it arrives.
 - **The cascade uses the policy interface.** Every action follows the same path:
   action → rate controller → mixer → physics. There is no separate `action_mode`.
   `control.cascade_outer` runs the cascade's position, velocity, acceleration and
@@ -277,7 +283,4 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
 - Euler instead of RK4, at M5, if RK4 turns out to be more than ~5% of step time.
 - Rate-controller output: resolved. Keep it unclamped; the mixer rescales motor
   commands to stay within their limits.
-- Choose the discount factor when the learner is ready. At 100 Hz, `gamma = 0.99`
-  gives an effective horizon of about 1 second, while an episode lasts 5 seconds
-  (500 decisions).
 - Attitude rate normalization, in future move it to newtons so it drone body doesnt matter. 
