@@ -170,6 +170,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
                 "roles": list(env_params.roles),
                 "center": list(env_params.center),
                 "arena": env_params.arena,
+                "hitbox": env_params.model.arm_length + env_params.model.prop_radius,
                 "policy_dt": env_params.policy_dt,
             },
             indent=2,

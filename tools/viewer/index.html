@@ -215,6 +215,12 @@ function build() {
     world.add(q);
     drones.push(q);
 
+    // Two of these balls touching is the collision test the env runs.
+    if (header.hitbox) {
+      q.add(new THREE.Mesh(new THREE.SphereGeometry(header.hitbox, 20, 14),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12 })));
+    }
+
     const goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
     world.add(goal);
