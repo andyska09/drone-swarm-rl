@@ -66,7 +66,7 @@ def _hold(done, new, old):
 
 
 def rollout(key, env, env_params, act, carry):
-    """One episode to its own end. Returns per-step drone state, reward, info, live mask."""
+    """One episode to its own end. Per step: drone state, action, reward, info, live mask."""
 
     obs, state = env.reset(key, env_params)
 
@@ -80,7 +80,13 @@ def rollout(key, env, env_params, act, carry):
         state = _hold(done, next_state, state)
         obs = _hold(done, next_obs, obs)
         live = ~done
-        return (state, obs, carry, done | ended), (state.drone, reward * live, info, live)
+        return (state, obs, carry, done | ended), (
+            state.drone,
+            action,
+            reward * live,
+            info,
+            live,
+        )
 
     _, out = jax.lax.scan(
         body, (state, obs, carry, jnp.bool_(False)), None, length=env_params.max_steps
@@ -116,16 +122,16 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
     keys = jax.random.split(jax.random.PRNGKey(EVAL_SEED), episodes)
 
     def measure(key):
-        _, reward, info, live = rollout(key, env, env_params, act, carry)
+        _, _, reward, info, live = rollout(key, env, env_params, act, carry)
         return summarize(reward, info, live)
 
     def trace(key):
-        drone, _, _, live = rollout(key, env, env_params, act, carry)
+        drone, action, _, _, live = rollout(key, env, env_params, act, carry)
         _, state = env.reset(key, env_params)
-        return drone, state.goal, live
+        return drone, action, state.goal, live
 
     per_episode = jax.jit(jax.vmap(measure))(keys)
-    drone, goal, live = jax.jit(jax.vmap(trace))(keys[:TRAJECTORIES])
+    drone, action, goal, live = jax.jit(jax.vmap(trace))(keys[:TRAJECTORIES])
 
     out = run / "evals" / (name or (policy if policy != "checkpoint" else checkpoint))
     out.mkdir(parents=True, exist_ok=True)
@@ -153,6 +159,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
         out / "trajectory.npz",
         goal=np.asarray(goal),
         live=np.asarray(live),
+        action=np.asarray(action),
         **{f.name: np.asarray(getattr(drone, f.name)) for f in drone.__dataclass_fields__.values()},
     )
     (out / "header.json").write_text(

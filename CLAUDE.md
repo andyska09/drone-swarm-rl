@@ -90,6 +90,7 @@ python run/train.py --task a_to_b --preset default --steps 5e6  # PPO -> runs/<n
 python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
 python run/eval.py runs/<name> --policy cascade        # the cascade in the same seat
 python run/replay.py                                   # serve + open the 3D viewer
+python run/plot.py runs/<name>/evals/latest            # time plots of one episode
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
@@ -113,7 +114,7 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
   takes an env *module* and one network per role.
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
-  arrays), `trajectory.npz` (the first 8 episodes, full state), `header.json`
+  arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
   (task, preset, arena, roles — the viewer never imports the env). Eval holds the
   scene frozen once an episode ends; the env does not, because with `N = 1` the
   episode ends the same step and the trainer resets it.
@@ -161,7 +162,8 @@ run/
 ├── fly.py          closed-loop cascade CLI
 ├── train.py        PPO training CLI
 ├── eval.py         measure a checkpoint (or the cascade) -> runs/<run>/evals/<name>/
-└── replay.py       serve the repo, list every eval, open the viewer
+├── replay.py       serve the repo, list every eval, open the viewer
+└── plot.py         time plots of one eval episode -> <eval>/plot_e<i>.png
 tests/
 ├── test_dynamics.py  the M1 gate
 ├── test_control.py   the M2 gate
