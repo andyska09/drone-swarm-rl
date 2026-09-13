@@ -182,7 +182,7 @@ renderer.domElement.addEventListener("wheel", e => {
 // ---- trajectory ----
 
 let traj = null, header = {}, drones = [], goals = [], shadows = [], arrows = [];
-let trail = null, playing = false;
+let trails = [], playing = false;
 const id = name => document.getElementById(name);
 const bar = { episode: id("episode"), time: id("time"), read: id("read"), play: id("play") };
 
@@ -197,8 +197,8 @@ function at(a, idx) {  // idx: [e, t, n, ...] over a flat npy
 
 function build() {
   world.clear();
-  drones = []; goals = []; shadows = []; arrows = [];
-  const n = traj.x.shape[2];
+  drones = []; goals = []; shadows = []; arrows = []; trails = [];
+  const n = traj.x.shape[2], T = traj.x.shape[1];
   const palette = [0x4fa3ff, 0xff8b5e, 0x62d38a, 0xd98bff, 0xffd166, 0x5edfd8, 0xff6b8a, 0x9aa7ff];
 
   if (header.arena) {
@@ -217,8 +217,10 @@ function build() {
 
     // Two of these balls touching is the collision test the env runs.
     if (header.hitbox) {
+      // depthWrite would hide the propellers inside it and any goal behind it.
       q.add(new THREE.Mesh(new THREE.SphereGeometry(header.hitbox, 20, 14),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12 })));
+        new THREE.MeshBasicMaterial(
+          { color, transparent: true, opacity: 0.12, depthWrite: false })));
     }
 
     const goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
@@ -236,14 +238,14 @@ function build() {
       new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0xff3b30, 0.12, 0.07);
     world.add(arrow);
     arrows.push(arrow);
-  }
 
-  const T = traj.x.shape[1];
-  trail = new THREE.Line(
-    new THREE.BufferGeometry().setAttribute("position",
-      new THREE.BufferAttribute(new Float32Array(T * 3), 3)),
-    new THREE.LineBasicMaterial({ color: 0xffd166 }));
-  world.add(trail);
+    const trail = new THREE.Line(
+      new THREE.BufferGeometry().setAttribute("position",
+        new THREE.BufferAttribute(new Float32Array(T * 3), 3)),
+      new THREE.LineBasicMaterial({ color }));
+    world.add(trail);
+    trails.push(trail);
+  }
 
   bar.episode.innerHTML = "";
   for (let e = 0; e < traj.x.shape[0]; e++) {
@@ -292,13 +294,15 @@ function show() {
     fastest = Math.max(fastest, speed);
   }
 
-  const pos = trail.geometry.attributes.position;
-  for (let k = 0; k <= t; k++) {
-    const p = at(traj.x, [e, k, 0, 0]);
-    pos.setXYZ(k, x[p], x[p + 1], x[p + 2]);
+  for (let i = 0; i < n; i++) {
+    const pos = trails[i].geometry.attributes.position;
+    for (let k = 0; k <= t; k++) {
+      const p = at(traj.x, [e, k, i, 0]);
+      pos.setXYZ(k, x[p], x[p + 1], x[p + 2]);
+    }
+    pos.needsUpdate = true;
+    trails[i].geometry.setDrawRange(0, t + 1);
   }
-  pos.needsUpdate = true;
-  trail.geometry.setDrawRange(0, t + 1);
 
   bar.read.innerHTML =
     `t <b>${(t * dt).toFixed(2)}</b>s &nbsp; dist <b>${far.toFixed(3)}</b>m &nbsp; ` +
