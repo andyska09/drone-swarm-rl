@@ -64,19 +64,22 @@ are elastic bounces, so nobody ever leaves.
 ## Reward
 
 ```
-r = -policy_dt · (1.0·‖g - x‖ + 0.1·‖ω‖ + 4.0·Σⱼ max(1 - dᵢⱼ/1.5, 0) - 1.0·R₃₃) - 50.0 · died
+r = -policy_dt · (1.0·‖g - x‖ + 0.1·‖ω‖ + 10.0·Σⱼ max(1 - dᵢⱼ/1.5, 0) - 1.0·R₃₃) - 25.0·N · died
 ```
 
-`crash` is 50.0, not A→B's 10.0. Shaping accrues 700 times per episode — 6 m of
-error costs 42 over a full episode — so at 10.0 a drone that cannot reach its goal
-buys its way out by dying, and the first `pair` run did exactly that in 32 of 32
-eval episodes. 50.0 is above that 42, so quitting only pays past 8.1 m of error,
-which is the arena wall. Gavin & Bronz 2026 keep the same order: `λ_fail = 30.0`
-against a distance weight of `λ_dist = 0.001`.
+`crash` is **25.0 per drone in the scene** — 50 at N = 2, 200 at N = 8 — not A→B's
+flat 10.0. Shaping accrues 700 times per episode: 6 m of error costs 42 over a full
+episode, and at N = 8 four neighbours held at 1.0 m add another 37. At 10.0 a drone
+that cannot reach its goal buys its way out by dying, and the first `pair` run did
+exactly that in 32 of 32 eval episodes. The penalty has to stay above the bill a
+living drone can run up, and that bill grows with the size of the crowd. Gavin &
+Bronz 2026 keep the same order: `λ_fail = 30.0` against `λ_dist = 0.001`.
 
-The distance and spin terms are A→B's, untouched. The near-miss
-term is Huang et al. 2024's shape and weight — `quads_collision_smooth_max_penalty
-= 4.0` against `pos = 1.0` — summed over every neighbour, not just the nearest.
+The distance and spin terms are A→B's, untouched. The near-miss term is Huang et
+al. 2024's shape and weight — `quads_collision_smooth_max_penalty = 10.0` against
+`pos = 1.0` — summed over every neighbour, not just the nearest. 10.0 is both the
+code default and the value in `runs/quad_multi_mix_baseline.py`, their 8-drone room
+with no obstacles; the 4.0 in their obstacle run is for a different scene.
 
 `R₃₃` is Huang's `α_orient·R_i,33` at their weight of 1.0: pay for pointing up.
 It was added after the first `pair` run, where the best checkpoint flipped drone 1

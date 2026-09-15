@@ -14,9 +14,9 @@ NEIGHBOR_FEATURES = 6
 @flax.struct.dataclass
 class RewardConfig:
     distance: float = 1.0
-    crash: float = 50.0
+    crash: float = 25.0  # per drone in the scene
     spin: float = 0.1
-    close: float = 4.0
+    close: float = 10.0
     orient: float = 1.0
 
 
@@ -151,7 +151,8 @@ def compute_reward(state, alive, died, params):
         + cfg.close * close
         - cfg.orient * d.R[:, 2, 2]
     )
-    return jnp.where(alive, -params.policy_dt * cost, 0.0) - cfg.crash * died
+    crash = cfg.crash * params.n_drones
+    return jnp.where(alive, -params.policy_dt * cost, 0.0) - crash * died
 
 
 def _random_tilt(key, max_angle):
