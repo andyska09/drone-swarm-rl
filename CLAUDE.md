@@ -51,6 +51,14 @@ it is for: **decentralized swarm interception** — N drones catching one agile
 evader, each seeing only itself, its neighbours and the target, with no
 communication between drones.
 
+Two tasks run today: `a_to_b` (one drone flies to a point and holds it) and
+`circle_swap` (N drones on a circle swap to the opposite side without touching).
+Chase, then interception, come next.
+
+The work cycle for a task: write it in `swarm/envs/`, fly it with the cascade to
+prove it is possible at all, train a policy with `run/train.py`, score both in the
+same seat with `run/eval.py`, then watch it in `run/replay.py`.
+
 The task ladder, the platform backlog, what is done, and every pass/fail gate
 live in [research/notes/goals.local.md](research/notes/goals.local.md)
 (gitignored, so a fresh clone does not have it). **Read it before planning work.**
@@ -95,11 +103,24 @@ Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
 - `envs/` — one file per task (`a_to_b.py`, `circle_swap.py`), each with `reset`,
-  `step`, `get_obs`, `EnvParams` and `PRESETS`. Plain functions, no gymnax;
-  auto-reset belongs to the trainer. `__init__.py` holds the shared `Obs` layout,
-  `flat`, `take` and `make(task, preset)`, which imports the task module by name.
-  Every task carries a drone axis, `N = 1` included, and each has a note beside it
-  in `research/notes/task_<name>.md`.
+  `step`, `get_obs`, `compute_reward`, `RewardConfig`, `EnvParams` and `PRESETS`.
+  Plain functions, no gymnax; auto-reset belongs to the trainer. `__init__.py` holds
+  the shared `Obs` layout, `flat`, `take` and `make(task, preset)`, which imports the
+  task module by name. Every task carries a drone axis, `N = 1` included, and each has
+  a note beside it in `research/notes/task_<name>.md`.
+- **Every task uses the same observation shape**: `Obs(own, neighbors,
+  neighbor_mask, target, target_mask)`. `own` is body-frame velocity, `R`, `omega`
+  and height. `target` is the body-frame offset to the goal — later to the evader.
+  `neighbors` is the K other drones a drone can see. A mask is a 0/1 column, and
+  `flat` zeroes the masked rows before it concatenates, so a neighbour that is not
+  there becomes zeros and never changes the vector width. `a_to_b` has no
+  neighbours, so its `neighbors` block is empty, not absent. Add a task, not a new
+  obs format.
+- The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
+  with a one-off crash penalty. `circle_swap` adds a proximity cost and an upright
+  term. **This reward parks the drone 0.2-0.6 m short of the goal** — the open
+  problem, with the fixes other papers use, is in
+  [research/notes/parking_error.md](research/notes/parking_error.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `learn/ppo.py` turns each distinct name in it into its own set of weights.
@@ -118,9 +139,9 @@ Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
   the `.npz` in JS (`np.savez` writes a *stored* zip, so no inflate library).
   `run/replay.py` serves the repo and lists every eval at `/evals.json`, so the
   viewer opens with a dropdown; dragging the files onto the page still works.
-- Written for **one drone**; batching is `jax.vmap` at the env boundary. No Python
-  branches on array values, no `.item()`, no value-dependent shapes —
-  `test_vmap_matches_python_loop` enforces it.
+- `sim/` is written for **one drone**. Both the drone axis and the parallel-env axis
+  are `jax.vmap` at the env boundary. No Python branches on array values, no
+  `.item()`, no value-dependent shapes — `test_vmap_matches_python_loop` enforces it.
 - Every design decision, deviation, and "revisit later" lives in
   [research/notes/choices.md](research/notes/choices.md). **Read it before
   changing the physics, and update it when a decision changes.**
@@ -147,9 +168,11 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 
 - `notes/` — working notes, Czech is fine. `goals.local.md` (GITIGNORED) holds
   the task ladder and the gates. `choices.md` holds every design decision.
-  `task_<name>.md` is one note per task. `comparisons.md` puts our observation
-  layout beside both reference repos. `lit_review.md` sorts the papers by
-  milestone. `learning/` are explainers, `experiments/` is one file per run.
+  `task_<name>.md` is one note per task. `parking_error.md` is the open reward
+  question, with the reward and observation terms every reference paper uses.
+  `comparisons.md` puts our observation layout beside both reference repos.
+  `lit_review.md` sorts the papers by milestone. `learning/` are explainers,
+  `experiments/` is one file per run.
 - `code_sources/` (GITIGNORED) — reference code, **not ours**:
   `mrs_multirotor_simulator/` (the C++ we reimplement), `PPO_example/` (the
   supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone).
