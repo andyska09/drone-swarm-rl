@@ -155,17 +155,22 @@ def compute_reward(state, alive, died, params):
     return jnp.where(alive, -params.policy_dt * cost, 0.0) - crash * died
 
 
-def _random_tilt(key, max_angle):
+def _start_attitude(key, yaw, max_angle):
+    """Body x points along `yaw`, plus a random tilt of up to `max_angle`."""
+
     k_axis, k_angle = jax.random.split(key)
     axis = jax.random.normal(k_axis, (3,))
     K = dynamics.skew(axis / _norm(axis))
     a = jax.random.uniform(k_angle, (), minval=0.0, maxval=max_angle)
-    return jnp.eye(3) + jnp.sin(a) * K + (1.0 - jnp.cos(a)) * (K @ K)
+    tilt = jnp.eye(3) + jnp.sin(a) * K + (1.0 - jnp.cos(a)) * (K @ K)
+
+    c, s = jnp.cos(yaw), jnp.sin(yaw)
+    return jnp.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]) @ tilt
 
 
 def reset(key, params):
     n = params.n_drones
-    k_vel, k_att = jax.random.split(key)
+    k_vel, k_att, k_yaw = jax.random.split(key, 3)
     center = jnp.asarray(params.center)
 
     angle = 2.0 * jnp.pi * jnp.arange(n) / n
@@ -181,8 +186,11 @@ def reset(key, params):
         v=jax.random.uniform(
             k_vel, (n, 3), minval=-params.start_vel_range, maxval=params.start_vel_range
         ),
-        R=jax.vmap(_random_tilt, in_axes=(0, None))(
-            jax.random.split(k_att, n), params.start_tilt
+        # Random heading, so the policy cannot key on one fixed R per drone.
+        R=jax.vmap(_start_attitude, in_axes=(0, 0, None))(
+            jax.random.split(k_att, n),
+            jax.random.uniform(k_yaw, (n,), maxval=2.0 * jnp.pi),
+            params.start_tilt,
         ),
         omega=jnp.zeros((n, 3)),
         rpm=jnp.full((n, 4), hover_rpm),

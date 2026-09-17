@@ -34,6 +34,22 @@ all at the same height, exactly on the ring — no position noise. Its goal is t
 point opposite. Everything else as in A→B: velocity ±0.5 m/s, random tilt up to
 0.2 rad, `ω = 0`, motors at hover RPM.
 
+**The starting heading is random**, uniform over the full circle, per drone.
+
+The first `circle8` run started every drone pointing along world x. `target` is in
+the body frame, so each drone then had its own fixed goal bearing and one shared
+network was learning N sub-tasks with one geometry each: end error ran from 0.156 m
+(goal straight backward) to 1.240 m (goal sideways), 8× across drones on identical
+physics.
+
+Pointing every drone at the centre would also make the N tasks identical, but it
+hides a worse problem. `own` carries all nine entries of `R`, and with a fixed
+heading the policy saw `R ≈ I` in every episode it ever trained on. Re-evaluating
+that policy with the drones turned to face the centre collapsed it — episodes ended
+at step 75 with colliding pairs, 4.35 m of the 6 m leg still to go. It had keyed on
+the absolute orientation, not on the goal bearing. A random yaw is the only reset
+that makes that impossible.
+
 Start spacing is `2r·sin(π/N)`: 6 m at N = 2, 2.30 m at N = 8. The crossing is
 6 m, the same leg as the A→B `default` preset, which a trained policy flies to
 0.208 m.
