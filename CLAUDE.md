@@ -8,10 +8,12 @@ When talking to me start the message with "TARS:"
 
 ### Style
 
-see output-styles
+for chat output style - when you are talking to me use simple english (see output-styles). 
 
+For code:
 - Blunt, minimal code. No base classes, protocols, registries. One file per
   concern, readable top to bottom.
+- When implementing stuff KEEP IT SIMPLE. This important. I do not want to read 1000 lines of diffs, I want to look at the change and know what it does. 
 - **Comments: as few as possible.** Only where the code cannot say it itself —
   a constraint, a non-obvious reason, a trap. Never restate what the line does.
   One clear sentence beats three. No banner blocks, no section dividers.
@@ -27,9 +29,6 @@ stop there - wait for me to ask before expanding it.
 
 I am new to this field. When I ask about a term, assume I want the concept explained plainly,
 not a literature review.
-
-When I shout and curse at you DO NOT apologize, it wastes tokens, just follow orders. 
-Next when writing code DO NOT write stupid comments and docstrings. Keep the code clean and high quality. When implementing stuff KEEP IT SIMPLE. This important. I do not want to read 1000 lines of diffs, I want to look at the change and know what it does. 
 
 ### Scratch files
 
@@ -47,8 +46,7 @@ A research workspace for multi-robot / swarm RL. Our own code lives in `swarm/`;
 from but do not edit.
 
 **The deliverable is a JAX multirotor simulator** fast enough to train swarm
-policies on thousands of parallel environments — written from scratch, because
-understanding the dynamics is the point of the exercise, not a side effect. What
+policies on thousands of parallel environments — written from scratch. What
 it is for: **decentralized swarm interception** — N drones catching one agile
 evader, each seeing only itself, its neighbours and the target, with no
 communication between drones.
@@ -126,19 +124,9 @@ Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
 - Every design decision, deviation, and "revisit later" lives in
   [research/notes/choices.md](research/notes/choices.md). **Read it before
   changing the physics, and update it when a decision changes.**
-
-**The golden trajectories are the gate.** `tools/mrs_golden/` runs the patched C++
-once per scenario and dumps the full state at every step to
-`tests/golden/*.csv`; the test replays the same input in JAX and demands 1e-9
-(worst measured: 1.1e-13). Five open-loop scenarios drive the plant directly;
-`rate_step`, `attitude_step`, `velocity_step` and `position_step` come from
-`UavSystem` and check the controllers too, so their command columns hold the
-reference, not motor throttles. `research/code_sources/` is gitignored, so those CSVs
-are the only copy of the reference in a fresh clone — never regenerate them to
-make a failing test pass. `conftest.py` turns on `jax_enable_x64` because the C++
+- `conftest.py` turns on `jax_enable_x64` because the C++
 is double precision.
-
-One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
+- One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
 MRS re-orthonormalizes as `R·L⁻¹`, which is not orthonormal and drifts ~3e-3 off
 SO(3); we use `R·L⁻ᵀ`. Hover is not a gate — it is an equilibrium, so a
 transposed allocation matrix or a missing `ω × Jω` sails through it. Only
