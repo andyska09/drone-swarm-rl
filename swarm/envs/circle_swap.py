@@ -131,6 +131,13 @@ def get_obs(state, params):
     )
 
 
+def reference(state, params):
+    """Where each drone is trying to fly: the cascade's input, and the viewer's marker."""
+
+    del params
+    return state.goal
+
+
 def is_dead(drone, params):
     return (
         (drone.x[:, 2] < 0.0)

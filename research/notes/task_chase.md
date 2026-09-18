@@ -77,26 +77,23 @@ and `velocity_gains(max_acceleration=4.0)`. Pliska's test targets reach 10 m/s a
 
 | | ours | Gavin |
 |---|---|---|
-| shape | flat circle in the drone's body xy plane | rigid circular disc, aligned with the body frame |
+| shape | circle standing in the body yz plane, face along body x | rigid circular disc, aligned with the body frame |
+| centre | `net_offset` below the drone, body frame | "mounted below each pursuer" |
 | `net_radius` | 0.5 m | `R`, no number published |
-| `net_offset` (hangs below) | 0.5 m | "mounted below each pursuer", no number |
-| `capture_dist` (half slab) | 0.4 m | "a capture distance", no number |
-| hitbox shape | cylinder: radius 0.5 m, height 0.8 m | not published |
+| `net_offset` (hangs below) | 0.5 m | no number |
+| `capture_dist` (half slab) | 0.2 m | "a capture distance", no number |
+| hitbox shape | disc: 1.0 m across, 0.4 m thick | not published |
 
 | step | formula |
 |---|---|
 | target offset, body frame | `p = Rᵀ(x_t − x)` |
-| distance from the net plane | `a = p_z + net_offset` |
-| distance from the net axis | `r = ‖(p_x, p_y)‖` |
+| net centre, body frame | `(0, 0, −net_offset)` |
+| distance across the disc | `r = ‖(p_y, p_z + net_offset)‖` |
+| distance through the disc | `a = p_x` |
 | caught | `(r <= net_radius) and (abs(a) <= capture_dist)` |
-| net centre | `c_net = x + R · (0, 0, −net_offset)` |
+| net centre, world | `c_net = x + R · (0, 0, −net_offset)` |
 
-`net_offset` must stay **above** `capture_dist`, or part of the cylinder sits above
-the drone and "catch from above" stops being enforced. At 0.5 and 0.4 the cylinder
-runs from 0.9 m to 0.1 m below the pursuer.
 
-Pliska et al. 2024 hang a **2 m radius** net under the same plant. Ours is 0.5 m —
-a quarter of that, and deliberately harder.
 
 ## Reward
 
@@ -200,22 +197,28 @@ python run/train.py --task chase --preset default --set gamma=0.99 --steps 2e8
 | `swarm/learn/ppo.py` | `role_slices` skips a scripted role, so it gets no weights |
 | `swarm/learn/vecenv.py` | the loss mask goes to 0 for a scripted drone |
 | `swarm/envs/{a_to_b,circle_swap}.py` | `scripted = ()`, so nothing needs a `getattr` |
+| every env | new `reference(state, params)` → `(n, 3)`: where each drone is trying to fly |
+| `swarm/learn/evaluate.py` | records `reference` **per step**; the cascade baseline reads it; header gains `net` |
+| `tools/viewer/index.html` | box arena when `arena` is a triple, the net cylinder, per-step goal |
+| `run/plot.py` | the goal is now per step, so it slices like every other field |
+
+`reference` has two users: the cascade baseline flies to it, and the viewer draws
+it as the marker sphere. For chase the pursuer's is the evader's position.
 
 `EnvState` carries its own PRNG key. `evaluate.rollout` passes one key for the
 whole episode, so a waypoint drawn from the caller's key would never change.
 
 ## Baseline
 
-The cascade flown at a point `net_offset` above the evader — pure pursuit — catches
-**16 of 16** episodes, median end step 489 (4.9 s)
-([scratch/chase_smoke.py](../../scratch/chase_smoke.py)). No gate; this is the
-number to look at beside the policy.
+The cascade flown straight at the evader — pure pursuit, measured by
+[scratch/chase_smoke.py](../../scratch/chase_smoke.py). Not measured yet. No gate:
+the cascade is a position controller and a weak pursuer. FRPN is the baseline that
+matters.
 
 ## Open
 
 | question | state |
 |---|---|
-| eval and viewer for a moving target | `evaluate.py` records the goal once from `reset`; the viewer draws a sphere arena and no net |
 | FRPN baseline | Pliska's guidance law; after the first run |
 | velocity term `‖v_e − v‖` | waiting on the `a_to_b` test |
 | curriculum with a sparse reward | later, after reward shaping works |

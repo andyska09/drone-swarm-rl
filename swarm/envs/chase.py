@@ -50,10 +50,11 @@ class EnvParams:
     start_vel_range: float = 0.5
     start_tilt: float = 0.2
 
-    # The net is a cylinder in the pursuer's body frame, hung under it.
+    # capture_dist is only the thickness that stops a fast target skipping the
+    # plane between two steps: 15 m/s closing moves 0.15 m per 0.01 s step.
     net_radius: float = 0.5
     net_offset: float = 0.5
-    capture_dist: float = 0.4
+    capture_dist: float = 0.2
 
     waypoint_range: float = 3.0
     waypoint_reach: float = 0.2
@@ -122,10 +123,15 @@ def net_centre(drone, params):
 
 
 def _net_frame(drone, params):
-    """The evader in the net's frame: distance across the disc, and along its axis."""
+    """The evader in the net's frame: distance across the disc, and along its axis.
+
+    The net is a vertical disc hanging net_offset below the pursuer, its face
+    pointing forward along body x. The pursuer drags it into the evader.
+    """
 
     p = drone.R[PURSUER].T @ (drone.x[EVADER] - drone.x[PURSUER])
-    return _norm(p[:2]), p[2] + params.net_offset
+    across = jnp.array([p[1], p[2] + params.net_offset])
+    return _norm(across), p[0]
 
 
 def is_caught(drone, params):
@@ -148,6 +154,13 @@ def get_obs(state, params):
         ),
         target_mask=jnp.ones(n),
     )
+
+
+def reference(state, params):
+    """Where each drone is trying to fly: the cascade's input, and the viewer's marker."""
+
+    del params
+    return jnp.stack([state.drone.x[EVADER], state.waypoint])
 
 
 def is_dead(drone, params):

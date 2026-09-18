@@ -38,7 +38,8 @@ def test_eval_writes_what_the_viewer_needs(tmp_path):
     traj = np.load(out / "trajectory.npz")
     assert traj["x"].shape == (evaluate.TRAJECTORIES, 500, 1, 3)
     assert traj["R"].shape == (evaluate.TRAJECTORIES, 500, 1, 3, 3)
-    assert traj["goal"].shape == (evaluate.TRAJECTORIES, 1, 3)
+    # The goal is recorded per step, because a chase target moves.
+    assert traj["goal"].shape == (evaluate.TRAJECTORIES, 500, 1, 3)
 
     header = json.loads((out / "header.json").read_text())
     assert header["roles"] == ["drone"] and header["arena"] == 10.0

@@ -31,7 +31,7 @@ def load(path, episode, drone):
         "rpm": cut("rpm"),
         "throttle": np.asarray(throttle),
         "rate_ref": np.asarray(rate_ref),
-        "goal": np.asarray(traj["goal"])[episode, drone],
+        "goal": cut("goal"),
     }
 
 

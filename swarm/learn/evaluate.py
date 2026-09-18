@@ -30,7 +30,8 @@ def checkpoint_name(text):
 
 
 def net_policy(cfg, env, env_params, weights):
-    apply = ppo.make_apply(ppo.make_net(cfg, env), ppo.role_slices(env_params.roles))
+    slices = ppo.role_slices(env_params.roles, env_params.scripted)
+    apply = ppo.make_apply(ppo.make_net(cfg, env), slices)
 
     def act(state, obs, carry):
         del state
@@ -56,7 +57,7 @@ def cascade_policy(env, env_params):
             )
             return env.command_to_action(throttle, rate_ref, env_params), pid
 
-        return jax.vmap(one)(state.drone, state.goal, pids)
+        return jax.vmap(one)(state.drone, env.reference(state, env_params), pids)
 
     return act, pids
 
@@ -66,7 +67,7 @@ def _hold(done, new, old):
 
 
 def rollout(key, env, env_params, act, carry):
-    """One episode to its own end. Per step: drone state, action, reward, info, live mask."""
+    """One episode to its own end. Per step: drone, reference, action, reward, info, live."""
 
     obs, state = env.reset(key, env_params)
 
@@ -82,6 +83,7 @@ def rollout(key, env, env_params, act, carry):
         live = ~done
         return (state, obs, carry, done | ended), (
             state.drone,
+            env.reference(state, env_params),
             action,
             reward * live,
             info,
@@ -122,13 +124,12 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
     keys = jax.random.split(jax.random.PRNGKey(EVAL_SEED), episodes)
 
     def measure(key):
-        _, _, reward, info, live = rollout(key, env, env_params, act, carry)
+        _, _, _, reward, info, live = rollout(key, env, env_params, act, carry)
         return summarize(reward, info, live)
 
     def trace(key):
-        drone, action, _, _, live = rollout(key, env, env_params, act, carry)
-        _, state = env.reset(key, env_params)
-        return drone, action, state.goal, live
+        drone, goal, action, _, _, live = rollout(key, env, env_params, act, carry)
+        return drone, action, goal, live
 
     per_episode = jax.jit(jax.vmap(measure))(keys)
     drone, action, goal, live = jax.jit(jax.vmap(trace))(keys[:TRAJECTORIES])
@@ -162,6 +163,12 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
         action=np.asarray(action),
         **{f.name: np.asarray(getattr(drone, f.name)) for f in drone.__dataclass_fields__.values()},
     )
+    # A scalar arena is a ball, a triple is a box. The net is chase-only.
+    net = {
+        f: getattr(env_params, f)
+        for f in ("net_radius", "net_offset", "capture_dist")
+        if hasattr(env_params, f)
+    }
     (out / "header.json").write_text(
         json.dumps(
             {
@@ -170,6 +177,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
                 "roles": list(env_params.roles),
                 "center": list(env_params.center),
                 "arena": env_params.arena,
+                "net": net or None,
                 "hitbox": env_params.model.arm_length + env_params.model.prop_radius,
                 "policy_dt": env_params.policy_dt,
             },
