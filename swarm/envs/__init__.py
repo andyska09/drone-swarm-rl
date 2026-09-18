@@ -11,7 +11,7 @@ class Obs:
     """Per-drone observations; batching adds leading dimensions to these shapes."""
 
     own: jnp.ndarray  # (N, f)
-    neighbors: jnp.ndarray  # (N, K, f), last column flags same side
+    neighbors: jnp.ndarray  # (N, K, f), body-frame offset and velocity of the K nearest
     neighbor_mask: jnp.ndarray  # (N, K)
     target: jnp.ndarray  # (N, f)
     target_mask: jnp.ndarray  # (N,)

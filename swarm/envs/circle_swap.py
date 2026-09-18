@@ -26,6 +26,7 @@ class EnvParams:
     reward: RewardConfig = flax.struct.field(default_factory=RewardConfig)
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("drone", "drone"))
+    scripted: tuple = flax.struct.field(pytree_node=False, default=())
 
     sim_dt: float = 0.005
     steps_per_action: int = flax.struct.field(pytree_node=False, default=2)

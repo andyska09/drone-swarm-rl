@@ -75,9 +75,14 @@ def step(vec, action, env, params, cfg):
     done = done.astype(reward.dtype)
     alive = info["alive"].astype(reward.dtype)
 
+    # A scripted drone flies, but nothing about it reaches the loss.
+    learned = jnp.array(
+        [r not in params.scripted for r in params.roles], reward.dtype
+    )
+
     info = dict(info)
     info["done"] = done
-    info["mask"] = alive + info["died_this_step"].astype(reward.dtype)
+    info["mask"] = (alive + info["died_this_step"].astype(reward.dtype)) * learned
     info["cont"] = alive * (1.0 - done[:, None])
     info["bootstrap"] = alive * info["truncated"][:, None].astype(reward.dtype)
     info["ep_return"] = vec.ep_return + reward

@@ -78,10 +78,13 @@ def entropy(log_std):
     return jnp.sum(log_std + 0.5 * (LOG_2PI + 1.0), axis=-1)
 
 
-def role_slices(roles):
+def role_slices(roles, scripted=()):
+    """One entry per learned role. A scripted role gets no weights and no loss."""
+
     return {
         name: jnp.array([i for i, r in enumerate(roles) if r == name])
         for name in dict.fromkeys(roles)
+        if name not in scripted
     }
 
 
@@ -128,7 +131,7 @@ def make(cfg, env, env_params):
     batch_size = cfg.num_envs * cfg.num_steps
 
     net = make_net(cfg, env)
-    slices = role_slices(env_params.roles)
+    slices = role_slices(env_params.roles, env_params.scripted)
     apply = make_apply(net, slices)
 
     def init(key):
