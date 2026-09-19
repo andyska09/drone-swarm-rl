@@ -92,8 +92,9 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
 Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
-`circle8`. A preset picks env values only — hyperparameters live in
-`learn/config.py` and are overridden with `--set`.
+`circle8`; `chase` has `default` (1 pursuer) and `three`. A preset picks env
+values only — hyperparameters live in `learn/config.py` and are overridden with
+`--set`.
 
 - `sim/dynamics.py` — `Params`/`State` as `flax.struct.dataclass`,
   `step(state, throttle, params, dt)` with `throttle ∈ [0,1]⁴`. RK4 over the 18
@@ -102,12 +103,21 @@ Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
   `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
-- `envs/` — one file per task (`a_to_b.py`, `circle_swap.py`), each with `reset`,
-  `step`, `get_obs`, `compute_reward`, `RewardConfig`, `EnvParams` and `PRESETS`.
-  Plain functions, no gymnax; auto-reset belongs to the trainer. `__init__.py` holds
-  the shared `Obs` layout, `flat`, `take` and `make(task, preset)`, which imports the
-  task module by name. Every task carries a drone axis, `N = 1` included, and each has
-  a note beside it in `research/notes/task_<name>.md`.
+- `envs/` — one file per task (`a_to_b.py`, `circle_swap.py`, `chase.py`), each with
+  `reset`, `step`, `get_obs`, `reference`, `compute_reward`, `RewardConfig`,
+  `EnvParams` and `PRESETS`. Plain functions, no gymnax; auto-reset belongs to the
+  trainer. `__init__.py` holds the shared `Obs` layout, `flat`, `take`,
+  `make(task, preset)` and **the env contract every task file must meet** — read it
+  before writing a task. Every task carries a drone axis, `N = 1` included, and each
+  has a note beside it in `research/notes/task_<name>.md`.
+- **`envs/core.py` holds everything the tasks share**: `Common` (the 15 `EnvParams`
+  fields every task has, which each task's `EnvParams` inherits), `fly` (the rate
+  loop and the plant for one policy step), `own_obs`/`target_obs`/`neighbors`,
+  `spawn`, `hits`, `is_dead`, and the CTBR action conversion. A task file holds only
+  what makes that task different. Do not copy a helper into a task file.
+- **No task names a drone by number.** `roles` is static, so a task reads its own
+  index arrays from it — see `chase._sides`. That is what lets `PRESETS["three"]`
+  add two more pursuers with no other change.
 - **Every task uses the same observation shape**: `Obs(own, neighbors,
   neighbor_mask, target, target_mask)`. `own` is body-frame velocity, `R`, `omega`
   and height. `target` is the body-frame offset to the goal — later to the evader.
@@ -129,6 +139,10 @@ Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
   directory, checkpoints, wandb), `config.py` (hyperparameters), `evaluate.py`
   (fixed eval seeds, mean actions, no auto-reset). Knows nothing about drones: it
   takes an env *module* and one network per role.
+- **Every role is its own learner.** One `TrainState` per role, so gradient
+  clipping, Adam state, advantage scaling and reward scaling never mix two sides of
+  a game. `cfg.train_roles` names the roles that take a step; empty means all. That
+  is how task 4 alternates — freeze the pursuer, train the evader, switch.
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
@@ -159,8 +173,8 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 |---|---|
 | `test_dynamics.py` | the plant against the goldens |
 | `test_control.py` | the cascade against the goldens |
-| `test_env.py` | the cascade flies the task (`a_to_b` only so far) |
-| `test_learn.py` | it learns, and the same seed gives the same numbers |
+| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, and `scripted` decides who flies the evader |
+| `test_learn.py` | it learns, the same seed gives the same numbers, and a frozen role does not move |
 | `test_runner.py` | a run says what produced it and resumes |
 | `test_eval.py` | the cascade in the policy's seat scores the cascade's number |
 

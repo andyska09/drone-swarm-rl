@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from swarm import envs
+from swarm.envs import core
 
 AXES = ("x", "y", "z")
 
@@ -19,11 +20,11 @@ def load(path, episode, drone):
     path = pathlib.Path(path)
     traj = np.load(path / "trajectory.npz")
     header = json.loads((path / "header.json").read_text())
-    env, params = envs.make(header["task"], header["preset"])
+    _, params = envs.make(header["task"], header["preset"])
 
     k = max(int(traj["live"][episode].sum()), 1)
     cut = lambda name: np.asarray(traj[name])[episode, :k, drone]
-    throttle, rate_ref = env.action_to_command(cut("action"), params)
+    throttle, rate_ref = core.action_to_command(cut("action"), params)
 
     return header, params, k, {
         "x": cut("x"),

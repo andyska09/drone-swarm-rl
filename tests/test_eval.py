@@ -42,7 +42,7 @@ def test_eval_writes_what_the_viewer_needs(tmp_path):
     assert traj["goal"].shape == (evaluate.TRAJECTORIES, 500, 1, 3)
 
     header = json.loads((out / "header.json").read_text())
-    assert header["roles"] == ["drone"] and header["arena"] == 10.0
+    assert header["roles"] == ["drone"] and header["arena"] == [32.0, 32.0, 16.0]
 
     spec = json.loads((out / "eval.json").read_text())
     assert spec["eval_seed"] == evaluate.EVAL_SEED and spec["episodes"] == 16

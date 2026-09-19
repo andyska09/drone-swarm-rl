@@ -26,6 +26,10 @@ class TrainConfig:
     ent_coef: float = 0.0
     max_grad_norm: float = 0.5
 
+    # Which roles take gradient steps. Empty means all of them. Freezing one side
+    # and training the other is how the evader learns without runaway self-play.
+    train_roles: tuple = ()
+
     hidden: tuple = (256, 256)
     activation: str = "tanh"
     # A smaller initial standard deviation reduces action clipping.

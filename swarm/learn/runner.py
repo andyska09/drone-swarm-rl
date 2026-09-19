@@ -69,7 +69,7 @@ def save(path, update, carry):
     train_state, vec, obs, key = carry
     weights = {
         "update": update,
-        "params": jax.device_get(train_state.params),
+        "params": jax.device_get({r: t.params for r, t in train_state.items()}),
     }
     with (path / "checkpoints" / f"{update:07d}.pkl").open("wb") as f:
         pickle.dump(weights, f)
@@ -79,8 +79,10 @@ def save(path, update, carry):
         pickle.dump(
             {
                 **weights,
-                "opt_state": jax.device_get(train_state.opt_state),
-                "step": int(train_state.step),
+                "opt_state": jax.device_get(
+                    {r: t.opt_state for r, t in train_state.items()}
+                ),
+                "step": {r: int(t.step) for r, t in train_state.items()},
                 "vec": jax.device_get(vec),
                 "obs": jax.device_get(obs),
                 "key": jax.device_get(key),
@@ -95,9 +97,14 @@ def load(path, name="latest.pkl"):
 
 
 def restore(carry, saved):
-    train_state = carry[0].replace(
-        params=saved["params"], opt_state=saved["opt_state"], step=saved["step"]
-    )
+    train_state = {
+        role: t.replace(
+            params=saved["params"][role],
+            opt_state=saved["opt_state"][role],
+            step=saved["step"][role],
+        )
+        for role, t in carry[0].items()
+    }
     return train_state, saved["vec"], saved["obs"], saved["key"]
 
 

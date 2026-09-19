@@ -202,14 +202,10 @@ function build() {
   const palette = [0x4fa3ff, 0xff8b5e, 0x62d38a, 0xd98bff, 0xffd166, 0x5edfd8, 0xff6b8a, 0x9aa7ff];
 
   if (header.arena) {
-    // A number is a ball around the centre; three numbers are a box.
     const a = header.arena;
-    const shape = Array.isArray(a)
-      ? new THREE.BoxGeometry(a[0], a[1], a[2])
-      : new THREE.SphereGeometry(a, 24, 16);
-    const box = new THREE.Mesh(shape,
+    const box = new THREE.Mesh(new THREE.BoxGeometry(a[0], a[1], a[2]),
       new THREE.MeshBasicMaterial({ color: 0x2b3346, wireframe: true }));
-    if (Array.isArray(a)) box.position.set(...(header.center || [0, 0, 0]));
+    box.position.set(...(header.center || [0, 0, 0]));
     world.add(box);
   }
 
@@ -228,16 +224,16 @@ function build() {
           { color, transparent: true, opacity: 0.12, depthWrite: false })));
     }
 
-    // The capture volume, bolted to the body so it tilts with the drone.
+    // The net square, bolted to the body so it tilts with the drone.
     if (header.net && (header.roles || [])[i] === "pursuer") {
-      const cyl = new THREE.Mesh(
-        new THREE.CylinderGeometry(header.net.net_radius, header.net.net_radius,
-          2 * header.net.capture_dist, 24, 1, true),
+      const s = header.net.net_side;
+      const net = new THREE.Mesh(
+        new THREE.PlaneGeometry(s, s),
         new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true,
-          transparent: true, opacity: 0.35 }));
-      cyl.rotation.z = Math.PI / 2;               // three.js cylinders run along y
-      cyl.position.z = -header.net.net_offset;
-      q.add(cyl);
+          transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+      net.rotation.y = Math.PI / 2;               // three.js planes face +z
+      net.position.z = -header.net.net_offset;
+      q.add(net);
     }
 
     const goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),

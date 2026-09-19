@@ -92,6 +92,18 @@ def _mean(x, mask):
     return jnp.sum(x * mask) / jnp.maximum(jnp.sum(mask), 1.0)
 
 
+def normalize_by_role(adv, mask, slices):
+    """Centre and scale each role on its own. A pursuer and an evader have
+    opposite signs and different sizes, so one shared scale flattens both."""
+
+    out = jnp.zeros_like(adv)
+    for drones in slices.values():
+        a, m = adv[..., drones], mask[..., drones]
+        centred = a - _mean(a, m)
+        out = out.at[..., drones].set(centred / (jnp.sqrt(_mean(centred**2, m)) + 1e-8))
+    return out
+
+
 def make_net(cfg, env):
     return ActorCritic(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_log_std)
 
@@ -100,7 +112,7 @@ def make_apply(net, slices):
     """Apply each role's weights and return outputs in drone order."""
 
     def apply(params, obs):
-        lead = obs.target_mask.shape
+        lead = obs.own.shape[:-1]
         mean = jnp.zeros(lead + (net.num_actions,))
         log_std = jnp.zeros(lead + (net.num_actions,))
         value = jnp.zeros(lead)
@@ -134,16 +146,14 @@ def make(cfg, env, env_params):
     slices = role_slices(env_params.roles, env_params.scripted)
     apply = make_apply(net, slices)
 
+    trained = tuple(r for r in slices if not cfg.train_roles or r in cfg.train_roles)
+
     def init(key):
         key, k_env, k_net = jax.random.split(key, 3)
         obs, vec = vecenv.reset(k_env, env, env_params, cfg)
 
         one_scene = jax.tree.map(lambda x: x[:1], obs)
         keys = jax.random.split(k_net, len(slices))
-        params = {
-            role: net.init(k, envs.take(one_scene, drones))
-            for (role, drones), k in zip(slices.items(), keys)
-        }
 
         if cfg.anneal_lr:
 
@@ -154,20 +164,29 @@ def make(cfg, env, env_params):
         else:
             lr = cfg.lr
 
-        ts = TrainState.create(
-            apply_fn=None,
-            params=params,
-            tx=optax.chain(
-                optax.clip_by_global_norm(cfg.max_grad_norm), optax.adam(lr, eps=1e-5)
-            ),
-        )
+        # One TrainState per role, so gradient clipping and Adam never mix two
+        # sides of a game, and a role can be frozen without touching the other.
+        ts = {
+            role: TrainState.create(
+                apply_fn=None,
+                params=net.init(k, envs.take(one_scene, drones)),
+                tx=optax.chain(
+                    optax.clip_by_global_norm(cfg.max_grad_norm),
+                    optax.adam(lr, eps=1e-5),
+                ),
+            )
+            for (role, drones), k in zip(slices.items(), keys)
+        }
         return ts, vec, obs, key
+
+    def weights(ts):
+        return {role: t.params for role, t in ts.items()}
 
     def update(ts, vec, obs, key):
         def rollout(carry, _):
             ts, vec, obs, key = carry
             key, k = jax.random.split(key)
-            mean, log_std, value = apply(ts.params, obs)
+            mean, log_std, value = apply(weights(ts), obs)
             action = sample(k, mean, log_std)
             next_obs, vec, reward, done, info = vecenv.step(
                 vec, action, env, env_params, cfg
@@ -189,13 +208,13 @@ def make(cfg, env, env_params):
 
         # Bootstrap timeouts from the final observation before the scene resets.
         # A diverged drone makes v_final NaN, and NaN * 0 is NaN, so select instead.
-        _, _, v_final = apply(ts.params, info["final_obs"])
+        _, _, v_final = apply(weights(ts), info["final_obs"])
         traj = traj.replace(
             reward=traj.reward
             + cfg.gamma * jnp.where(info["bootstrap"] > 0, v_final, 0.0)
         )
 
-        _, _, last_value = apply(ts.params, obs)
+        _, _, last_value = apply(weights(ts), obs)
 
         def gae_step(carry, tr):
             gae, next_value = carry
@@ -230,13 +249,12 @@ def make(cfg, env, env_params):
 
             def minibatch(ts, batch):
                 tr, a, target = batch
+                a_n = normalize_by_role(a, tr.mask, slices)
 
                 def loss_fn(params):
                     mean, log_std, value = apply(params, tr.obs)
                     ratio = jnp.exp(log_prob(tr.action, mean, log_std) - tr.log_prob)
 
-                    centred = a - _mean(a, tr.mask)
-                    a_n = centred / (jnp.sqrt(_mean(centred**2, tr.mask)) + 1e-8)
                     policy = -_mean(
                         jnp.minimum(
                             ratio * a_n,
@@ -254,9 +272,13 @@ def make(cfg, env, env_params):
                         tr.mask,
                     )
 
-                (_, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(ts.params)
+                (_, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(weights(ts))
                 policy, value_loss, ent, ratio, mask = aux
-                return ts.apply_gradients(grads=grads), {
+                stepped = {
+                    role: t.apply_gradients(grads=grads[role]) if role in trained else t
+                    for role, t in ts.items()
+                }
+                return stepped, {
                     "policy_loss": policy,
                     "value_loss": value_loss,
                     "entropy": ent,

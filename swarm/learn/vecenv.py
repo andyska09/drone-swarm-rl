@@ -57,7 +57,10 @@ def reset(key, env, params, cfg):
     vec = VecState(
         env=env_state,
         key=key,
-        rew_norm=Normalizer(jnp.zeros(1), jnp.ones(1), jnp.asarray(1e-4)),
+        # One scale per drone column, so a pursuer and an evader are not pooled.
+        rew_norm=Normalizer(
+            jnp.zeros(params.n_drones), jnp.ones(params.n_drones), jnp.asarray(1e-4)
+        ),
         ret=jnp.zeros((cfg.num_envs, params.n_drones)),
         ep_return=jnp.zeros((cfg.num_envs, params.n_drones)),
         ep_length=jnp.zeros(cfg.num_envs, jnp.int32),
@@ -100,7 +103,7 @@ def step(vec, action, env, params, cfg):
     rew_norm = vec.rew_norm
     ret = vec.ret * cfg.gamma + reward
     if cfg.normalize_reward:
-        rew_norm = _welford(rew_norm, ret.reshape(-1, 1))
+        rew_norm = _welford(rew_norm, ret)
         reward = reward / jnp.sqrt(rew_norm.var + 1e-8)
 
     vec = VecState(

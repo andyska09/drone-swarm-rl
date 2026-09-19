@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from swarm import envs
+from swarm.envs import core
 from swarm.learn import config, ppo, runner
 from swarm.sim import control
 
@@ -55,7 +56,7 @@ def cascade_policy(env, env_params):
             (throttle, rate_ref), pid = control.cascade_outer(
                 drone, goal, 0.0, pid, gains, env_params.model, env_params.policy_dt
             )
-            return env.command_to_action(throttle, rate_ref, env_params), pid
+            return core.command_to_action(throttle, rate_ref, env_params), pid
 
         return jax.vmap(one)(state.drone, env.reference(state, env_params), pids)
 
@@ -163,10 +164,10 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
         action=np.asarray(action),
         **{f.name: np.asarray(getattr(drone, f.name)) for f in drone.__dataclass_fields__.values()},
     )
-    # A scalar arena is a ball, a triple is a box. The net is chase-only.
+    # The net is chase-only.
     net = {
         f: getattr(env_params, f)
-        for f in ("net_radius", "net_offset", "capture_dist")
+        for f in ("net_side", "net_offset")
         if hasattr(env_params, f)
     }
     (out / "header.json").write_text(
@@ -176,9 +177,9 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
                 "preset": preset or cfg.preset,
                 "roles": list(env_params.roles),
                 "center": list(env_params.center),
-                "arena": env_params.arena,
+                "arena": list(env_params.arena),
                 "net": net or None,
-                "hitbox": env_params.model.arm_length + env_params.model.prop_radius,
+                "hitbox": 0.5 * env_params.collision_dist,
                 "policy_dt": env_params.policy_dt,
             },
             indent=2,

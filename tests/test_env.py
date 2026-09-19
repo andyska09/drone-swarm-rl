@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from swarm.envs import a_to_b, flat
+from swarm.envs import a_to_b, chase, core, flat
 from swarm.sim import control
 
 PRESETS = ("hover", "default")
@@ -27,7 +27,7 @@ def cascade_policy(params):
             (throttle, rate_ref), pid = control.cascade_outer(
                 drone, goal, 0.0, pid, gains, params.model, params.policy_dt
             )
-            return a_to_b.command_to_action(throttle, rate_ref, params), pid
+            return core.command_to_action(throttle, rate_ref, params), pid
 
         return jax.vmap(one)(state.drone, state.goal, pids)
 
@@ -70,9 +70,9 @@ def test_shapes_and_dtypes_survive_a_step():
     obs, state = a_to_b.reset(jax.random.PRNGKey(0), params)
 
     assert obs.own.shape == (n, 16)
-    assert obs.neighbors.shape == (n, k, a_to_b.NEIGHBOR_FEATURES)
-    assert obs.target.shape == (n, 6) and obs.target_mask.shape == (n,)
-    assert flat(obs).shape == (n, 16 + k * a_to_b.NEIGHBOR_FEATURES + k + 7)
+    assert obs.others.shape == (n, k, core.OTHER_FEATURES)
+    assert obs.target.shape == (n, 6)
+    assert flat(obs).shape == (n, 16 + k * core.OTHER_FEATURES + k + 6)
 
     action = jnp.zeros((n, a_to_b.NUM_ACTIONS))
     obs2, state2, reward, done, info = a_to_b.step(jax.random.PRNGKey(1), state, action, params)
@@ -121,6 +121,80 @@ def test_timeout_truncates_without_terminating():
 
     _, _, _, done, info = a_to_b.step(jax.random.PRNGKey(1), state, action, params)
     assert bool(done) and bool(info["truncated"]) and bool(jnp.all(info["alive"]))
+
+
+@pytest.mark.parametrize("preset", ("default", "three"))
+def test_chase_reads_its_drone_count_from_roles(preset):
+    params = chase.PRESETS[preset]
+    n, k = params.n_drones, params.n_visible
+    obs, state = chase.reset(jax.random.PRNGKey(0), params)
+
+    action = jnp.zeros((n, chase.NUM_ACTIONS))
+    _, _, reward, done, info = chase.step(jax.random.PRNGKey(1), state, action, params)
+
+    # chase flies at a drone, never at a fixed point, so it has no target block.
+    assert obs.target.shape == (n, 0)
+    assert flat(obs).shape == (n, 16 + k * core.OTHER_FEATURES + k)
+    assert reward.shape == (n,) and done.shape == () and info["caught"].shape == ()
+    assert chase.reference(state, params).shape == (n, 3)
+    assert chase.is_caught(state.drone, params).shape == (params.roles.count("pursuer"),)
+
+    # Every other drone has a seat, and the flag says which are the same role.
+    role = jnp.array([params.roles[i] == "pursuer" for i in range(n)])
+    assert jnp.all(obs.others_mask == 1.0), "a drone in range lost its seat"
+    for i in range(n):
+        same = obs.others[i, :, -1]
+        assert int(same.sum()) == int(jnp.sum(role == role[i])) - 1
+
+
+def test_one_catch_pays_every_pursuer():
+    params = chase.PRESETS["three"]
+    _, state = chase.reset(jax.random.PRNGKey(0), params)
+    pursuers, evader = chase._sides(params)
+
+    # Park the evader in the net of pursuer 1 and move the others clear.
+    x = state.drone.x.at[evader].set(state.drone.x[1] - jnp.array([0.0, 0.0, 0.4]))
+    x = x.at[0].set(jnp.array([0.0, 0.0, 8.0])).at[2].set(jnp.array([6.0, 6.0, 8.0]))
+    drone = state.drone.replace(x=x, R=jnp.stack([jnp.eye(3)] * params.n_drones))
+
+    caught = chase.is_caught(drone, params)
+    assert list(caught) == [False, True, False]
+
+    reward = chase.compute_reward(
+        state.replace(drone=drone),
+        jnp.zeros((params.n_drones, 3)),
+        jnp.ones(params.n_drones, bool),
+        jnp.zeros(params.n_drones, bool),
+        jnp.any(caught),
+        params,
+    )
+    assert jnp.all(reward[pursuers] > 0.9 * params.reward.catch), "a pursuer went unpaid"
+    assert reward[evader] < -0.9 * params.reward.catch, "the evader was not billed"
+
+
+def test_scripted_decides_who_flies_the_evader():
+    params = chase.PRESETS["default"]
+    _, evader = chase._sides(params)
+
+    def evader_motors(env_params, throttle):
+        """One step is 10 ms, so the motors move long before the position does."""
+
+        _, state = chase.reset(jax.random.PRNGKey(0), env_params)
+        action = jnp.zeros((env_params.n_drones, chase.NUM_ACTIONS))
+        action = action.at[evader, 0].set(throttle)
+        _, out, _, _, _ = chase.step(jax.random.PRNGKey(1), state, action, env_params)
+        return out.drone.rpm[evader]
+
+    scripted = params.replace(scripted=("evader",))
+    assert jnp.array_equal(evader_motors(scripted, -1.0), evader_motors(scripted, 1.0)), (
+        "the cascade should fly a scripted evader, whatever the network asked for"
+    )
+
+    free = params.replace(scripted=())
+    idle, full = evader_motors(free, -1.0), evader_motors(free, 1.0)
+    assert jnp.all(full > 1.05 * idle), (
+        "with nothing scripted the network's action must reach the motors"
+    )
 
 
 def test_vmap_matches_python_loop():
