@@ -62,7 +62,7 @@ def _sides(params):
 
 
 def _drop(params):
-    """The net hangs by net_offset, so its centre is half a side lower again."""
+    """The net hangs by net_offset"""
 
     return params.net_offset + 0.5 * params.net_side
 
@@ -75,8 +75,7 @@ def net_centre(drone, params):
 
 
 def net_frame(drone, params):
-    """(P, N, 3): every drone seen from every pursuer's net. The net is a square in
-    the body yz plane, so x is the distance across it and (y, z) the spot on it."""
+    """(P, N, 3): every drone seen from every pursuer's net. The net is a square in the body yz plane, so x is the distance across it and (y, z) the spot on it."""
 
     pursuers, _ = _sides(params)
     p = jnp.einsum(
@@ -88,8 +87,7 @@ def net_frame(drone, params):
 def in_net(drone, params):
     """(P, N): drone k touches pursuer p's net.
 
-    The square has no thickness. The drone is a ball, so it touches the square when
-    its centre is within one body radius of the plane and sits over the square.
+    The square has no thickness. The drone is a ball, so it touches the square when its centre is within one body radius of the plane and sits over the square.
     """
 
     p = net_frame(drone, params)
@@ -118,8 +116,7 @@ def get_obs(state, params):
         own=core.own_obs(state.drone),
         others=others,
         others_mask=mask,
-        # Nobody here flies at a fixed point: a pursuer chases a drone and the
-        # evader runs from one, and both sit in `others`.
+        # Nobody here flies at a fixed point: a pursuer chases a drone and the evader runs from one, and both sit in `others`.
         target=jnp.zeros((params.n_drones, 0)),
     )
 
@@ -146,19 +143,19 @@ def collPE(drone, params):
 
 
 def is_dead(drone, params):
-    """Both end the episode, but they are paid at different rates, so `step` keeps
-    them apart. Attitude kills nobody."""
+    """Both end the episode, but they are paid at different rates, so `step` keeps them apart"""
 
     return crashed(drone, params) | collPP(drone, params)
 
 
 def reference(state, params):
+    """A pursuer flies its NET onto the evader, so it aims `_drop` above it. Flying
+    its body there would hold the evader above the square and never catch."""
+
     pursuers, evader = _sides(params)
-    return (
-        jnp.broadcast_to(state.waypoint, (params.n_drones, 3))
-        .at[pursuers]
-        .set(state.drone.x[evader])
-    )
+    d = state.drone
+    aim = d.x[evader] + _drop(params) * d.R[pursuers, :, 2]
+    return jnp.broadcast_to(state.waypoint, (params.n_drones, 3)).at[pursuers].set(aim)
 
 
 def compute_reward(state, rate_ref, alive, crash, collide, caught, params):
@@ -177,7 +174,9 @@ def compute_reward(state, rate_ref, alive, crash, collide, caught, params):
     catch = jnp.full(params.n_drones, cfg.catch).at[evader].set(-cfg.catch)
 
     return (
-        jnp.where(alive, params.policy_dt * (clock - cfg.cmd * core.norm(rate_ref)), 0.0)
+        jnp.where(
+            alive, params.policy_dt * (clock - cfg.cmd * core.norm(rate_ref)), 0.0
+        )
         + catch * caught
         - cfg.collPP * collide
         - cfg.crash * crash
