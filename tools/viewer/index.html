@@ -232,7 +232,7 @@ function build() {
         new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true,
           transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
       net.rotation.y = Math.PI / 2;               // three.js planes face +z
-      net.position.z = -header.net.net_offset;
+      net.position.z = -(header.net.net_offset + s / 2);
       q.add(net);
     }
 

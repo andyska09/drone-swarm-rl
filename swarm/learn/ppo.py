@@ -164,8 +164,6 @@ def make(cfg, env, env_params):
         else:
             lr = cfg.lr
 
-        # One TrainState per role, so gradient clipping and Adam never mix two
-        # sides of a game, and a role can be frozen without touching the other.
         ts = {
             role: TrainState.create(
                 apply_fn=None,

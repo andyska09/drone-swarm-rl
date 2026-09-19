@@ -23,27 +23,28 @@ Every value beside a Gavin column is from
 | my attitude | `own` | `vec(R)`, 9 | `vec(R)`, 9 | `vec(R)`, 9 |
 | my body rate | `own` | `ω` body, 3 | none | none |
 | walls | `own` | height `z`, 1 | `z` + M horizontal rays | 6 wall distances |
-| target position | `target` | `Rᵀ(x_other − x)`, 3 | `Rᵀ(p_j − p_i)`, 3 | `p_o − p_i` world, 3 |
-| target velocity | `target` | `Rᵀ(v_other − v)`, 3 | `Rᵀ(v_j − v_i)`, 3 | `v_o − v_i` world, 3 |
-| target seen | `target_mask` | always 1 | — | — |
-| neighbours | `neighbors` | **same role only**, K nearest | every other agent | one opponent |
+| other drone, position | `others` | `Rᵀ(x_j − x)`, 3 | `Rᵀ(p_j − p_i)`, 3 | `p_o − p_i` world, 3 |
+| other drone, velocity | `others` | `Rᵀ(v_j − v)`, 3 | `Rᵀ(v_j − v_i)`, 3 | `v_o − v_i` world, 3 |
+| same role as me | `others` | 0 or 1, 1 | — | — |
+| seat filled | `others_mask` | 0 or 1 per seat | — | — |
+| goal point | `target` | **width 0** | — | — |
 | normalized | — | **no** | by view range and max speed | same |
-| **total width** | | **23 + 7K** | 21 + rays | 21 |
+| **total width** | | **16 + 8K** | 21 + rays | 21 |
 
 | we differ | ours | Gavin | why |
 |---|---|---|---|
 | body rate | `ω` in the obs | not in the obs | our rate loop sits under the policy |
 | walls | height only | M horizontal rays | the evader does not run for the wall yet; walls come at task 4 |
-| scaling | raw SI units | divided by view range and max speed | decided: no normalization |
+| scaling | raw SI units | divided by view range and max speed | we do not normalize |
 
-`neighbors` is **same-role drones only**. The other side is already in `target`, so
-counting it as a neighbour too would put the same 6 numbers in the vector twice.
-`K = n_visible = min(n_neighbors, largest role − 1)`, so `default` gives `K = 0`
-and a 23-wide vector, and `three` gives `K = 2` and a 37-wide one.
+**Every other drone sits in `others`, whatever its role.** A teammate and an
+opponent are told apart by the last feature, not by sitting in different blocks.
+Rows are sorted by distance, nearest first, and the mask zeroes an empty seat.
+`K = n_visible = min(n_neighbors, n_drones − 1)`, so `default` gives `K = 1` and a
+24-wide vector, and `three` gives `K = 3` and a 40-wide one.
 
-`target` holds one drone. A pursuer's is the evader. **The evader's is the pursuer
-nearest to it**, so a learned evader sees one chaser, not all of them. Gavin's
-evader sees every pursuer. Open, and it only matters once the evader learns.
+`target` is where a task says "fly to this point". Nobody here does — a pursuer
+chases a drone and the evader runs from one — so chase gives it width 0.
 
 ## Environment
 
@@ -61,14 +62,29 @@ evader sees every pursuer. Open, and it only matters once the evader learns.
 | start | all uniform random in the box, 2 m clear of the walls | both uniform random |
 | start heading | random, full circle | not published |
 | evader | cascade to random waypoints | learning evader |
-| contact | any two centres under `collision_dist = 0.8 m` kills both and ends the episode | pursuer–pursuer ends it; pursuer–evader is a soft cost |
+| contact | `collision_dist = 0.8 m` between centres | the same |
 
-`arena`, `center`, `collision_dist` and the start spread now live in `core.Common`,
-so every task shares them. Only the net and the waypoints are chase's own.
+`arena`, `center`, `collision_dist` and the start spread live in `core.Common`, so
+every task shares them. Only the net and the waypoints are chase's own.
 
-**We differ from Gavin on contact with the evader.** He keeps it soft so the
-pursuer is not afraid to close in. Ours kills both. Decided this way on purpose;
-revisit if the pursuers learn to stand off.
+## Three words, three events
+
+Never mix them. The same name is used for the `RewardConfig` field, the function in
+`chase.py`, and the key in `info` — Gavin's own names, so the paper reads straight
+onto the code.
+
+| word | what it is | ends the episode | weight |
+|---|---|---|---|
+| `crash` | a wall, the ground, the ceiling, or a non-finite state | yes | 30.0 = λfail |
+| `collPP` | a pursuer hit another pursuer, body **or net** | yes | 10.0 = λcollPP |
+| `collPE` | a pursuer hit the evader | **no** | 0.1 per step = λcollPE |
+
+`collPE` stays soft because the pursuer must reach the evader to catch it. A rule
+that ends the episode there teaches it to stand off. Gavin's words: the soft penalty
+allows "gradual learning of collision avoidance while maintaining focus on the
+primary task of catching with the net".
+
+The net on another pursuer counting as `collPP` is ours; Gavin's is body to body only.
 
 ## The evader
 
@@ -84,11 +100,6 @@ other change.
 | redraw | when the evader is within 0.2 m |
 | heading reference | 0.0 |
 
-Measured over a 10 s episode ([scratch/evader_speed.py](../../scratch/evader_speed.py)):
-8 waypoints reached, mean speed 1.48 m/s, peak 3.22 m/s, only 5% of the time
-under 0.5 m/s. The cascade carries momentum through each waypoint instead of
-parking on it, so it is a real moving target.
-
 Speed is capped by the cascade, not by a parameter: `position_gains(max_velocity=6.0)`
 and `velocity_gains(max_acceleration=4.0)`. Pliska's test targets reach 10 m/s and
 8 m/s², so ours is a slower target than the published baseline flies against.
@@ -100,30 +111,39 @@ Every pursuer carries one. A catch by any of them ends the episode.
 | | ours | Gavin |
 |---|---|---|
 | shape | square standing in the body yz plane, face along body x | rigid circular disc, aligned with the body frame |
-| centre | `net_offset` below the drone, body frame | "mounted below each pursuer" |
 | `net_side` | 1.0 m | `R`, no number published |
-| `net_offset` (hangs below) | 0.4 m | no number |
-| plane thickness | the evader's own radius, `arm_length + prop_radius` = 0.4 m | "a capture distance", no number |
+| `net_offset`, the rope | 0.4 m | "mounted below each pursuer" |
+| hangs from / to | 0.4 m / 1.4 m below the drone | no number |
+| `c_net`, the middle | 0.9 m below the drone | "the centre of the catching net" |
+| thickness | **zero** — it is a plane | "a capture distance", no number |
+
+**`net_offset` is the rope, not the middle.** The square starts where the rope ends
+and hangs a full `net_side` below that, so the middle is
+`_drop = net_offset + net_side/2` = 0.9 m down.
 
 | step | formula |
 |---|---|
-| evader offset, pursuer's body frame | `p = Rᵀ(x_e − x_p)` |
-| net centre, body frame | `(0, 0, −net_offset)` |
-| inside the square | `abs(p_y) <= net_side/2` and `abs(p_z + net_offset) <= net_side/2` |
-| crossing its plane | `abs(p_x) <= body_radius` |
-| caught | both of the above, for any pursuer |
-| net centre, world | `c_net = x_p + R_p · (0, 0, −net_offset)` |
+| any drone in a pursuer's net frame | `p = Rᵀ(x_k − x_p) + (0, 0, _drop)` |
+| on the square | `abs(p_y) <= net_side/2` and `abs(p_z) <= net_side/2` |
+| touching the plane | `abs(p_x) <= body_radius` |
+| caught | both, for the evader column, for any pursuer |
+| `collPP` | both, for a pursuer column |
+| `c_net`, world | `x_p − _drop · R_p·(0,0,1)` |
 
-There is no `capture_dist` field any more. The thickness is the evader's body
-radius, so it follows the drone model: a net catches a ball, not a point. At
-15 m/s the evader moves 0.15 m per policy step, well inside 0.4 m, so it cannot
-skip through the plane between two steps.
+The square has **no thickness**. The drone is a ball of radius
+`arm_length + prop_radius` = 0.40 m, and a ball touches a plane when its centre is
+within one radius of it. That is the whole of `abs(p_x) <= body_radius` — it is the
+drone's size, not a fudge factor, and there is no `capture_dist` field. At 15 m/s the
+evader moves 0.15 m per policy step, well inside 0.40 m, so it cannot skip through
+between two steps.
 
-The square overlaps the 0.8 m kill ball — a catch at `p = (0, 0, 0)` is 0 m from
-the pursuer, while the far corner of the net is 1.10 m away and outside it. So
-`step` checks the catch first and `died` carries `& ~caught`.
+`in_net` returns `(P, N)`: every drone against every pursuer's net. `is_caught`
+reads the evader column, `net_collision` reads the pursuer columns. A net hangs
+0.9 m below its own drone, which is off its own square, so no pursuer catches
+itself and no special case is needed.
 
-
+The square reaches into the 0.8 m hitbox, so `step` checks the catch first and both
+death flags carry `& ~caught`.
 
 ## Reward
 
@@ -132,13 +152,16 @@ Ours, every sign written out:
 ```
 every pursuer = + catch · caught                  one-off, ends the episode.
                                                   ONE catch pays ALL pursuers
-                - crash · died                    one-off, ends the episode
+                - crash · crashed                 one-off, ends the episode
+                - collPP · collided               one-off, ends the episode
+                - policy_dt · collPE · touching   per step, episode goes on
                 - policy_dt · distance · ‖x_e - c_net_i‖   its OWN net
                 - policy_dt · step                the clock
                 - policy_dt · cmd · ‖a_ω‖         the COMMANDED body rates
 
 evader        = - catch · caught                  once, not once per pursuer
-                - crash · died
+                - crash · crashed
+                - policy_dt · collPE · touching   the same bill, both sides pay
                 + policy_dt · step                the same clock, earned
                 - policy_dt · cmd · ‖a_ω‖
 ```
@@ -175,45 +198,41 @@ independence from the control rate.
 | `distance` | 0.1 | 0.001 | `λdist` |
 | `step` | 4.0 | 0.04 | `λstep` |
 | `cmd` | 0.02 | 0.0002 | `λcmd` |
+| `collPE` | 10.0 | 0.1 | `λcollPE` |
 | `catch` | 10.0 | not multiplied | `λcatch = 10.0` |
+| `collPP` | 10.0 | not multiplied | `λcollPP = 10.0` |
 | `crash` | 30.0 | not multiplied | `λfail = 30.0` |
 
 | term | ours | Gavin pursuer |
 |---|---|---|
-| distance | to `c_net` | to `c_net` |
+| distance | to `c_net`, the middle of the square | to `c_net` |
 | body rate | `cmd · ‖a_ω‖`, **commanded** | same. We dropped `0.1·‖ω‖` on measured `ω` |
 | upright | none | none |
 | velocity | none | none |
 | action difference | none | none |
-| contact with the evader | `− crash`, ends the episode | `λcollPE = 0.1`, soft |
-| contact between pursuers | `− crash`, ends the episode | `λcollPP = 10.0`, ends the episode |
+| `collPE` | 0.1 per step, both sides, soft | the same |
+| `collPP` | 10.0, ends it, **net counts too** | 10.0, ends it, bodies only |
 | wall buffer | none | `λbnd`, evader only |
-
-### The risk we accepted
-
-Over a 1000-step episode the clock alone bills `0.04 × 1000 = 40`, and `λfail` is
-only 30. So **crashing early is cheaper than surviving without a catch.** That is
-in Gavin's own numbers, and it is the failure that killed the first
-`circle_swap pair` run.
 
 ## Termination
 
-| event | pays | Gavin |
-|---|---|---|
-| caught by any pursuer | `+ catch` to every pursuer, `− catch` to the evader | `λcatch` |
-| outside the box | `− crash` | `λfail` |
-| non-finite state | `− crash` | not published |
-| two centres under 0.8 m | `− crash` to both | `λcollPP` ends it, `λcollPE` does not |
-| step limit, 1000 | nothing | same |
-| **evader** dies | nothing, to either side | "neither receives a reward when the opponent reaches a failure state" |
+| event | ends it | pays | Gavin |
+|---|---|---|---|
+| caught by any pursuer | yes | `+ catch` to every pursuer, `− catch` to the evader | `λcatch` |
+| outside the box | yes | `− crash` | `λfail` |
+| non-finite state | yes | `− crash` | not published |
+| pursuer to pursuer, under 0.8 m or net | yes | `− collPP` to both | `λcollPP`, bodies only |
+| pursuer to evader, under 0.8 m | **no** | `− policy_dt · collPE` to both, every step | the same |
+| step limit, 1000 | yes | nothing | same |
+| **evader** crashes | yes | nothing, to either side | "neither receives a reward when the opponent reaches a failure state" |
 
-`crash` is charged only for a drone's own death. `info["evader_died"]` counts the
-evader's. A drone that catches on the same step it touches is **not** dead: `died`
-carries `& ~caught`.
+`crash` and `collPP` are charged only for a drone's own death. `info["evader_died"]`
+counts the evader's. A drone that catches on the same step it collides is **not**
+dead: both flags carry `& ~caught`.
 
 `is_dead` is chase's own, not `core.is_dead`: Gavin ends an episode on out of
-bounds and on contact, and says nothing about attitude, so a pursuer flipped
-upside down at altitude keeps flying.
+bounds and on inter-pursuer contact, and says nothing about attitude, so a pursuer
+flipped upside down at altitude keeps flying.
 
 ## Hyperparameters
 
@@ -229,18 +248,17 @@ were trained at 0.998. Pass it on the command line:
 python run/train.py --task chase --preset default --set gamma=0.99 --steps 2e8
 ```
 
-## What the code touches
+## Where it lives
 
-| file | change |
+| file | what it holds for this task |
 |---|---|
-| `swarm/envs/chase.py` | new |
-| `swarm/envs/core.py` | the params, plant loop, obs blocks, hitbox and spawn every task shares |
+| `swarm/envs/chase.py` | the net, the waypoints, the reward, the three collision words |
+| `swarm/envs/core.py` | the params, plant loop, obs blocks, hitbox, `body_radius` and spawn every task shares |
 | `swarm/learn/ppo.py` | `role_slices` skips a scripted role, so it gets no weights |
-| `swarm/learn/vecenv.py` | the loss mask goes to 0 for a scripted drone |
-| every env | new `reference(state, params)` → `(n, 3)`: where each drone is trying to fly |
-| `swarm/learn/evaluate.py` | records `reference` **per step**; the cascade baseline reads it; header gains `net` |
+| `swarm/learn/vecenv.py` | the loss mask is 0 for a scripted drone |
+| every env | `reference(state, params)` → `(n, 3)`: where each drone is trying to fly |
+| `swarm/learn/evaluate.py` | records `reference` per step; the cascade baseline reads it; `header.json` carries `net` |
 | `tools/viewer/index.html` | box arena, the net square, the hitbox ball, per-step goal |
-| `run/plot.py` | the goal is now per step, so it slices like every other field |
 
 `reference` has two users: the cascade baseline flies to it, and the viewer draws
 it as the marker sphere. A pursuer's is the evader's position; the evader's is its
@@ -255,10 +273,18 @@ whole episode, so a waypoint drawn from the caller's key would never change.
 
 ## Baseline
 
-The cascade flown straight at the evader — pure pursuit, measured by
-[scratch/chase_smoke.py](../../scratch/chase_smoke.py). Not measured yet. No gate:
-the cascade is a position controller and a weak pursuer. FRPN is the baseline that
-matters.
+The cascade holding the net on the evader, 256 episodes,
+[scratch/net_flight.py](../../scratch/net_flight.py). It flies the pursuer to a fixed
+height above the evader, so it is an upper bound on aim, not on reflexes:
+
+| the pursuer aims this far above the evader | caught | crashed |
+|---|---|---|
+| 0.9 m, `c_net` | 70.7% | 28.9% |
+| 1.2 m | 84.0% | 13.7% |
+| 1.4 m, the low edge of the square | 87.5% | 6.6% |
+
+No gate. The cascade is a position controller and a weak pursuer. FRPN is the
+baseline that matters.
 
 ## Open
 
@@ -269,5 +295,5 @@ matters.
 | curriculum with a sparse reward | later, after reward shaping works |
 | wall distances in the obs | task 4 |
 | `λbnd`, the evader's wall buffer | task 4 |
-| the evader sees only its nearest pursuer | task 4, when it learns |
-| pursuer–evader contact kills; Gavin keeps it soft | revisit if the pursuers stand off |
+| the evader sees every drone, not just its nearest pursuer | task 4, when it learns |
+| `rdist` aims at `c_net`, 0.9 m down; the baseline scores best aiming 1.4 m down | open |

@@ -91,7 +91,6 @@ def step(vec, action, env, params, cfg):
     info["ep_return"] = vec.ep_return + reward
     info["ep_length"] = vec.ep_length + 1
 
-    # Generate reset states for all scenes, then select only those that ended.
     fresh_obs, fresh_state = jax.vmap(env.reset, in_axes=(0, None))(
         jax.random.split(k_reset, n), params
     )

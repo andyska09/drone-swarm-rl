@@ -118,17 +118,22 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - **No task names a drone by number.** `roles` is static, so a task reads its own
   index arrays from it — see `chase._sides`. That is what lets `PRESETS["three"]`
   add two more pursuers with no other change.
-- **Every task uses the same observation shape**: `Obs(own, neighbors,
-  neighbor_mask, target, target_mask)`. `own` is body-frame velocity, `R`, `omega`
-  and height. `target` is the body-frame offset to the goal — later to the evader.
-  `neighbors` is the K other drones a drone can see. A mask is a 0/1 column, and
-  `flat` zeroes the masked rows before it concatenates, so a neighbour that is not
-  there becomes zeros and never changes the vector width. `a_to_b` has no
-  neighbours, so its `neighbors` block is empty, not absent. Add a task, not a new
-  obs format.
+- **Every task uses the same observation shape**: `Obs(own, others, others_mask,
+  target)`. `own` is body-frame velocity, `R`, `omega` and height. `others` holds
+  the K nearest drones, whatever their role — body-frame offset, body-frame
+  velocity, and a 0/1 flag saying whether that drone shares my role, so a teammate
+  and an opponent are told apart by a number, not by sitting in different blocks.
+  `target` is the body-frame offset to a goal point, and a task with no goal point
+  gives it width 0 — `chase` does. `others_mask` is a 0/1 column, and `flat` zeroes
+  the masked rows before it concatenates, so an empty seat becomes zeros and never
+  changes the vector width. Add a task, not a new obs format.
 - The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
   with a one-off crash penalty. `circle_swap` adds a proximity cost and an upright
-  term. **This reward parks the drone 0.2-0.6 m short of the goal** — the open
+  term. **`chase` keeps three words apart and never mixes them**: `crash` is a wall
+  or the ground, `collPP` is a pursuer hitting a pursuer (both end the episode), and
+  `collPE` is a pursuer hitting the evader, which costs per step and does not end it
+  — Gavin's names, used for the `RewardConfig` field, the function and the `info`
+  key alike. **This reward parks the drone 0.2-0.6 m short of the goal** — the open
   problem, with the fixes other papers use, is in
   [research/notes/parking_error.md](research/notes/parking_error.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
@@ -173,7 +178,7 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 |---|---|
 | `test_dynamics.py` | the plant against the goldens |
 | `test_control.py` | the cascade against the goldens |
-| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, and `scripted` decides who flies the evader |
+| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, a net on another pursuer kills both, and `scripted` decides who flies the evader |
 | `test_learn.py` | it learns, the same seed gives the same numbers, and a frozen role does not move |
 | `test_runner.py` | a run says what produced it and resumes |
 | `test_eval.py` | the cascade in the policy's seat scores the cascade's number |

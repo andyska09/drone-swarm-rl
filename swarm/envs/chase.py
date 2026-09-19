@@ -18,11 +18,13 @@ NUM_ACTIONS = 4
 class RewardConfig:
     """Gavin Nv1 Table I. The per-step weights are his divided by policy_dt."""
 
-    distance: float = 0.1  # λdist  = 0.001
-    step: float = 4.0  # λstep  = 0.04
-    cmd: float = 0.02  # λcmd   = 2e-4
-    catch: float = 10.0  # λcatch = 10.0
-    crash: float = 30.0  # λfail  = 30.0
+    distance: float = 0.1  # λdist   = 0.001
+    step: float = 4.0  # λstep   = 0.04
+    cmd: float = 0.02  # λcmd    = 2e-4
+    catch: float = 10.0  # λcatch  = 10.0
+    collPE: float = 10.0  # λcollPE = 0.1, per step, the episode goes on
+    collPP: float = 10.0  # λcollPP = 10.0, ends the episode
+    crash: float = 30.0  # λfail   = 30.0, a wall or the ground, ends the episode
 
 
 @flax.struct.dataclass
@@ -59,29 +61,55 @@ def _sides(params):
     )
 
 
+def _drop(params):
+    """The net hangs by net_offset, so its centre is half a side lower again."""
+
+    return params.net_offset + 0.5 * params.net_side
+
+
 def net_centre(drone, params):
-    """One point per pursuer, net_offset down its own body z axis."""
+    """Gavin's c_net: the middle of the square, straight down the body z axis."""
 
     pursuers, _ = _sides(params)
-    return drone.x[pursuers] - params.net_offset * drone.R[pursuers, :, 2]
+    return drone.x[pursuers] - _drop(params) * drone.R[pursuers, :, 2]
 
 
-def _net_frame(drone, params):
-    """The evader across and along each net: a square hanging net_offset below a
-    pursuer, face pointing forward along its body x."""
+def net_frame(drone, params):
+    """(P, N, 3): every drone seen from every pursuer's net. The net is a square in
+    the body yz plane, so x is the distance across it and (y, z) the spot on it."""
 
-    pursuers, evader = _sides(params)
-    p = jnp.einsum("pji,pj->pi", drone.R[pursuers], drone.x[evader] - drone.x[pursuers])
-    return jnp.stack([p[:, 1], p[:, 2] + params.net_offset], axis=-1), p[:, 0]
+    pursuers, _ = _sides(params)
+    p = jnp.einsum(
+        "pji,pkj->pki", drone.R[pursuers], drone.x - drone.x[pursuers][:, None]
+    )
+    return p.at[..., 2].add(_drop(params))
+
+
+def in_net(drone, params):
+    """(P, N): drone k touches pursuer p's net.
+
+    The square has no thickness. The drone is a ball, so it touches the square when
+    its centre is within one body radius of the plane and sits over the square.
+    """
+
+    p = net_frame(drone, params)
+    return jnp.all(jnp.abs(p[..., 1:]) <= 0.5 * params.net_side, axis=-1) & (
+        jnp.abs(p[..., 0]) <= core.body_radius(params)
+    )
 
 
 def is_caught(drone, params):
-    """Per pursuer: the evader's centre is inside the square and its body crosses it."""
+    _, evader = _sides(params)
+    return in_net(drone, params)[:, evader]
 
-    across, along = _net_frame(drone, params)
-    return jnp.all(jnp.abs(across) <= 0.5 * params.net_side, axis=-1) & (
-        jnp.abs(along) <= core.body_radius(params)
-    )
+
+def net_collision(drone, params):
+    """(N,): a pursuer's net touches another pursuer. Both of them die."""
+
+    pursuers, evader = _sides(params)
+    hit = in_net(drone, params).at[:, evader].set(False)
+    netter = jnp.zeros(params.n_drones, bool).at[pursuers].set(jnp.any(hit, axis=-1))
+    return netter | jnp.any(hit, axis=0)
 
 
 def get_obs(state, params):
@@ -96,10 +124,32 @@ def get_obs(state, params):
     )
 
 
-def is_dead(drone, params):
-    """Gavin ends an episode on out of bounds and on contact, not on attitude."""
+def crashed(drone, params):
+    """Hit the world: a wall, the ground, the ceiling, or a non-finite state."""
 
-    return core.out_of_arena(drone, params) | jnp.any(core.hits(drone, params), axis=-1)
+    return core.out_of_arena(drone, params)
+
+
+def collPP(drone, params):
+    """(N,): a pursuer against another pursuer, body or net. Ends the episode."""
+
+    _, evader = _sides(params)
+    hit = core.hits(drone, params).at[evader].set(False).at[:, evader].set(False)
+    return jnp.any(hit, axis=-1) | net_collision(drone, params)
+
+
+def collPE(drone, params):
+    """(P,): a pursuer body against the evader body. Costs, but does not end it."""
+
+    pursuers, evader = _sides(params)
+    return core.hits(drone, params)[pursuers, evader]
+
+
+def is_dead(drone, params):
+    """Both end the episode, but they are paid at different rates, so `step` keeps
+    them apart. Attitude kills nobody."""
+
+    return crashed(drone, params) | collPP(drone, params)
 
 
 def reference(state, params):
@@ -111,21 +161,26 @@ def reference(state, params):
     )
 
 
-def compute_reward(state, rate_ref, alive, died, caught, params):
+def compute_reward(state, rate_ref, alive, crash, collide, caught, params):
     cfg, d = params.reward, state.drone
     pursuers, evader = _sides(params)
     distance = core.norm(d.x[evader] - net_centre(d, params))
 
+    # Gavin charges both sides the same for a pursuer-evader collision.
+    hit = collPE(d, params)
+    both = jnp.zeros(params.n_drones).at[pursuers].set(hit).at[evader].set(jnp.any(hit))
+
     # The pursuers pay the clock and the evader earns it — Gavin's λstep.
     clock = jnp.full(params.n_drones, -cfg.step).at[evader].set(cfg.step)
-    clock = clock.at[pursuers].add(-cfg.distance * distance)
+    clock = clock.at[pursuers].add(-cfg.distance * distance) - cfg.collPE * both
     # One catch pays every pursuer and bills the evader once.
     catch = jnp.full(params.n_drones, cfg.catch).at[evader].set(-cfg.catch)
 
     return (
         jnp.where(alive, params.policy_dt * (clock - cfg.cmd * core.norm(rate_ref)), 0.0)
         + catch * caught
-        - cfg.crash * died
+        - cfg.collPP * collide
+        - cfg.crash * crash
     )
 
 
@@ -189,8 +244,10 @@ def step(key, state, action, params):
     drone, rate_pid, rate_ref = core.fly(state.drone, state.rate_pid, action, params)
 
     caught = jnp.any(is_caught(drone, params)) & jnp.all(state.alive)
-    # The net reaches inside the hitbox, so a catch is a catch, not a crash.
-    died = state.alive & is_dead(drone, params) & ~caught
+    # The net hangs through the hitbox, so a catch is a catch, not a collision.
+    crash = state.alive & crashed(drone, params) & ~caught
+    collide = state.alive & collPP(drone, params) & ~caught
+    died = crash | collide
     alive = state.alive & ~died
 
     key, k_wp = jax.random.split(state.key)
@@ -209,19 +266,24 @@ def step(key, state, action, params):
         time=state.time + 1,
     )
 
-    reward = compute_reward(new_state, rate_ref, state.alive, died, caught, params)
+    reward = compute_reward(
+        new_state, rate_ref, state.alive, crash, collide, caught, params
+    )
     truncated = new_state.time >= params.max_steps
     done = truncated | caught | ~jnp.all(alive)
 
-    across, _ = _net_frame(drone, params)
+    on_net = net_frame(drone, params)[:, evader, 1:]
     info = {
         "alive": alive,
         "died_this_step": died,
         "truncated": truncated,
         "caught": caught,
         "distance": jnp.min(core.norm(drone.x[evader] - net_centre(drone, params))),
-        # Pliska's interception accuracy: how far off the net centre the catch was.
-        "accuracy": jnp.where(caught, jnp.min(core.norm(across)), 0.0),
+        # How far off the net centre the catch landed.
+        "accuracy": jnp.where(caught, jnp.min(core.norm(on_net)), 0.0),
+        "crashed": jnp.any(crash),
+        "collPP": jnp.any(collide),
+        "collPE": jnp.any(collPE(drone, params)),
         "evader_died": died[evader],
     }
     return get_obs(new_state, params), new_state, reward, done, info

@@ -152,9 +152,8 @@ def test_one_catch_pays_every_pursuer():
     _, state = chase.reset(jax.random.PRNGKey(0), params)
     pursuers, evader = chase._sides(params)
 
-    # Park the evader in the net of pursuer 1 and move the others clear.
-    x = state.drone.x.at[evader].set(state.drone.x[1] - jnp.array([0.0, 0.0, 0.4]))
-    x = x.at[0].set(jnp.array([0.0, 0.0, 8.0])).at[2].set(jnp.array([6.0, 6.0, 8.0]))
+    # The evader touches the net of pursuer 1, 0.9 m under it. The others are clear.
+    x = jnp.array([[-6.0, 0.0, 8.0], [0.0, 0.0, 8.0], [6.0, 0.0, 8.0], [0.2, 0.0, 7.1]])
     drone = state.drone.replace(x=x, R=jnp.stack([jnp.eye(3)] * params.n_drones))
 
     caught = chase.is_caught(drone, params)
@@ -165,11 +164,29 @@ def test_one_catch_pays_every_pursuer():
         jnp.zeros((params.n_drones, 3)),
         jnp.ones(params.n_drones, bool),
         jnp.zeros(params.n_drones, bool),
+        jnp.zeros(params.n_drones, bool),
         jnp.any(caught),
         params,
     )
     assert jnp.all(reward[pursuers] > 0.9 * params.reward.catch), "a pursuer went unpaid"
     assert reward[evader] < -0.9 * params.reward.catch, "the evader was not billed"
+
+
+def test_a_net_on_another_pursuer_kills_both():
+    params = chase.PRESETS["three"]
+    _, state = chase.reset(jax.random.PRNGKey(0), params)
+
+    # Pursuer 0 touches pursuer 1's net 0.9 m under it, 1.03 m from its centre.
+    # That is outside the 0.8 m kill ball, so only the net can end this.
+    x = jnp.array([[0.3, 0.4, 7.1], [0.0, 0.0, 8.0], [6.0, 0.0, 8.0], [-6.0, 0.0, 8.0]])
+    drone = state.drone.replace(x=x, R=jnp.stack([jnp.eye(3)] * params.n_drones))
+
+    assert not jnp.any(core.hits(drone, params)), "the bodies must not touch here"
+    assert not jnp.any(chase.is_caught(drone, params))
+    # Pursuer 2 is clear, and no net catches the drone it hangs under.
+    assert list(chase.net_collision(drone, params)) == [True, True, False, False]
+    assert list(chase.collPP(drone, params)) == [True, True, False, False]
+    assert not jnp.any(chase.crashed(drone, params)), "nobody hit a wall"
 
 
 def test_scripted_decides_who_flies_the_evader():
