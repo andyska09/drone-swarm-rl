@@ -15,7 +15,8 @@ import numpy as np
 from swarm import envs
 from swarm.learn import ppo
 
-PROGRESS = ("return", "ep_length", "death_rate")
+# A task that does not report one of these is printed without it.
+PROGRESS = ("ep_length", "death_rate", "caught", "rho")
 
 
 def _git():
@@ -160,7 +161,8 @@ def train(cfg, root="runs", use_wandb=False):
             say(
                 path,
                 f"{i + 1:6d} {steps:>12,} {steps / elapsed:>8.0f}/s  "
-                + "  ".join(f"{k} {row[k]:8.3f}" for k in PROGRESS),
+                + (f"{row['training']:>8}  " if "training" in row else "")
+                + "  ".join(f"{k} {row[k]:8.3f}" for k in PROGRESS if k in row),
             )
         if (i + 1) % cfg.checkpoint_every == 0 or i + 1 == cfg.num_updates:
             save(path, i + 1, carry)
