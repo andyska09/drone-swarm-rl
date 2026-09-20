@@ -81,13 +81,27 @@ here. Papers we hold PDFs for are also in
 
 ### 1.3 Simulators — the competition
 
-| what | link | note |
-|---|---|---|
-| OmniDrones | [arXiv:2309.12825](https://arxiv.org/abs/2309.12825) | Isaac Sim, GPU-parallel, 4 control modes, 10+ tasks. The reference for "what an env suite looks like". |
-| Aerial Gym | [arXiv:2503.01471](https://arxiv.org/abs/2503.01471) | Isaac-based, heavy on depth/LiDAR rendering. |
-| DiffAero | [arXiv:2509.10247](https://arxiv.org/abs/2509.10247) | GPU-native **differentiable** dynamics; enables analytic policy gradients (see §2). |
-| Crazyflow | [arXiv:2606.01478](https://arxiv.org/abs/2606.01478) | **JAX**, ~700M steps/s, layered control interface (motor → thrust+torque → thrust+attitude → position). Closest thing to what we are building. Steal: one monolithic PyTree for drone + controller state, `lax.scan` over steps. Their motor model is asymmetric up/down; ours is a single symmetric τ. |
-| MuJoCo-Drones-Gym | [arXiv:2606.08039](https://arxiv.org/abs/2606.08039) | MJX multi-drone. Comparison point for env API only. |
+The GPU tier — what anyone training a swarm today actually runs on.
+
+| what | backend | diff | multi-drone | reported speed | note |
+|---|---|---|---|---|---|
+| [Crazyflow](https://arxiv.org/abs/2606.01478) ([code](https://github.com/learnsyslab/crazyflow)) | **JAX/XLA**; MuJoCo only for render, raycast, contact | yes | yes, `n_worlds × n_drones` | 914M steps/s (RTX 4090, 262K worlds); ~700M at 1M worlds; 4.2M drones | **Closest thing to what we are building.** Schoellig's lab; successor to `gym-pybullet-drones`. Layered control (motor → thrust+torque → thrust+attitude → position). Steal: one monolithic PyTree for drone + controller state, `lax.scan` over steps. Their motor model is asymmetric up/down; ours is a single symmetric τ. Crazyflie model fit from real flights — not the MRS plant, and no six-stage cascade. |
+| [OmniDrones](https://arxiv.org/abs/2309.12825) | Isaac Sim / Omniverse | no | yes | high, not comparable | The biggest **task suite**: hover, track, fly-through, transport. The reference for "what an env suite looks like". Tied to NVIDIA drivers. `thu-uav`'s PE work (§3.2) is built on it. |
+| [Aerial Gym](https://arxiv.org/abs/2305.16510) (RA-L version [arXiv:2503.01471](https://arxiv.org/abs/2503.01471), [site](https://ntnu-arl.github.io/aerial_gym_simulator/)) | Isaac Gym (PyTorch) | no | yes | ~3.8M steps/s | NTNU. Heavy on depth/LiDAR rendering. |
+| [DiffAero](https://arxiv.org/abs/2509.10247) ([code](https://github.com/flyingbitac/diffaero)) | PyTorch, GPU-native | yes | limited | "orders of magnitude" over CPU | Physics **and** rendering on GPU. Built for analytic policy gradients (see §2). |
+| [MuJoCo-Drones-Gym](https://arxiv.org/abs/2606.08039) | MJX | yes | yes | GPU/TPU batched | 2026. Vision-based quadrotor RL. Comparison point for env API only. |
+| [RLtools / l2f](https://github.com/rl-tools/learning-to-fly) ([paper](https://arxiv.org/abs/2311.13081)) | C++ templates, CPU or GPU | no | single | ~5 months of flight/s on a laptop GPU | 18 s to a flying policy on an M1; deploys to a microcontroller. The throughput-is-the-research-variable argument. |
+| [Genesis](https://github.com/Genesis-Embodied-AI/genesis-world) | Taichi → CUDA | partly | yes | tens of M frames/s | General robotics, not drone-specific. Watch, do not adopt. |
+
+**The speed column is not a ranking.** Every row uses a different GPU, drone count,
+control rate and definition of "step". It only shows the size class.
+
+The CPU tier is still cited and nobody trains swarms on it: `gym-pybullet-drones`,
+PyFlyt, RotorPy, Flightmare, AirSim, RotorS, Gazebo, and the MRS C++ simulator we
+reimplement. AirSim and Flightmare are unmaintained. Mapped in
+**Dimmig et al. 2024, *Survey of Simulators for Aerial Robots*** —
+[arXiv:2311.02296](https://arxiv.org/abs/2311.02296), RA-M,
+[10.1109/MRA.2024.3433171](https://doi.org/10.1109/MRA.2024.3433171).
 
 ---
 
