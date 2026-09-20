@@ -113,7 +113,7 @@ def net_collision(drone, params):
 def get_obs(state, params):
     others, mask = core.others(state.drone, params)
     return Obs(
-        own=core.own_obs(state.drone),
+        own=core.own_obs(state.drone, params),
         others=others,
         others_mask=mask,
         # Nobody here flies at a fixed point: a pursuer chases a drone and the evader runs from one, and both sit in `others`.
@@ -238,7 +238,7 @@ def step(key, state, action, params):
     # The waypoint draw uses the key carried in the state, so callers that reuse
     # one key per rollout still get a fresh draw every step.
     del key
-    _, evader = _sides(params)
+    pursuers, evader = _sides(params)
     action, evader_pid = _fly_scripted(state, action, params)
     drone, rate_pid, rate_ref = core.fly(state.drone, state.rate_pid, action, params)
 
@@ -271,12 +271,20 @@ def step(key, state, action, params):
     truncated = new_state.time >= params.max_steps
     done = truncated | caught | ~jnp.all(alive)
 
+    # Gavin's score for the pursuers, read at the step the episode ends.
+    rho = jnp.where(
+        caught,
+        1.0 - new_state.time / params.max_steps,
+        (died[evader] & ~jnp.any(died[pursuers])).astype(float),
+    )
+
     on_net = net_frame(drone, params)[:, evader, 1:]
     info = {
         "alive": alive,
         "died_this_step": died,
         "truncated": truncated,
         "caught": caught,
+        "rho": rho,
         "distance": jnp.min(core.norm(drone.x[evader] - net_centre(drone, params))),
         # How far off the net centre the catch landed.
         "accuracy": jnp.where(caught, jnp.min(core.norm(on_net)), 0.0),
@@ -290,5 +298,5 @@ def step(key, state, action, params):
 
 PRESETS = {
     "default": EnvParams(),
-    "three": EnvParams(roles=("pursuer",) * 3 + ("evader",)),
+    "duel": EnvParams(scripted=()),
 }

@@ -114,7 +114,21 @@ def fly(drone, pid, action, params):
     return drone, pid, rate_ref
 
 
-def own_obs(drone):
+def wall_dist(drone, params):
+    """Distance to the arena wall along four axis. Parallel to the world floor."""
+
+    nose, left = drone.R[:, :2, 0], drone.R[:, :2, 1]
+    level = jnp.where(
+        norm(nose)[:, None] > 1e-3, nose, jnp.stack([left[:, 1], -left[:, 0]], -1)
+    )
+    d = level / norm(level)[:, None]
+    side = jnp.stack([-d[:, 1], d[:, 0]], -1)
+    u = jnp.stack([d, -d, side, -side], axis=1)
+    r = drone.x[:, None, :2] - jnp.asarray(params.center)[:2]
+    return jnp.min((half(params)[:2] - r * jnp.sign(u)) / jnp.abs(u), axis=-1)
+
+
+def own_obs(drone, params):
     # Height is a scalar, so it carries no frame and keeps the body-frame symmetry.
     return jnp.concatenate(
         [
@@ -122,6 +136,7 @@ def own_obs(drone):
             drone.R.reshape(drone.x.shape[0], 9),
             drone.omega,
             drone.x[:, 2:3],
+            wall_dist(drone, params),
         ],
         axis=-1,
     )

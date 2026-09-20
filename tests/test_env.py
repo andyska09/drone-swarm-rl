@@ -69,10 +69,10 @@ def test_shapes_and_dtypes_survive_a_step():
     n, k = params.n_drones, params.n_visible
     obs, state = a_to_b.reset(jax.random.PRNGKey(0), params)
 
-    assert obs.own.shape == (n, 16)
+    assert obs.own.shape == (n, 20)
     assert obs.others.shape == (n, k, core.OTHER_FEATURES)
     assert obs.target.shape == (n, 6)
-    assert flat(obs).shape == (n, 16 + k * core.OTHER_FEATURES + k + 6)
+    assert flat(obs).shape == (n, 20 + k * core.OTHER_FEATURES + k + 6)
 
     action = jnp.zeros((n, a_to_b.NUM_ACTIONS))
     obs2, state2, reward, done, info = a_to_b.step(jax.random.PRNGKey(1), state, action, params)
@@ -134,7 +134,7 @@ def test_chase_reads_its_drone_count_from_roles(preset):
 
     # chase flies at a drone, never at a fixed point, so it has no target block.
     assert obs.target.shape == (n, 0)
-    assert flat(obs).shape == (n, 16 + k * core.OTHER_FEATURES + k)
+    assert flat(obs).shape == (n, 20 + k * core.OTHER_FEATURES + k)
     assert reward.shape == (n,) and done.shape == () and info["caught"].shape == ()
     assert chase.reference(state, params).shape == (n, 3)
     assert chase.is_caught(state.drone, params).shape == (params.roles.count("pursuer"),)

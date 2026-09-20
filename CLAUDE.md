@@ -6,9 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 When talking to me start the message with "TARS:"
 
-### Style
+## Design Philosophy
 
-for chat output style - when you are talking to me use simple english (see output-styles). 
+When building always do only what I ask for. Do not add unwanted features. You can ask about them in the chat or raise it with me when chatting with me, but do not put them into code right away. 
+
+When designing code, keep it simple. By this I mean the logic should be easy to follow and clean - lines of code is wrong metric for this. This requires you to think about it rather then just bust out code. If there two approaches possible with no clear better one - ask me for input. Always.
+
+For all your responses always use [.claude/output-styles/simple-english.md](.claude/output-styles/simple-english.md) output style. 
+
+### Style
 
 For code:
 - Blunt, minimal code. No base classes, protocols, registries. One file per
