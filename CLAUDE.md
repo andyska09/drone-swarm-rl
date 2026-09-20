@@ -91,7 +91,7 @@ python run/fly.py --target 3 -2 5                      # closed loop, the cascad
 python run/train.py --task a_to_b --preset default --steps 5e6  # PPO -> runs/<name>/
 python run/train.py --set gamma=0.99 --set ent_coef=0.01        # any TrainConfig field
 python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
-python run/eval.py runs/<name> --policy cascade        # the cascade in the same seat
+python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role's seat
 python run/replay.py                                   # serve + open the 3D viewer
 python run/plot.py runs/<name>/evals/latest            # time plots of one episode
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
