@@ -128,17 +128,31 @@ def train(cfg, root="runs", use_wandb=False):
     carry = init(jax.random.PRNGKey(cfg.seed))
     say(path, f"{path}  {cfg.num_updates} updates of {cfg.num_envs} envs x {cfg.num_steps} steps")
 
+    learned = list(ppo.role_slices(env_params.roles, env_params.scripted))
+    order = [r for r in learned if not cfg.train_roles or r in cfg.train_roles]
+    turn, phase = 0, 0
+
     start = time.time()
     for i in range(cfg.num_updates):
-        carry, metrics = update(*carry)
+        active = [order[turn]] if cfg.swap_min else order
+        carry, metrics = update(*carry, {r: r in active for r in learned})
         elapsed = time.time() - start
         steps = (i + 1) * cfg.num_envs * cfg.num_steps
         row = {
             "update": i + 1,
             "steps": steps,
             "seconds": round(elapsed, 1),
+            **({"training": order[turn]} if cfg.swap_min else {}),
             **{k: float(v) for k, v in metrics.items()},
         }
+        # order[0] pushes rho up and the others push it down, so each turn ends
+        # at its own end of the band.
+        rho, phase = row.get("rho"), phase + 1
+        if cfg.swap_min and rho is not None and phase >= cfg.swap_min:
+            if rho > cfg.swap_hi if turn == 0 else rho < cfg.swap_lo:
+                save(path, i + 1, carry)
+                turn, phase = (turn + 1) % len(order), 0
+                say(path, f"{i + 1:6d} rho {rho:6.3f}  now training {order[turn]}")
         append_metrics(path, row)
         if tracker is not None:
             tracker.log(row, step=steps)

@@ -64,3 +64,12 @@ def test_a_frozen_role_does_not_move():
     moved = jax.tree.map(lambda a, b: bool(jnp.any(a != b)), before, after)
     assert not any(jax.tree.leaves(moved["evader"])), "a frozen role took a step"
     assert any(jax.tree.leaves(moved["pursuer"])), "the trained role did not move"
+
+    # The swap passes the turn in as an argument, which overrides train_roles.
+    before = jax.tree.map(jnp.copy, {r: t.params for r, t in carry[0].items()})
+    carry, _ = update(*carry, {"pursuer": False, "evader": True})
+    after = {r: t.params for r, t in carry[0].items()}
+
+    moved = jax.tree.map(lambda a, b: bool(jnp.any(a != b)), before, after)
+    assert not any(jax.tree.leaves(moved["pursuer"])), "the frozen turn took a step"
+    assert any(jax.tree.leaves(moved["evader"])), "the training turn did not move"

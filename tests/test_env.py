@@ -123,9 +123,9 @@ def test_timeout_truncates_without_terminating():
     assert bool(done) and bool(info["truncated"]) and bool(jnp.all(info["alive"]))
 
 
-@pytest.mark.parametrize("preset", ("default", "three"))
-def test_chase_reads_its_drone_count_from_roles(preset):
-    params = chase.PRESETS[preset]
+@pytest.mark.parametrize("pursuers", (1, 3))
+def test_chase_reads_its_drone_count_from_roles(pursuers):
+    params = chase.EnvParams(roles=("pursuer",) * pursuers + ("evader",))
     n, k = params.n_drones, params.n_visible
     obs, state = chase.reset(jax.random.PRNGKey(0), params)
 
@@ -148,7 +148,7 @@ def test_chase_reads_its_drone_count_from_roles(preset):
 
 
 def test_one_catch_pays_every_pursuer():
-    params = chase.PRESETS["three"]
+    params = chase.EnvParams(roles=("pursuer",) * 3 + ("evader",))
     _, state = chase.reset(jax.random.PRNGKey(0), params)
     pursuers, evader = chase._sides(params)
 
@@ -173,7 +173,7 @@ def test_one_catch_pays_every_pursuer():
 
 
 def test_a_net_on_another_pursuer_kills_both():
-    params = chase.PRESETS["three"]
+    params = chase.EnvParams(roles=("pursuer",) * 3 + ("evader",))
     _, state = chase.reset(jax.random.PRNGKey(0), params)
 
     # Pursuer 0 touches pursuer 1's net 0.9 m under it, 1.03 m from its centre.

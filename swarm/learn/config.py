@@ -30,6 +30,14 @@ class TrainConfig:
     # and training the other is how the evader learns without runaway self-play.
     train_roles: tuple = ()
 
+    # Alternating self-play, off at swap_min = 0. One role trains at a time, in
+    # `train_roles` order. `info["rho"]` scores the first of them: its turn ends
+    # when rho climbs past swap_hi, every other turn ends when rho falls under
+    # swap_lo. Neither turn ends before swap_min updates.
+    swap_min: int = 0
+    swap_hi: float = 0.6
+    swap_lo: float = 0.3
+
     hidden: tuple = (256, 256)
     activation: str = "tanh"
     # A smaller initial standard deviation reduces action clipping.

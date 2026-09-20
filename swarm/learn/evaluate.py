@@ -30,8 +30,7 @@ def checkpoint_name(text):
     return text if text.endswith(".pkl") else f"{text}.pkl"
 
 
-def net_policy(cfg, env, env_params, weights):
-    slices = ppo.role_slices(env_params.roles, env_params.scripted)
+def net_policy(cfg, env, weights, slices):
     apply = ppo.make_apply(ppo.make_net(cfg, env), slices)
 
     def act(state, obs, carry):
@@ -39,7 +38,7 @@ def net_policy(cfg, env, env_params, weights):
         mean, _, _ = apply(weights, obs)
         return mean, carry
 
-    return act, None
+    return act
 
 
 def cascade_policy(env, env_params):
@@ -61,6 +60,43 @@ def cascade_policy(env, env_params):
         return jax.vmap(one)(state.drone, env.reference(state, env_params), pids)
 
     return act, pids
+
+
+def _saved(run, source, checkpoint):
+    path = Path(run) if source == "checkpoint" else Path(source)
+    if path.suffix == ".pkl":
+        return runner.load(path.parent, path.name)
+    return runner.load(path, checkpoint_name(checkpoint))
+
+
+def make_policy(cfg, env, env_params, run, checkpoint, seats):
+    """Who flies each role: this run's weights, another run's, or the cascade."""
+
+    slices = ppo.role_slices(env_params.roles, env_params.scripted)
+    for role in seats:
+        if role not in slices:
+            raise ValueError(f"{role!r} has no seat; roles are {sorted(slices)}")
+
+    nets = {r: seats.get(r, "checkpoint") for r in slices if seats.get(r) != "cascade"}
+    saved = {r: _saved(run, s, checkpoint) for r, s in nets.items()}
+    net = net_policy(
+        cfg, env, {r: s["params"][r] for r, s in saved.items()}, {r: slices[r] for r in nets}
+    )
+    step = next((s["update"] for s in saved.values()), None)
+
+    rows = [i for i, r in enumerate(env_params.roles) if seats.get(r) == "cascade"]
+    if not rows:
+        return net, None, step
+
+    cascade, pids = cascade_policy(env, env_params)
+    rows = jnp.array(rows)
+
+    def act(state, obs, pids):
+        mean, _ = net(state, obs, None)
+        flown, pids = cascade(state, obs, pids)
+        return mean.at[rows].set(flown[rows]), pids
+
+    return act, pids, step
 
 
 def _hold(done, new, old):
@@ -107,20 +143,13 @@ def summarize(reward, info, live):
     return out
 
 
-def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="checkpoint",
-             name=None):
+def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
     run = Path(run)
     cfg = load_config(run)
-    env, env_params = envs.make(cfg.task, preset or cfg.preset)
+    env, env_params = envs.make(cfg.task, cfg.preset)
 
-    if policy == "cascade":
-        act, carry = cascade_policy(env, env_params)
-        step = None
-    else:
-        source = run if policy == "checkpoint" else Path(policy)
-        saved = runner.load(source, checkpoint_name(checkpoint))
-        act, carry = net_policy(cfg, env, env_params, saved["params"])
-        step = saved["update"]
+    seats = dict(seats)
+    act, carry, step = make_policy(cfg, env, env_params, run, checkpoint, seats)
 
     keys = jax.random.split(jax.random.PRNGKey(EVAL_SEED), episodes)
 
@@ -135,7 +164,8 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
     per_episode = jax.jit(jax.vmap(measure))(keys)
     drone, action, goal, live = jax.jit(jax.vmap(trace))(keys[:TRAJECTORIES])
 
-    out = run / "evals" / (name or (policy if policy != "checkpoint" else checkpoint))
+    named = "_".join(f"{r}_{Path(s).name}" for r, s in sorted(seats.items()))
+    out = run / "evals" / (name or named or checkpoint)
     out.mkdir(parents=True, exist_ok=True)
 
     summary = {k: float(np.mean(v)) for k, v in per_episode.items()}
@@ -143,9 +173,12 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
         json.dumps(
             {
                 "task": cfg.task,
-                "preset": preset or cfg.preset,
-                "policy": policy,
-                "checkpoint": checkpoint if policy != "cascade" else None,
+                "preset": cfg.preset,
+                "seats": {
+                    r: seats.get(r, "checkpoint")
+                    for r in ppo.role_slices(env_params.roles, env_params.scripted)
+                },
+                "checkpoint": checkpoint if step is not None else None,
                 "update": step,
                 "episodes": episodes,
                 "eval_seed": EVAL_SEED,
@@ -168,7 +201,9 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
     # obs carries a target. For anyone else it is only the baseline's input.
     obs0, _ = env.reset(jax.random.PRNGKey(EVAL_SEED), env_params)
     goal = [
-        bool(obs0.target.shape[-1]) or role in env_params.scripted
+        bool(obs0.target.shape[-1])
+        or role in env_params.scripted
+        or seats.get(role) == "cascade"
         for role in env_params.roles
     ]
 
@@ -182,7 +217,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
         json.dumps(
             {
                 "task": cfg.task,
-                "preset": preset or cfg.preset,
+                "preset": cfg.preset,
                 "roles": list(env_params.roles),
                 "center": list(env_params.center),
                 "arena": list(env_params.arena),

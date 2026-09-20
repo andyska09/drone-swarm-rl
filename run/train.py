@@ -14,7 +14,7 @@ def cast(current, text):
     if isinstance(current, bool):
         return text.lower() in ("1", "true", "yes")
     if isinstance(current, tuple):
-        return tuple(int(v) for v in text.split(","))
+        return tuple(int(v) if v.lstrip("-").isdigit() else v for v in text.split(","))
     return type(current)(text)
 
 

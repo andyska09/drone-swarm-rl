@@ -92,6 +92,12 @@ def _mean(x, mask):
     return jnp.sum(x * mask) / jnp.maximum(jnp.sum(mask), 1.0)
 
 
+def hold(training, stepped, old):
+    """The stepped state if this role is training, the old one if it is frozen."""
+
+    return jax.tree.map(lambda a, b: jnp.where(training, a, b), stepped, old)
+
+
 def normalize_by_role(adv, mask, slices):
     """Centre and scale each role on its own. A pursuer and an evader have
     opposite signs and different sizes, so one shared scale flattens both."""
@@ -146,7 +152,8 @@ def make(cfg, env, env_params):
     slices = role_slices(env_params.roles, env_params.scripted)
     apply = make_apply(net, slices)
 
-    trained = tuple(r for r in slices if not cfg.train_roles or r in cfg.train_roles)
+    # Whose turn it is. A traced flag, so alternating needs no second compile.
+    every_turn = {r: not cfg.train_roles or r in cfg.train_roles for r in slices}
 
     def init(key):
         key, k_env, k_net = jax.random.split(key, 3)
@@ -180,7 +187,7 @@ def make(cfg, env, env_params):
     def weights(ts):
         return {role: t.params for role, t in ts.items()}
 
-    def update(ts, vec, obs, key):
+    def update(ts, vec, obs, key, train=every_turn):
         def rollout(carry, _):
             ts, vec, obs, key = carry
             key, k = jax.random.split(key)
@@ -272,8 +279,10 @@ def make(cfg, env, env_params):
 
                 (_, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(weights(ts))
                 policy, value_loss, ent, ratio, mask = aux
+                # Selecting the whole TrainState freezes the Adam moments and the
+                # step count too, not only the weights.
                 stepped = {
-                    role: t.apply_gradients(grads=grads[role]) if role in trained else t
+                    role: hold(train[role], t.apply_gradients(grads=grads[role]), t)
                     for role, t in ts.items()
                 }
                 return stepped, {

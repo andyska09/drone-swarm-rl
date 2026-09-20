@@ -20,12 +20,12 @@ def small(**overrides):
 
 def test_cascade_in_the_seat_reproduces_the_gate(tmp_path):
     path, _ = runner.train(small(), root=tmp_path)
-    out, summary = evaluate.evaluate(path, episodes=32, policy="cascade")
+    out, summary = evaluate.evaluate(path, episodes=32, seats=[("drone", "cascade")])
 
     assert summary["distance_final"] < 0.2, f"cascade settled at {summary['distance_final']:.3f} m"
     assert summary["length"] == 500.0, "the cascade did not fly the whole episode"
     assert summary["alive_final"] == 1.0
-    assert out.name == "cascade"
+    assert out.name == "drone_cascade"
 
 
 def test_eval_writes_what_the_viewer_needs(tmp_path):
@@ -51,8 +51,11 @@ def test_eval_writes_what_the_viewer_needs(tmp_path):
 def test_a_dead_episode_stops_counting(tmp_path):
     """No auto-reset: a crash ends the episode and the held tail must not score."""
 
-    path, _ = runner.train(small(), root=tmp_path)
-    out, _ = evaluate.evaluate(path, episodes=64, preset="default")
+    # The wide preset, so an untrained policy leaves the arena and the episode ends.
+    cfg = small()
+    cfg.preset = "default"
+    path, _ = runner.train(cfg, root=tmp_path)
+    out, _ = evaluate.evaluate(path, episodes=64)
 
     episodes = np.load(out / "episodes.npz")
     died = episodes["alive_final"] == 0.0

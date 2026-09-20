@@ -78,8 +78,10 @@ Adam moments and the step count all stay put. One compiled update.
 - neither turn ends before `swap_min` updates
 - the frozen side keeps sampling its actions, so it is not one fixed behaviour
 
-`TrainConfig`: `swap_hi = 0.6`, `swap_lo = 0.3`, `swap_min = 10`. The swap is off
-when `swap_min = 0`, so every other task runs unchanged.
+`TrainConfig`: `swap_min`, `swap_hi = 0.6`, `swap_lo = 0.3`. The swap is off at
+`swap_min = 0`, the default, so every other task runs unchanged. The turn order is
+`train_roles`, or every learned role in `roles` order when it is empty — and `rho`
+scores the first of them, which is why the pursuer is named first.
 
 **No cap on a phase.** Gavin does not publish one and a stuck phase should be
 visible, not hidden. `metrics.csv` gains a `training` column; a stuck phase reads
@@ -90,7 +92,8 @@ is also the start of a policy pool, if one is ever needed.
 
 ## Eval
 
-`--preset` and `--policy` are gone. One flag replaces both:
+`--preset` and `--policy` are gone, and so is the `three` preset. One flag
+replaces both:
 
 ```bash
 python run/eval.py runs/<duel> --seat pursuer cascade
@@ -122,7 +125,7 @@ from.
 
 ```bash
 conda run -n drone-swarm python run/train.py --task chase --preset duel \
-    --set gamma=0.99 --steps 4e8
+    --set gamma=0.99 --set swap_min=10 --steps 4e8
 ```
 
 About 1526 updates. Task 3 ran 629 updates in 42 minutes, so this is near 100
