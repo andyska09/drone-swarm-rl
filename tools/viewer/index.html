@@ -202,11 +202,14 @@ function build() {
   const palette = [0x4fa3ff, 0xff8b5e, 0x62d38a, 0xd98bff, 0xffd166, 0x5edfd8, 0xff6b8a, 0x9aa7ff];
 
   if (header.arena) {
+    // A list is the box size. Older evals wrote one number: a kill radius.
     const a = header.arena;
-    const box = new THREE.Mesh(new THREE.BoxGeometry(a[0], a[1], a[2]),
+    const bound = new THREE.Mesh(
+      Array.isArray(a) ? new THREE.BoxGeometry(a[0], a[1], a[2])
+                       : new THREE.SphereGeometry(a, 24, 16),
       new THREE.MeshBasicMaterial({ color: 0x2b3346, wireframe: true }));
-    box.position.set(...(header.center || [0, 0, 0]));
-    world.add(box);
+    bound.position.set(...(header.center || [0, 0, 0]));
+    world.add(bound);
   }
 
   for (let i = 0; i < n; i++) {
@@ -236,9 +239,13 @@ function build() {
       q.add(net);
     }
 
-    const goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
-    world.add(goal);
+    // A chase pursuer has no goal: its reference is only the cascade's input.
+    let goal = null;
+    if (!header.goal || header.goal[i]) {
+      goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
+      world.add(goal);
+    }
     goals.push(goal);
 
     // Height is unreadable in a 3D view without a shadow on the ground.
@@ -280,14 +287,16 @@ function show() {
   let far = 0, fastest = 0;
   for (let i = 0; i < n; i++) {
     const p = at(traj.x, [e, t, i, 0]), r = at(traj.R, [e, t, i, 0, 0]);
-    const q = at(traj.goal, [e, t, i, 0]), w = at(traj.v, [e, t, i, 0]);
+    // Older evals stored one goal per episode, not one per step.
+    const q = at(traj.goal, traj.goal.shape.length > 3 ? [e, t, i, 0] : [e, i, 0]);
+    const w = at(traj.v, [e, t, i, 0]);
     drones[i].matrix.set(
       R[r + 0], R[r + 1], R[r + 2], x[p + 0],
       R[r + 3], R[r + 4], R[r + 5], x[p + 1],
       R[r + 6], R[r + 7], R[r + 8], x[p + 2],
       0, 0, 0, 1);
     drones[i].visible = true;
-    goals[i].position.set(g[q + 0], g[q + 1], g[q + 2]);
+    if (goals[i]) goals[i].position.set(g[q + 0], g[q + 1], g[q + 2]);
 
     // Shadow spreads and fades with height, so altitude reads off the ground.
     const z = Math.max(0, x[p + 2]);

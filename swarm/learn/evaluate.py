@@ -164,6 +164,14 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
         action=np.asarray(action),
         **{f.name: np.asarray(getattr(drone, f.name)) for f in drone.__dataclass_fields__.values()},
     )
+    # `reference` is a real goal for a drone the cascade flies, and for a drone whose
+    # obs carries a target. For anyone else it is only the baseline's input.
+    obs0, _ = env.reset(jax.random.PRNGKey(EVAL_SEED), env_params)
+    goal = [
+        bool(obs0.target.shape[-1]) or role in env_params.scripted
+        for role in env_params.roles
+    ]
+
     # The net is chase-only.
     net = {
         f: getattr(env_params, f)
@@ -179,6 +187,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", preset=None, policy="check
                 "center": list(env_params.center),
                 "arena": list(env_params.arena),
                 "net": net or None,
+                "goal": goal,
                 "hitbox": 0.5 * env_params.collision_dist,
                 "policy_dt": env_params.policy_dt,
             },
