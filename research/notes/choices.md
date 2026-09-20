@@ -264,9 +264,10 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   training reports the average length of episodes that finished.
 - **Results stay with the run.** Evaluation writes to
   `runs/<run>/evals/<name>/`, keeping results with the run they measure.
-- **Policy selection.** Evaluation accepts this run's checkpoint, another run's
-  checkpoint, or `cascade` through the same interface. Add `--policy role=source`
-  when a task needs two roles.
+- **Policy selection.** One flag names one seat: `--seat ROLE SOURCE`, where the
+  source is this run's checkpoint, another run's, a `.pkl`, or `cascade`. A role
+  nobody names flies this run's own checkpoint. That is what lets a duel measure
+  one side against a fixed opponent.
 - **Replay data.** The viewer reads task, preset, arena, roles and `policy_dt`
   from `header.json`, and state from `trajectory.npz`. It does not import the
   environment.
