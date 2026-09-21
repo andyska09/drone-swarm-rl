@@ -31,11 +31,11 @@ def checkpoint_name(text):
 
 
 def net_policy(cfg, env, weights, slices):
-    apply = ppo.make_apply(ppo.make_net(cfg, env), slices)
+    apply = ppo.make_actor(ppo.make_net(cfg, env)[0], slices)
 
     def act(state, obs, carry):
         del state
-        mean, _, _ = apply(weights, obs)
+        mean, _ = apply(weights, obs)
         return mean, carry
 
     return act
@@ -80,7 +80,10 @@ def make_policy(cfg, env, env_params, run, checkpoint, seats):
     nets = {r: seats.get(r, "checkpoint") for r in slices if seats.get(r) != "cascade"}
     saved = {r: _saved(run, s, checkpoint) for r, s in nets.items()}
     net = net_policy(
-        cfg, env, {r: s["params"][r] for r, s in saved.items()}, {r: slices[r] for r in nets}
+        cfg,
+        env,
+        {r: s["params"][r] for r, s in saved.items()},
+        {r: slices[r] for r in nets},
     )
     step = next((s["update"] for s in saved.values()), None)
 
@@ -195,7 +198,10 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
         goal=np.asarray(goal),
         live=np.asarray(live),
         action=np.asarray(action),
-        **{f.name: np.asarray(getattr(drone, f.name)) for f in drone.__dataclass_fields__.values()},
+        **{
+            f.name: np.asarray(getattr(drone, f.name))
+            for f in drone.__dataclass_fields__.values()
+        },
     )
     # `reference` is a real goal for a drone the cascade flies, and for a drone whose
     # obs carries a target. For anyone else it is only the baseline's input.

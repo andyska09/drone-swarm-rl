@@ -33,7 +33,18 @@ CONTROL_KEYS = frozenset(
 )
 
 
-class ActorCritic(nn.Module):
+def _trunk(x, hidden, activation):
+    act = nn.tanh if activation == "tanh" else nn.relu
+    for h in hidden:
+        x = act(
+            nn.Dense(h, kernel_init=orthogonal(jnp.sqrt(2)), bias_init=constant(0.0))(x)
+        )
+    return x
+
+
+class Actor(nn.Module):
+    """What flies. Local observations only, so it can run on a drone."""
+
     num_actions: int
     hidden: tuple = (256, 256)
     activation: str = "tanh"
@@ -41,28 +52,24 @@ class ActorCritic(nn.Module):
 
     @nn.compact
     def __call__(self, obs):
-        x = envs.flat(obs)
-        act = nn.tanh if self.activation == "tanh" else nn.relu
-
-        def trunk(x):
-            for h in self.hidden:
-                x = act(
-                    nn.Dense(
-                        h, kernel_init=orthogonal(jnp.sqrt(2)), bias_init=constant(0.0)
-                    )(x)
-                )
-            return x
-
         mean = nn.Dense(
             self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(trunk(x))
+        )(_trunk(envs.flat(obs), self.hidden, self.activation))
         log_std = self.param(
             "log_std", lambda _: jnp.full((self.num_actions,), self.init_log_std)
         )
-        value = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
-            trunk(x)
-        )
-        return mean, log_std, jnp.squeeze(value, -1)
+        return mean, log_std
+
+
+class Critic(nn.Module):
+    hidden: tuple = (256, 256)
+    activation: str = "tanh"
+
+    @nn.compact
+    def __call__(self, obs, opp_action):
+        x = _trunk(envs.flat_critic(obs, opp_action), self.hidden, self.activation)
+        value = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(x)
+        return jnp.squeeze(value, -1)
 
 
 def sample(key, mean, log_std):
@@ -111,23 +118,56 @@ def normalize_by_role(adv, mask, slices):
 
 
 def make_net(cfg, env):
-    return ActorCritic(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_log_std)
+    return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_log_std), Critic(
+        cfg.hidden, cfg.activation
+    )
 
 
-def make_apply(net, slices):
-    """Apply each role's weights and return outputs in drone order."""
+def opponent_slices(roles, slices):
+    """Every drone whose role is not mine. Teammates are left out."""
+
+    return {
+        role: jnp.array([i for i, r in enumerate(roles) if r != role], dtype=jnp.int32)
+        for role in slices
+    }
+
+
+def opp_actions(action, opponents):
+    """The opponents' actions this step, flat, clipped"""
+
+    a = jnp.take(jnp.clip(action, -1.0, 1.0), opponents, axis=-2)
+    return a.reshape(a.shape[:-2] + (-1,))
+
+
+def make_actor(net, slices):
+    """Apply each role's actor and return outputs in drone order."""
 
     def apply(params, obs):
         lead = obs.own.shape[:-1]
         mean = jnp.zeros(lead + (net.num_actions,))
         log_std = jnp.zeros(lead + (net.num_actions,))
-        value = jnp.zeros(lead)
         for role, drones in slices.items():
-            m, ls, v = net.apply(params[role], envs.take(obs, drones))
+            m, ls = net.apply(params[role]["actor"], envs.take(obs, drones))
             mean = mean.at[..., drones, :].set(m)
             log_std = log_std.at[..., drones, :].set(jnp.broadcast_to(ls, m.shape))
+        return mean, log_std
+
+    return apply
+
+
+def make_critic(net, slices, opponents):
+    """Apply each role's critic. `action` is every drone's action this step."""
+
+    def apply(params, obs, action):
+        value = jnp.zeros(obs.own.shape[:-1])
+        for role, drones in slices.items():
+            v = net.apply(
+                params[role]["critic"],
+                envs.take(obs, drones),
+                opp_actions(action, opponents[role]),
+            )
             value = value.at[..., drones].set(v)
-        return mean, log_std, value
+        return value
 
     return apply
 
@@ -148,9 +188,11 @@ def make(cfg, env, env_params):
     assert (cfg.num_envs * cfg.num_steps) % cfg.num_minibatches == 0
     batch_size = cfg.num_envs * cfg.num_steps
 
-    net = make_net(cfg, env)
+    actor_net, critic_net = make_net(cfg, env)
     slices = role_slices(env_params.roles, env_params.scripted)
-    apply = make_apply(net, slices)
+    opponents = opponent_slices(env_params.roles, slices)
+    actor = make_actor(actor_net, slices)
+    critic = make_critic(critic_net, slices, opponents)
 
     # Whose turn it is. A traced flag, so alternating needs no second compile.
     every_turn = {r: not cfg.train_roles or r in cfg.train_roles for r in slices}
@@ -160,6 +202,7 @@ def make(cfg, env, env_params):
         obs, vec = vecenv.reset(k_env, env, env_params, cfg)
 
         one_scene = jax.tree.map(lambda x: x[:1], obs)
+        one_action = jnp.zeros((1, env_params.n_drones, env.NUM_ACTIONS))
         keys = jax.random.split(k_net, len(slices))
 
         if cfg.anneal_lr:
@@ -171,10 +214,20 @@ def make(cfg, env, env_params):
         else:
             lr = cfg.lr
 
+        def params(role, drones, k):
+            k_a, k_c = jax.random.split(k)
+            scene = envs.take(one_scene, drones)
+            return {
+                "actor": actor_net.init(k_a, scene),
+                "critic": critic_net.init(
+                    k_c, scene, opp_actions(one_action, opponents[role])
+                ),
+            }
+
         ts = {
             role: TrainState.create(
                 apply_fn=None,
-                params=net.init(k, envs.take(one_scene, drones)),
+                params=params(role, drones, k),
                 tx=optax.chain(
                     optax.clip_by_global_norm(cfg.max_grad_norm),
                     optax.adam(lr, eps=1e-5),
@@ -187,12 +240,19 @@ def make(cfg, env, env_params):
     def weights(ts):
         return {role: t.params for role, t in ts.items()}
 
+    def value_at(ts, obs, key):
+        """No action exists at this state yet, so draw one."""
+
+        mean, log_std = actor(weights(ts), obs)
+        return critic(weights(ts), obs, sample(key, mean, log_std))
+
     def update(ts, vec, obs, key, train=every_turn):
         def rollout(carry, _):
             ts, vec, obs, key = carry
             key, k = jax.random.split(key)
-            mean, log_std, value = apply(weights(ts), obs)
+            mean, log_std = actor(weights(ts), obs)
             action = sample(k, mean, log_std)
+            value = critic(weights(ts), obs, action)
             next_obs, vec, reward, done, info = vecenv.step(
                 vec, action, env, env_params, cfg
             )
@@ -211,15 +271,17 @@ def make(cfg, env, env_params):
             rollout, (ts, vec, obs, key), None, length=cfg.num_steps
         )
 
+        key, k_final, k_last = jax.random.split(key, 3)
+
         # Bootstrap timeouts from the final observation before the scene resets.
         # A diverged drone makes v_final NaN, and NaN * 0 is NaN, so select instead.
-        _, _, v_final = apply(weights(ts), info["final_obs"])
+        v_final = value_at(ts, info["final_obs"], k_final)
         traj = traj.replace(
             reward=traj.reward
             + cfg.gamma * jnp.where(info["bootstrap"] > 0, v_final, 0.0)
         )
 
-        _, _, last_value = apply(weights(ts), obs)
+        last_value = value_at(ts, obs, k_last)
 
         def gae_step(carry, tr):
             gae, next_value = carry
@@ -257,7 +319,8 @@ def make(cfg, env, env_params):
                 a_n = normalize_by_role(a, tr.mask, slices)
 
                 def loss_fn(params):
-                    mean, log_std, value = apply(params, tr.obs)
+                    mean, log_std = actor(params, tr.obs)
+                    value = critic(params, tr.obs, tr.action)
                     ratio = jnp.exp(log_prob(tr.action, mean, log_std) - tr.log_prob)
 
                     policy = -_mean(

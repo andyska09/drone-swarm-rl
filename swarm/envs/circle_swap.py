@@ -45,6 +45,8 @@ def get_obs(state, params):
         others=others,
         others_mask=mask,
         target=core.target_obs(state.drone, state.goal),
+        # The goal drives the reward, so the critic cannot score a state without it.
+        scene=jnp.concatenate([core.scene_obs(state.drone), state.goal.reshape(-1)]),
     )
 
 

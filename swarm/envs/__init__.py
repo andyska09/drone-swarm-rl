@@ -8,7 +8,7 @@ A task module in this package is a set of plain functions:
     reset(key, params)      -> obs, state
     step(key, state, action, params)
                             -> obs, state, reward (n,), done (), info
-    get_obs(state, params)  -> Obs, one row per drone
+    get_obs(state, params)  -> Obs, one row per drone, plus `scene` for the critic
     reference(state, params)
                             -> (n, 3), where each drone is trying to fly. The
                                cascade baseline flies to it and the viewer draws
@@ -32,12 +32,15 @@ class Obs:
     `others` holds drones, whatever their role — a teammate and an opponent are
     told apart by the last feature, not by sitting in different blocks. `target`
     holds a place to fly to, and a task that has none gives it zero width.
+
+    `scene` is the critic's input it holds the whole game - adapted from Gavin 2026
     """
 
     own: jnp.ndarray  # (N, f)
     others: jnp.ndarray  # (N, K, 7), the K nearest drones, body frame
     others_mask: jnp.ndarray  # (N, K)
     target: jnp.ndarray  # (N, t)
+    scene: jnp.ndarray  # (18N,), every drone's exact state, world frame
 
 
 DRONE_AXIS = {"own": -2, "others": -3, "others_mask": -2, "target": -2}
@@ -56,6 +59,17 @@ def flat(obs):
         ],
         axis=-1,
     )
+
+
+def flat_critic(obs, opp_action):
+    """The critic's input: the whole scene and the opponents' actions this step.
+
+    Both blocks are per scene, so they broadcast over the rows.
+    """
+
+    lead = obs.own.shape[:-1]
+    grow = lambda x: jnp.broadcast_to(x[..., None, :], lead + x.shape[-1:])
+    return jnp.concatenate([grow(obs.scene), grow(opp_action)], axis=-1)
 
 
 def take(obs, drones):

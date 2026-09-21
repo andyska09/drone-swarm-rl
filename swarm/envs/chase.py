@@ -118,6 +118,7 @@ def get_obs(state, params):
         others_mask=mask,
         # Nobody here flies at a fixed point: a pursuer chases a drone and the evader runs from one, and both sit in `others`.
         target=jnp.zeros((params.n_drones, 0)),
+        scene=core.scene_obs(state.drone),
     )
 
 

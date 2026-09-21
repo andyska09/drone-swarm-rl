@@ -10,6 +10,7 @@ import numpy as np
 from swarm.sim import control, dynamics
 
 OTHER_FEATURES = 7  # body-frame offset and velocity of one drone, plus a role flag
+SCENE_FEATURES = 18  # world position, velocity, R and angular rate of one drone
 
 
 @dataclasses.dataclass(frozen=True)
@@ -140,6 +141,15 @@ def own_obs(drone, params):
         ],
         axis=-1,
     )
+
+
+def scene_obs(drone):
+    """The exact state (one vector) of every drone in world frame."""
+
+    n = drone.x.shape[0]
+    return jnp.concatenate(
+        [drone.x, drone.v, drone.R.reshape(n, 9), drone.omega], axis=-1
+    ).reshape(-1)
 
 
 def target_obs(drone, x, v=0.0):
