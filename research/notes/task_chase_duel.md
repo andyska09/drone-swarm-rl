@@ -63,8 +63,31 @@ Gavin's performance metric, one number per episode, 0 to 1, the pursuer's side.
 `ρE = 1 - ρP`. It separates a catch at 1.3 s from a catch at 9 s; `caught` does
 not, and that gap is what improves late in training. Goes in `info` as `rho`.
 
-Anchors: task 3 scores `ρP ≈ 0.87`. Gavin's best 3v1 pursuers against a learned
-evader need 7.36 s of 10, so `ρP ≈ 0.26` on a catch and near 0.2 on average.
+Anchors. Both papers right-censor time-to-catch — a crash or a timeout is written
+down as the full 10 s ([Nv1](../papers/2607.05939v1.md) §V-A,
+[1v1](../papers/2603.16279v1.md) §V-B). So a published table gives ρP directly:
+`ρP = (1 - mean_time / 10) + evader_crash_alone`.
+
+| setup | source | time | evader crash | ρP |
+|---|---|---|---|---|
+| task 3, our pursuer against the scripted evader | ours | 1.34 s | — | **0.87** |
+| 1v1, 8 × 8 × 5 arena, DRL vs DRL | 1v1 Table III | 3.78 s | 4.1% | **0.66** |
+| 3v1, evader boxed in 12 × 12 × 6, PFSP-CTBR vs PFSP | Nv1 Table II | 3.71 s | 0.3% | **0.63** |
+| 1v1, 40 × 40 × 14 arena, DRL vs DRL | 1v1 Table III | 6.62 s | 1.5% | **0.35** |
+
+**The last row is the only published 1v1 in a big arena, and it is the nearest
+match to `duel`.** Every setup that passes 0.6 either adds pursuers or shrinks the
+space the evader may use.
+
+**Read `ρP` against theirs only by its catch part.** Their evaders crash in 0.3% to
+4% of episodes, so their `ρP` is almost all catches. Ours crashes in 33%, so a
+third of our `ρP` is the crash branch. At update 404 we read `ρP = 0.495`, of which
+0.137 is catches — against 0.34 of catches for the 1v1 big-arena row. The headline
+number flatters us by about a third.
+
+Trap: `7.36 s` in Nv1 Table II is the **APF pursuer against the APF evader** — two
+heuristics, not the learned pursuers. The first version of this note read that cell
+and set `swap_hi` from it.
 
 ## The swap
 
@@ -131,12 +154,118 @@ conda run -n drone-swarm python run/train.py --task chase --preset duel \
 About 1526 updates. Task 3 ran 629 updates in 42 minutes, so this is near 100
 minutes.
 
+## What the first run showed
+
+`runs/chase_duel_s0_20260920-153504_737629`, all 1525 updates, 4e8 steps, 2.3 h.
+The plan from here is in [handoff_duel.md](handoff_duel.md).
+
+Final, from the three evals:
+
+| eval | pursuer / evader | `caught_final` | `evader_died_final` | episode |
+|---|---|---|---|---|
+| `evals/latest` | ours / ours | 0.7041 | 0.0469 | 5.0 s |
+| `evals/evader_cascade` | ours / cascade | 0.9609 | 0.0000 | 3.3 s |
+| `evals/pursuer_cascade` | cascade / ours | 0.0156 | 0.2793 | 7.5 s |
+
+Gate rows 1 and 2 pass. `evader_died_final < 0.05` fails. The convergence row is
+not measurable — the third pursuer turn ran 754 updates and never ended, so the
+evader trained for 45 updates of 1525.
+
+**Same evader policy, two crash rates: 4.7% against our fast pursuer, 27.9% against
+the slow cascade pursuer.** The difference is episode length, not skill. A caught
+evader never reaches a wall. The evader learned to dodge, not to fly.
+
+The rest of this section is the diagnosis as it was read at update 404.
+
+**The pursuer's fourth turn is long, and that is normal.** Four swaps at updates
+25, 35, 45 and 58, then none for 340 updates. The flat block from 60 to 240 is the
+pursuer learning to fly and not crash; the catch comes after. 1v1 §V-A describes
+the same curve: episode length "first increases as both agents learn to hover and
+avoid crashes, but soon falls sharply as the pursuer discovers a quick capture
+strategy". Ours rose to 900, held, then fell to 650.
+
+Do not call a long turn a stuck turn before the episode length starts to fall.
+
+| update | `caught` | `distance` | `ep_length` | `ρP` |
+|---|---|---|---|---|
+| 240 | 0.046 | 6.98 m | 851 | 0.300 |
+| 404 | **0.441** | **3.72 m** | **650** | **0.495** |
+
+**`ρP` started as a wall-crash meter and is slowly becoming a chase score:**
+
+| updates | `ρP` | from catches | from evader crashes |
+|---|---|---|---|
+| 70-255 | 0.286 | 0.009 | 0.277 |
+| 256-340 | 0.392 | 0.050 | 0.342 |
+| 341-404 | 0.465 | 0.137 | 0.328 |
+
+Until update 65 `crashed` sat at 0.99 — somebody hit a wall in almost every
+episode — and the first four swaps rode that number, not any chase skill.
+
+**`evader_died` never moves.** It holds 0.28-0.34 across the whole run. The evader
+is frozen, so this is one fixed policy walking into a wall in a third of episodes.
+The gate wants `evader_died_final < 0.05`.
+
+### Why: our evader may use the whole arena
+
+Neither paper allows that, and this note missed it.
+
+| | ours | Nv1 | 1v1 |
+|---|---|---|---|
+| arena | 32 × 32 × 16 | 32 × 32 × 16 | 40 × 40 × 14 and 8 × 8 × 5 |
+| where the evader may fly | **all of it** | **12 × 12 × 6 in the centre** (§V-A) | all of it, but `λbnd` pays it to stay off the walls |
+| evader crash rate | **0.28** | 0.003 | 0.015 |
+
+Both papers say the same sentence, in their reward sections: "neither the evader nor the
+pursuer receive a reward when the opponent reaches a failure state… rather than
+forcing the opponent to crash." Our **reward** obeys it. Our **swap trigger** does
+not, because `ρP = 1` on an evader crash.
+
+In Nv1 that branch of `ρP` only weights PFSP opponent sampling, where a
+crash-prone evader is sampled **less**. We made it drive the curriculum.
+
 ## Open
 
 | | |
 |---|---|
-| `swap_hi`, `swap_lo`, `swap_min` | guessed. Retune once `metrics.csv` shows the real range of `ρP` |
-| no phase cap | a stuck phase is possible on purpose. Watch the `training` column |
-| `λbnd` | only if the evader parks at a wall. Gavin publishes no weight, no threshold, no curve |
+| `swap_hi`, `swap_lo` | still guessed, but 0.6 now looks reachable: `ρP` passed 0.49 at update 404 and is still climbing |
+| `swap_min` | 10 still guessed. Neither paper publishes a turn length |
+| no phase cap | a turn ran 340 updates and was **still learning**. Do not add a cap on turn length alone — it would have cut this one off |
+| `λbnd` | **1v1 Table I publishes `λbnd = 1.0`**, evader only. The buffer width and the ϕbnd curve are still unpublished. Nv1 publishes no weight and boxes the evader into 12 × 12 × 6 instead |
+| confine the evader | Nv1's hard box or 1v1's soft `λbnd`. Two different answers, no clear winner |
+| what the swap reads | `ρP` as Nv1 defines it, or `ρP` with the evader-crash branch dropped from the trigger only |
 | four rays or eight | four are exact for a box. Eight give the diagonals for free |
+| hyperparameters | 1v1 Table II: entropy 0.01, no lr decay, 15 epochs, 1 minibatch, 4e9 steps. Ours: 0.0, decay on, 4 epochs, 32 minibatches, 4e8 steps. Nv1 publishes no table |
 | the first phase | the evader starts as a fresh policy: near hover, drifting, sometimes crashing |
+
+## PPO settings against 1v1
+
+Theirs is [1v1](../papers/2603.16279v1.md) Table II. Ours is the `config.json` of
+`runs/chase_duel_s0_20260920-153504_737629`. Nv1 publishes no hyperparameter table.
+
+| | 1v1 Table II | ours |
+|---|---|---|
+| discount factor γ | 0.99 | 0.99 |
+| GAE λ | 0.95 | 0.95 |
+| clip | 0.2 | 0.2 |
+| critic weight | 0.5 | 0.5 |
+| max gradient norm | 0.5 | 0.5 |
+| hidden layers | 2 × 256 | 2 × 256 |
+| entropy coefficient | **0.01** | **0.0** |
+| learning rate | **5e-4** | **3e-4** |
+| decay the learning rate | **False** | **True** |
+| PPO epochs per batch | **15** | **4** |
+| minibatches per epoch | **1** | **32** |
+| parallel environments | **1024** | **4096** |
+| rollout length | **128** | **64** |
+| total environment steps | **4e9** | **4e8** |
+| activation | **ReLU** | **tanh** |
+| samples in one update | **131,072** | **262,144** |
+| samples in one gradient step | **131,072** | **8,192** |
+| gradient steps per update | **15** | **128** |
+| number of updates | **about 30,500** | **1,525** |
+| action spread | **network outputs it, `tanh` squash** | **one free `log_std`, clipped** |
+| observation scaling | **positions by view range, velocity by max speed** | **raw SI units** |
+| reward normalization | **not published** | **on** |
+
+1v1 §IV-C says 2e9 steps and its Table II says 4e9. The table above uses 4e9.

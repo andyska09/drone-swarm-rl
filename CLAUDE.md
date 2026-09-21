@@ -285,3 +285,14 @@ tensorboard --logdir=./                          # from the experiment folder
 Key training flags to recognise: `--quads_mode` (scenario), `--quads_obs_repr`,
 `--quads_neighbor_encoder_type=attention`, `--quads_neighbor_visible_num`,
 `--quads_use_obstacles`, `--quads_use_downwash`, `--replay_buffer_sample_prob`.
+
+## Shell traps
+
+- **Bare `python` is not on PATH.** Every command goes through
+  `conda run -n drone-swarm`.
+- **`conda run` swallows stdout.** If you need to read the output, use
+  `conda run --no-capture-output -n drone-swarm python ...`. Without the flag a
+  script that prints fine in a terminal returns nothing here.
+- **There is no `CONTEXT.md` and no `CONTEXT-MAP.md`.** A skill that asks for one
+  will not find it. The ubiquitous language lives in this file and in
+  `research/notes/task_<name>.md`.
