@@ -135,9 +135,9 @@ scripted evader of task 3 flew.
 
 | what | command | pass |
 |---|---|---|
-| the evader against a fixed pursuer | `--seat pursuer cascade` | `caught_final < 0.5` |
-| the pursuer against a fixed evader | `--seat evader cascade` | `caught_final > 0.9` |
-| no win by crashing | either | `evader_died_final < 0.05` |
+| the evader against a fixed pursuer | `--seat pursuer cascade` | `caught < 0.5` |
+| the pursuer against a fixed evader | `--seat evader cascade` | `caught > 0.9` |
+| no win by crashing | either | `evader_crashed < 0.05` |
 | it converges, not cycles | `metrics.csv` | the swing in `ρP` narrows across phases |
 
 The cascade caught the scripted evader 0.996 of the time, and task 3's pursuer
@@ -161,13 +161,13 @@ The plan from here is in [handoff_duel.md](handoff_duel.md).
 
 Final, from the three evals:
 
-| eval | pursuer / evader | `caught_final` | `evader_died_final` | episode |
+| eval | pursuer / evader | `caught` | `evader_crashed` | episode |
 |---|---|---|---|---|
 | `evals/latest` | ours / ours | 0.7041 | 0.0469 | 5.0 s |
 | `evals/evader_cascade` | ours / cascade | 0.9609 | 0.0000 | 3.3 s |
 | `evals/pursuer_cascade` | cascade / ours | 0.0156 | 0.2793 | 7.5 s |
 
-Gate rows 1 and 2 pass. `evader_died_final < 0.05` fails. The convergence row is
+Gate rows 1 and 2 pass. `evader_crashed < 0.05` fails. The convergence row is
 not measurable — the third pursuer turn ran 754 updates and never ended, so the
 evader trained for 45 updates of 1525.
 
@@ -202,9 +202,9 @@ Do not call a long turn a stuck turn before the episode length starts to fall.
 Until update 65 `crashed` sat at 0.99 — somebody hit a wall in almost every
 episode — and the first four swaps rode that number, not any chase skill.
 
-**`evader_died` never moves.** It holds 0.28-0.34 across the whole run. The evader
+**`evader_crashed` never moves.** It holds 0.28-0.34 across the whole run. The evader
 is frozen, so this is one fixed policy walking into a wall in a third of episodes.
-The gate wants `evader_died_final < 0.05`.
+The gate wants `evader_crashed < 0.05`.
 
 ### Why: our evader may use the whole arena
 

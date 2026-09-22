@@ -226,9 +226,11 @@ independence from the control rate.
 | step limit, 1000 | yes | nothing | same |
 | **evader** crashes | yes | nothing, to either side | "neither receives a reward when the opponent reaches a failure state" |
 
-`crash` and `collPP` are charged only for a drone's own death. `info["evader_died"]`
-counts the evader's. A drone that catches on the same step it collides is **not**
-dead: both flags carry `& ~caught`.
+`crash` and `collPP` are charged only for a drone's own death. `crashed` goes into
+`info` per drone, so it is reported as `pursuer_crashed` and `evader_crashed` — one
+is a loss, the other is a win, and one merged number hides which happened. A drone
+that catches on the same step it collides is **not** dead: both flags carry
+`& ~caught`.
 
 `is_dead` is chase's own, not `core.is_dead`: Gavin ends an episode on out of
 bounds and on inter-pursuer contact, and says nothing about attitude, so a pursuer
