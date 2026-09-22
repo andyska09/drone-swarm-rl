@@ -36,6 +36,7 @@ class EnvState:
     rate_pid: control.PIDState
     alive: jnp.ndarray
     time: jnp.ndarray
+    closest: jnp.ndarray
 
 
 def get_obs(state, params):
@@ -79,12 +80,14 @@ def reset(key, params):
         [jnp.cos(angle), jnp.sin(angle), jnp.zeros(n)], axis=-1
     )
 
+    drone = core.spawn(key, center + ring, params)
     state = EnvState(
-        drone=core.spawn(key, center + ring, params),
+        drone=drone,
         goal=center - ring,
         rate_pid=control.pid_init((n, 3)),
         alive=jnp.ones(n, bool),
         time=jnp.int32(0),
+        closest=jnp.min(core.pair_dist(drone.x)),
     )
     return get_obs(state, params), state
 
@@ -102,6 +105,7 @@ def step(key, state, action, params):
         rate_pid=rate_pid,
         alive=alive,
         time=state.time + 1,
+        closest=jnp.minimum(state.closest, jnp.min(core.pair_dist(drone.x))),
     )
 
     reward = compute_reward(new_state, state.alive, died, params)
@@ -110,14 +114,16 @@ def step(key, state, action, params):
     done = truncated | ~jnp.all(alive)
 
     distance = core.norm(new_state.goal - drone.x)
-    # Averaging over drones hides the one that failed.
     info = {
         "alive": alive,
         "died_this_step": died,
         "truncated": truncated,
-        "distance": distance,
-        "worst_distance": jnp.max(distance),
-        "min_dist": jnp.min(core.pair_dist(drone.x)),
+        "end": {
+            "distance": distance,
+            "worst_distance": jnp.max(distance),
+            "closest": new_state.closest,
+        },
+        "step": {},
     }
     return get_obs(new_state, params), new_state, reward, done, info
 

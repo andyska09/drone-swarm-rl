@@ -15,8 +15,17 @@ A task module in this package is a set of plain functions:
                                it as the marker sphere.
     is_dead                 only if core.is_dead is the wrong rule for the task
 
-`info` must carry `alive`, `died_this_step` and `truncated`. Anything else in it
-is logged as a metric.
+`info` must carry `alive`, `died_this_step`, `truncated`, and two metric dicts:
+
+    end   read at the step the episode ends — a catch, a crash, a final distance.
+          A NaN means this episode has no value for it, and it is left out of the
+          average instead of counted as a zero.
+    step  averaged over the steps — a gap, a per-step collision rate.
+
+A metric with a drone axis is reported once per role, named `<role>_<metric>`; a
+task with one role keeps the bare name. A metric without one is a scene fact and
+keeps its name. Put a number in the group that matches how you want to read it —
+nothing else decides it.
 """
 
 import importlib

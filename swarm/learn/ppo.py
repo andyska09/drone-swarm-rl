@@ -19,22 +19,6 @@ LOG_2 = math.log(2.0)
 
 MIN_STD = 1e-3  # keeps log(std) finite
 
-# Exclude episode control and bookkeeping fields from reported env metrics.
-CONTROL_KEYS = frozenset(
-    {
-        "alive",
-        "died_this_step",
-        "truncated",
-        "done",
-        "mask",
-        "cont",
-        "bootstrap",
-        "final_obs",
-        "ep_return",
-        "ep_length",
-    }
-)
-
 
 def _inv_softplus(x):
     return math.log(math.expm1(x))
@@ -116,6 +100,25 @@ def role_slices(roles, scripted=()):
         for name in dict.fromkeys(roles)
         if name not in scripted
     }
+
+
+def role_columns(roles):
+    """Metric column per role: `pursuer_return`. A one-role task keeps `return`."""
+
+    names = dict.fromkeys(roles)
+    tag = (lambda r: f"{r}_") if len(names) > 1 else (lambda r: "")
+    return {
+        r: (tag(r), jnp.array([i for i, x in enumerate(roles) if x == r]))
+        for r in names
+    }
+
+
+def by_role(name, x, columns, per_drone):
+    """One column for a scene fact, one per role for anything with a drone axis."""
+
+    if not per_drone:
+        return {name: x}
+    return {tag + name: x[..., drones].mean(-1) for tag, drones in columns.values()}
 
 
 def _mean(x, mask):
@@ -215,6 +218,7 @@ def make(cfg, env, env_params):
 
     actor_net, critic_net = make_net(cfg, env)
     slices = role_slices(env_params.roles, env_params.scripted)
+    columns = role_columns(env_params.roles)
     opponents = opponent_slices(env_params.roles, slices)
     actor = make_actor(actor_net, slices)
     critic = make_critic(critic_net, slices, opponents)
@@ -350,25 +354,28 @@ def make(cfg, env, env_params):
                     value = critic(params, tr.obs, tr.action)
                     ratio = jnp.exp(log_prob(tr.draw, mean, std) - tr.log_prob)
 
-                    policy = -_mean(
-                        jnp.minimum(
-                            ratio * a_n,
-                            jnp.clip(ratio, 1 - cfg.clip_eps, 1 + cfg.clip_eps) * a_n,
-                        ),
-                        tr.mask,
+                    # Per drone, so the same numbers can be reported per role.
+                    clipped = -jnp.minimum(
+                        ratio * a_n,
+                        jnp.clip(ratio, 1 - cfg.clip_eps, 1 + cfg.clip_eps) * a_n,
                     )
-                    value_loss = 0.5 * _mean((value - target) ** 2, tr.mask)
-                    ent = _mean(entropy(tr.draw, std), tr.mask)
-                    return policy + cfg.vf_coef * value_loss - cfg.ent_coef * ent, (
-                        policy,
-                        value_loss,
-                        ent,
-                        ratio,
-                        tr.mask,
+                    squared = 0.5 * (value - target) ** 2
+                    ent = entropy(tr.draw, std)
+
+                    loss = (
+                        _mean(clipped, tr.mask)
+                        + cfg.vf_coef * _mean(squared, tr.mask)
+                        - cfg.ent_coef * _mean(ent, tr.mask)
                     )
+                    return loss, {
+                        "policy_loss": clipped,
+                        "value_loss": squared,
+                        "entropy": ent,
+                        "clipfrac": (jnp.abs(ratio - 1.0) > cfg.clip_eps) * 1.0,
+                        "approx_kl": (ratio - 1.0) - jnp.log(ratio + 1e-8),
+                    }
 
                 (_, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(weights(ts))
-                policy, value_loss, ent, ratio, mask = aux
                 # Selecting the whole TrainState freezes the Adam moments and the
                 # step count too, not only the weights.
                 stepped = {
@@ -376,13 +383,9 @@ def make(cfg, env, env_params):
                     for role, t in ts.items()
                 }
                 return stepped, {
-                    "policy_loss": policy,
-                    "value_loss": value_loss,
-                    "entropy": ent,
-                    "clipfrac": _mean(
-                        (jnp.abs(ratio - 1.0) > cfg.clip_eps) * 1.0, mask
-                    ),
-                    "approx_kl": _mean((ratio - 1.0) - jnp.log(ratio + 1e-8), mask),
+                    columns[role][0] + name: _mean(x[..., drones], tr.mask[..., drones])
+                    for name, x in aux.items()
+                    for role, drones in slices.items()
                 }
 
             ts, stats = lax.scan(minibatch, ts, minibatches)
@@ -393,25 +396,39 @@ def make(cfg, env, env_params):
         done = info["done"]
         episodes = done.sum()
 
-        def per_episode(x):
-            return jnp.where(episodes > 0, (x * done).sum() / episodes, jnp.nan)
+        def at_end(x):
+            """x on the step each episode ended, over the episodes that define it.
+            A NaN says this episode has no value, so it is dropped, not counted."""
 
-        var_y = jnp.var(targets)
-        metrics = {
-            "episodes": episodes,
-            "return": per_episode(info["ep_return"].mean(-1)),
-            "ep_length": per_episode(info["ep_length"]),
-            "death_rate": per_episode(1.0 - info["alive"].mean(-1)),
-            "explained_var": jnp.where(
-                var_y > 0, 1.0 - jnp.var(targets - traj.value) / var_y, jnp.nan
-            ),
-            **jax.tree.map(lambda x: x[-1].mean(), stats),
-        }
-        for key_name, value in info.items():
-            if key_name not in CONTROL_KEYS:
-                metrics[key_name] = per_episode(
-                    value.mean(-1) if value.ndim == 3 else value
-                )
+            x = x.astype(done.dtype)
+            weight = done * jnp.isfinite(x)
+            n = weight.sum()
+            total = jnp.sum(jnp.where(weight > 0, x, 0.0))
+            return jnp.where(n > 0, total / jnp.maximum(n, 1.0), jnp.nan)
+
+        def split(name, x, per_drone):
+            return by_role(name, x.astype(done.dtype), columns, per_drone)
+
+        metrics = {"episodes": episodes, "ep_length": at_end(info["ep_length"])}
+        for name, x in (
+            ("return", info["ep_return"]),
+            ("death_rate", 1.0 - info["alive"]),
+        ):
+            metrics |= {k: at_end(v) for k, v in split(name, x, True).items()}
+        for name, x in info["end"].items():
+            metrics |= {k: at_end(v) for k, v in split(name, x, x.ndim == 3).items()}
+        for name, x in info["step"].items():
+            metrics |= {k: v.mean() for k, v in split(name, x, x.ndim == 3).items()}
+
+        # Per role: the two sides of a game have opposite signs, so one pooled
+        # variance rewards a critic that has only learned which role it is.
+        for role, drones in slices.items():
+            target, value = targets[..., drones], traj.value[..., drones]
+            var_y = jnp.var(target)
+            metrics[columns[role][0] + "explained_var"] = jnp.where(
+                var_y > 0, 1.0 - jnp.var(target - value) / var_y, jnp.nan
+            )
+        metrics |= jax.tree.map(lambda x: x[-1].mean(), stats)
 
         return (ts, vec, obs, key), metrics
 

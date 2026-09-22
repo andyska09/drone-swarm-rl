@@ -105,7 +105,8 @@ def step(key, state, action, params):
         "alive": alive,
         "died_this_step": died,
         "truncated": truncated,
-        "distance": core.norm(new_state.goal - drone.x),
+        "end": {"distance": core.norm(new_state.goal - drone.x)},
+        "step": {},
     }
     return get_obs(new_state, params), new_state, reward, done, info
 

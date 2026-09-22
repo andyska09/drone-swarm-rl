@@ -284,15 +284,18 @@ def step(key, state, action, params):
         "alive": alive,
         "died_this_step": died,
         "truncated": truncated,
-        "caught": caught,
-        "rho": rho,
-        "distance": jnp.min(core.norm(drone.x[evader] - net_centre(drone, params))),
-        # How far off the net centre the catch landed.
-        "accuracy": jnp.where(caught, jnp.min(core.norm(on_net)), 0.0),
-        "crashed": jnp.any(crash),
-        "collPP": jnp.any(collide),
-        "collPE": jnp.any(collPE(drone, params)),
-        "evader_died": died[evader],
+        "end": {
+            "caught": caught,
+            "rho": rho,
+            "crashed": crash,
+            "collPP": jnp.any(collide),
+            "catch_offset": jnp.where(caught, jnp.min(core.norm(on_net)), jnp.nan),
+        },
+        "step": {
+            # The nearest pursuer's net to the evader, averaged over the chase.
+            "distance": jnp.min(core.norm(drone.x[evader] - net_centre(drone, params))),
+            "collPE": jnp.any(collPE(drone, params)),
+        },
     }
     return get_obs(new_state, params), new_state, reward, done, info
 

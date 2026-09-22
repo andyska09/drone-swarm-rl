@@ -269,14 +269,24 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
 
 ## Evaluation and replay
 
-- **Evaluation metrics.** Evaluation reports a per-episode mean and final value
-  for every scalar in `info`. Task-specific pass thresholds belong in tests and
-  notes.
+- **One number per metric, and the task picks which.** `info` carries two dicts:
+  `end` is read at the step the episode ended, `step` is averaged over the steps.
+  Reporting both flavours of every key, as evaluation used to, gives two columns
+  where only one is meaningful and no name saying which — `rho_mean` was a
+  per-episode score divided by episode length. A NaN in `end` means the episode
+  has no value for that metric, and it is dropped from the average instead of
+  counted as a zero. Task-specific pass thresholds belong in tests and notes.
+- **Every metric with a drone axis is reported per role**, as `pursuer_return`;
+  a one-role task keeps the bare name. Averaging over the drone axis cancels the
+  two sides of a game: in `chase` the clock and the catch have opposite signs, so
+  a pooled `return` measured only the crash bill, and a pooled `death_rate`
+  capped at 0.5 in a 1v1. The loss statistics split the same way, so a frozen
+  role cannot move the number its trainer reads.
 - **Seeds and actions.** Evaluation uses a separate fixed seed,
   `EVAL_SEED = 1_000_000`, and mean policy actions.
 - **No auto-reset.** Evaluation runs each episode once and freezes its final
-  state. Later scan steps add no reward. It reports each episode's `length`;
-  training reports the average length of episodes that finished.
+  state. Later scan steps add no reward. It reports each episode's `ep_length` in
+  policy steps; training reports the average length of episodes that finished.
 - **Results stay with the run.** Evaluation writes to
   `runs/<run>/evals/<name>/`, keeping results with the run they measure.
 - **Policy selection.** One flag names one seat: `--seat ROLE SOURCE`, where the

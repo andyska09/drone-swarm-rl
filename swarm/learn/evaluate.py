@@ -136,13 +136,32 @@ def rollout(key, env, env_params, act, carry):
     return out
 
 
-def summarize(reward, info, live):
+def _mean_defined(values):
+    """Average the episodes that have a value. NaN means none of them did."""
+
+    x = np.asarray(values, float)
+    good = np.isfinite(x)
+    return float(x[good].mean()) if good.any() else float("nan")
+
+
+def summarize(reward, info, live, columns):
+    """One number per metric, reduced the way the task asked for — see the env
+    contract in `swarm/envs/__init__.py`."""
+
     steps = live.sum()
-    out = {"return": reward.sum(0).mean(), "length": steps.astype(jnp.float32)}
-    for name, value in info.items():
-        x = value.astype(jnp.float32).reshape(value.shape[0], -1).mean(-1)
-        out[f"{name}_mean"] = jnp.sum(x * live) / steps
-        out[f"{name}_final"] = jnp.take(x, steps - 1)
+    at_end = lambda x: jnp.take(x, steps - 1)
+    over_steps = lambda x: jnp.sum(x * live) / steps
+
+    def split(name, x, per_drone):
+        return ppo.by_role(name, x.astype(jnp.float32), columns, per_drone)
+
+    out = {"ep_length": steps.astype(jnp.float32)}
+    out |= split("return", reward.sum(0), True)
+    out |= {k: at_end(v) for k, v in split("death_rate", 1.0 - info["alive"], True).items()}
+    for name, x in info["end"].items():
+        out |= {k: at_end(v) for k, v in split(name, x, x.ndim == 2).items()}
+    for name, x in info["step"].items():
+        out |= {k: over_steps(v) for k, v in split(name, x, x.ndim == 2).items()}
     return out
 
 
@@ -156,9 +175,11 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
 
     keys = jax.random.split(jax.random.PRNGKey(EVAL_SEED), episodes)
 
+    columns = ppo.role_columns(env_params.roles)
+
     def measure(key):
         _, _, _, reward, info, live = rollout(key, env, env_params, act, carry)
-        return summarize(reward, info, live)
+        return summarize(reward, info, live, columns)
 
     def trace(key):
         drone, goal, action, _, _, live = rollout(key, env, env_params, act, carry)
@@ -171,7 +192,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
     out = run / "evals" / (name or named or checkpoint)
     out.mkdir(parents=True, exist_ok=True)
 
-    summary = {k: float(np.mean(v)) for k, v in per_episode.items()}
+    summary = {k: _mean_defined(v) for k, v in per_episode.items()}
     (out / "eval.json").write_text(
         json.dumps(
             {
