@@ -22,9 +22,9 @@ def test_cascade_in_the_seat_reproduces_the_gate(tmp_path):
     path, _ = runner.train(small(), root=tmp_path)
     out, summary = evaluate.evaluate(path, episodes=32, seats=[("drone", "cascade")])
 
-    assert summary["distance_final"] < 0.2, f"cascade settled at {summary['distance_final']:.3f} m"
-    assert summary["length"] == 500.0, "the cascade did not fly the whole episode"
-    assert summary["alive_final"] == 1.0
+    assert summary["distance"] < 0.2, f"cascade settled at {summary['distance']:.3f} m"
+    assert summary["ep_length"] == 500.0, "the cascade did not fly the whole episode"
+    assert summary["death_rate"] == 0.0
     assert out.name == "drone_cascade"
 
 
@@ -58,6 +58,6 @@ def test_a_dead_episode_stops_counting(tmp_path):
     out, _ = evaluate.evaluate(path, episodes=64)
 
     episodes = np.load(out / "episodes.npz")
-    died = episodes["alive_final"] == 0.0
+    died = episodes["death_rate"] == 1.0
     assert died.any(), "an untrained policy on the wide preset never crashed"
-    assert np.all(episodes["length"][died] < 500), "a crashed episode ran the full length"
+    assert np.all(episodes["ep_length"][died] < 500), "a crashed episode ran the full length"

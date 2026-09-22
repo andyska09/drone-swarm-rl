@@ -45,7 +45,7 @@ def rollout(params, key, act, carry):
         state, carry = both
         action, carry = act(state, carry)
         _, state, reward, done, info = a_to_b.step(key, state, action, params)
-        return (state, carry), (reward, done, info["distance"], info["alive"])
+        return (state, carry), (reward, done, info["end"]["distance"], info["alive"])
 
     return jax.lax.scan(body, (state, carry), None, length=params.max_steps)
 
@@ -135,7 +135,7 @@ def test_chase_reads_its_drone_count_from_roles(pursuers):
     # chase flies at a drone, never at a fixed point, so it has no target block.
     assert obs.target.shape == (n, 0)
     assert flat(obs).shape == (n, 20 + k * core.OTHER_FEATURES + k)
-    assert reward.shape == (n,) and done.shape == () and info["caught"].shape == ()
+    assert reward.shape == (n,) and done.shape == () and info["end"]["caught"].shape == ()
     assert chase.reference(state, params).shape == (n, 3)
     assert chase.is_caught(state.drone, params).shape == (params.roles.count("pursuer"),)
 
