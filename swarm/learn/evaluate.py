@@ -36,7 +36,7 @@ def net_policy(cfg, env, weights, slices):
     def act(state, obs, carry):
         del state
         mean, _ = apply(weights, obs)
-        return mean, carry
+        return ppo.squash(mean), carry
 
     return act
 

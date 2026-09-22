@@ -15,6 +15,9 @@ from swarm import envs
 from swarm.learn import vecenv
 
 LOG_2PI = math.log(2.0 * math.pi)
+LOG_2 = math.log(2.0)
+
+MIN_STD = 1e-3  # keeps log(std) finite
 
 # Exclude episode control and bookkeeping fields from reported env metrics.
 CONTROL_KEYS = frozenset(
@@ -33,6 +36,10 @@ CONTROL_KEYS = frozenset(
 )
 
 
+def _inv_softplus(x):
+    return math.log(math.expm1(x))
+
+
 def _trunk(x, hidden, activation):
     act = nn.tanh if activation == "tanh" else nn.relu
     for h in hidden:
@@ -48,17 +55,17 @@ class Actor(nn.Module):
     num_actions: int
     hidden: tuple = (256, 256)
     activation: str = "tanh"
-    init_log_std: float = -0.5
+    init_std: float = 0.6
 
     @nn.compact
     def __call__(self, obs):
-        mean = nn.Dense(
-            self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(_trunk(envs.flat(obs), self.hidden, self.activation))
-        log_std = self.param(
-            "log_std", lambda _: jnp.full((self.num_actions,), self.init_log_std)
-        )
-        return mean, log_std
+        x = _trunk(envs.flat(obs), self.hidden, self.activation)
+        head = lambda bias: nn.Dense(
+            self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(bias)
+        )(x)
+        mean = head(0.0)
+        std = nn.softplus(head(_inv_softplus(self.init_std))) + MIN_STD
+        return mean, std
 
 
 class Critic(nn.Module):
@@ -72,17 +79,33 @@ class Critic(nn.Module):
         return jnp.squeeze(value, -1)
 
 
-def sample(key, mean, log_std):
-    return mean + jnp.exp(log_std) * jax.random.normal(key, mean.shape)
+def sample(key, mean, std):
+    return mean + std * jax.random.normal(key, mean.shape)
 
 
-def log_prob(action, mean, log_std):
-    z = (action - mean) / jnp.exp(log_std)
-    return -0.5 * jnp.sum(z**2 + 2.0 * log_std + LOG_2PI, axis=-1)
+def squash(draw):
+    return jnp.tanh(draw)
 
 
-def entropy(log_std):
-    return jnp.sum(log_std + 0.5 * (LOG_2PI + 1.0), axis=-1)
+def _log_slope(draw):
+    """log(1 - tanh(draw)^2), stable at large |draw|."""
+
+    return 2.0 * (LOG_2 - draw - jax.nn.softplus(-2.0 * draw))
+
+
+def log_prob(draw, mean, std):
+    """Log density of tanh(draw) under the squashed Gaussian."""
+
+    z = (draw - mean) / std
+    gauss = -0.5 * jnp.sum(z**2 + 2.0 * jnp.log(std) + LOG_2PI, axis=-1)
+    return gauss - jnp.sum(_log_slope(draw), axis=-1)
+
+
+def entropy(draw, std):
+    """Entropy of the squashed Gaussian, estimated from one draw."""
+
+    gauss = jnp.sum(jnp.log(std) + 0.5 * (LOG_2PI + 1.0), axis=-1)
+    return gauss + jnp.sum(_log_slope(draw), axis=-1)
 
 
 def role_slices(roles, scripted=()):
@@ -118,7 +141,7 @@ def normalize_by_role(adv, mask, slices):
 
 
 def make_net(cfg, env):
-    return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_log_std), Critic(
+    return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_std), Critic(
         cfg.hidden, cfg.activation
     )
 
@@ -133,9 +156,9 @@ def opponent_slices(roles, slices):
 
 
 def opp_actions(action, opponents):
-    """The opponents' actions this step, flat, clipped"""
+    """The opponents' actions this step, flat."""
 
-    a = jnp.take(jnp.clip(action, -1.0, 1.0), opponents, axis=-2)
+    a = jnp.take(action, opponents, axis=-2)
     return a.reshape(a.shape[:-2] + (-1,))
 
 
@@ -145,12 +168,13 @@ def make_actor(net, slices):
     def apply(params, obs):
         lead = obs.own.shape[:-1]
         mean = jnp.zeros(lead + (net.num_actions,))
-        log_std = jnp.zeros(lead + (net.num_actions,))
+        # A scripted role has no weights, so its rows keep std 1 and log(std) stays finite.
+        std = jnp.ones(lead + (net.num_actions,))
         for role, drones in slices.items():
-            m, ls = net.apply(params[role]["actor"], envs.take(obs, drones))
+            m, s = net.apply(params[role]["actor"], envs.take(obs, drones))
             mean = mean.at[..., drones, :].set(m)
-            log_std = log_std.at[..., drones, :].set(jnp.broadcast_to(ls, m.shape))
-        return mean, log_std
+            std = std.at[..., drones, :].set(s)
+        return mean, std
 
     return apply
 
@@ -175,6 +199,7 @@ def make_critic(net, slices, opponents):
 @flax.struct.dataclass
 class Transition:
     obs: envs.Obs
+    draw: jnp.ndarray  # pre-squash sample; atanh of the action is unstable at ±1
     action: jnp.ndarray
     log_prob: jnp.ndarray
     value: jnp.ndarray
@@ -243,23 +268,25 @@ def make(cfg, env, env_params):
     def value_at(ts, obs, key):
         """No action exists at this state yet, so draw one."""
 
-        mean, log_std = actor(weights(ts), obs)
-        return critic(weights(ts), obs, sample(key, mean, log_std))
+        mean, std = actor(weights(ts), obs)
+        return critic(weights(ts), obs, squash(sample(key, mean, std)))
 
     def update(ts, vec, obs, key, train=every_turn):
         def rollout(carry, _):
             ts, vec, obs, key = carry
             key, k = jax.random.split(key)
-            mean, log_std = actor(weights(ts), obs)
-            action = sample(k, mean, log_std)
+            mean, std = actor(weights(ts), obs)
+            draw = sample(k, mean, std)
+            action = squash(draw)
             value = critic(weights(ts), obs, action)
             next_obs, vec, reward, done, info = vecenv.step(
                 vec, action, env, env_params, cfg
             )
             transition = Transition(
                 obs,
+                draw,
                 action,
-                log_prob(action, mean, log_std),
+                log_prob(draw, mean, std),
                 value,
                 reward,
                 info["cont"],
@@ -319,9 +346,9 @@ def make(cfg, env, env_params):
                 a_n = normalize_by_role(a, tr.mask, slices)
 
                 def loss_fn(params):
-                    mean, log_std = actor(params, tr.obs)
+                    mean, std = actor(params, tr.obs)
                     value = critic(params, tr.obs, tr.action)
-                    ratio = jnp.exp(log_prob(tr.action, mean, log_std) - tr.log_prob)
+                    ratio = jnp.exp(log_prob(tr.draw, mean, std) - tr.log_prob)
 
                     policy = -_mean(
                         jnp.minimum(
@@ -331,7 +358,7 @@ def make(cfg, env, env_params):
                         tr.mask,
                     )
                     value_loss = 0.5 * _mean((value - target) ** 2, tr.mask)
-                    ent = _mean(entropy(log_std), tr.mask)
+                    ent = _mean(entropy(tr.draw, std), tr.mask)
                     return policy + cfg.vf_coef * value_loss - cfg.ent_coef * ent, (
                         policy,
                         value_loss,

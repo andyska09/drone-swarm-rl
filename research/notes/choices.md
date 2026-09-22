@@ -194,6 +194,21 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   rates map to ±4 rad/s, and yaw to ±2 rad/s. A new policy outputs values near
   zero, which gives a throttle near 0.5, close to the hover value of 0.4654.
   `quad-swarm-rl` allows ±31.4 rad/s for more acrobatic flight.
+- **The bound is a squash, not a clip.** "The output layer produces the mean and
+  standard-deviation of a multivariate Gaussian, followed by a tanh squashing to
+  obtain bounded continuous actions" — Gavin et al. 2026 §IV-C and Gavin & Bronz
+  2026 §III-E, the same sentence in both. Two linear heads on the shared trunk:
+  the mean as is, and a raw number per action that `softplus` turns into the std,
+  so the std is per state and no longer one learned vector for all of them. The
+  rollout keeps the Gaussian draw, not the action, because recovering the draw
+  needs `atanh`, which blows up at ±1.
+- **Why the clip was wrong.** The policy paid nothing for asking ±5 rad/s, and the
+  Gaussian entropy had no ceiling, so the bonus paid for noise forever (`entropy`
+  6.70 → 35.28 in the duel runs). The squashed entropy peaks near `std = 1` at
+  `4·log 2 = 2.77` and falls on both sides, so `ent_coef = 0.01`, Gavin's value,
+  now means something. It has no closed form, so we estimate it from the stored
+  draw. Neither paper publishes an initial std; ours is `init_std = 0.6`, the same
+  value the old `init_log_std = −0.5` gave.
 - **Reward.** `−policy_dt · (1.0·‖goal − x‖ + 0.1·‖ω‖)`, plus a one-time `10.0`
   for a crash. Distance follows the swarm paper. Tilt, effort and action-rate
   penalties had zero weights and were removed. Add them only to address an

@@ -40,8 +40,8 @@ class TrainConfig:
 
     hidden: tuple = (256, 256)
     activation: str = "tanh"
-    # A smaller initial standard deviation reduces action clipping.
-    init_log_std: float = -0.5
+    # The std a new policy starts at, before it learns one per state.
+    init_std: float = 0.6
 
     normalize_reward: bool = True
 
