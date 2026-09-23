@@ -202,13 +202,26 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   so the std is per state and no longer one learned vector for all of them. The
   rollout keeps the Gaussian draw, not the action, because recovering the draw
   needs `atanh`, which blows up at ±1.
-- **Why the clip was wrong.** The policy paid nothing for asking ±5 rad/s, and the
-  Gaussian entropy had no ceiling, so the bonus paid for noise forever (`entropy`
-  6.70 → 35.28 in the duel runs). The squashed entropy peaks near `std = 1` at
-  `4·log 2 = 2.77` and falls on both sides, so `ent_coef = 0.01`, Gavin's value,
-  now means something. It has no closed form, so we estimate it from the stored
-  draw. Neither paper publishes an initial std; ours is `init_std = 0.6`, the same
-  value the old `init_log_std = −0.5` gave.
+  The squashed entropy has no closed form, so we estimate it from the stored draw.
+  Neither paper publishes an initial std; ours is `init_std = 0.6`, the same value
+  the old `init_log_std = −0.5` gave.
+- **`ent_coef` stays 0, and Gavin's 0.01 does not transfer.** Fourteen `chase` runs,
+  and the two with `ent_coef = 0.01` are the only two with a broken std: 112 to
+  60784 under the clip, 371 to 942 under the squash. The other twelve all end
+  between 0.02 and 0.51, and the two runs that solve `chase default` (`caught`
+  0.996 and 1.000) end at 0.08 to 0.13. PPO shrinks the std by itself once
+  precision pays — that is `E[A(u²−1)] < 0` — and the bonus fights exactly that.
+- **Why the bonus breaks each design, which is not the same reason.** Write `H` for
+  the entropy, `m` for the mean, `s` for the std, `u = (z−m)/s`. Under the clip,
+  `∂H/∂log s = +1`, a constant that never decays, so noise pays for ever and
+  `∂H/∂m = 0` leaves the mean free to grow with it — the old runs kept `m/s ≈ 1`
+  and still flew. Under the squash, `∂H/∂log s ≈ 1 − 1.6s` flips sign above
+  `s ≈ 0.63`, which is the fix, but a second term appears: `∂H/∂m ≈ −2·sign(m)`,
+  a constant pull of the mean to zero, worth `0.02` at `ent_coef = 0.01` against
+  the policy's own `≈ ρ/s`. They cross near `s = 15`. Past that the entropy term
+  owns the mean, `m/s → 0`, and because the rate loop averages the command the
+  drone flies `E[tanh z] ≈ 0.8·m/s ≈ 0`. That run ended at `distance` 11.40 m,
+  where an untrained policy starts, against 0.5 to 4.0 m for every trained one.
 - **Reward.** `−policy_dt · (1.0·‖goal − x‖ + 0.1·‖ω‖)`, plus a one-time `10.0`
   for a crash. Distance follows the swarm paper. Tilt, effort and action-rate
   penalties had zero weights and were removed. Add them only to address an
