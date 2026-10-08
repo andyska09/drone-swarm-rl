@@ -189,31 +189,6 @@ def test_a_net_on_another_pursuer_kills_both():
     assert not jnp.any(chase.crashed(drone, params)), "nobody hit a wall"
 
 
-def test_scripted_decides_who_flies_the_evader():
-    params = chase.PRESETS["default"]
-    _, evader = chase._sides(params)
-
-    def evader_motors(env_params, throttle):
-        """One step is 10 ms, so the motors move long before the position does."""
-
-        _, state = chase.reset(jax.random.PRNGKey(0), env_params)
-        action = jnp.zeros((env_params.n_drones, chase.NUM_ACTIONS))
-        action = action.at[evader, 0].set(throttle)
-        _, out, _, _, _ = chase.step(jax.random.PRNGKey(1), state, action, env_params)
-        return out.drone.rpm[evader]
-
-    scripted = params.replace(scripted=("evader",))
-    assert jnp.array_equal(evader_motors(scripted, -1.0), evader_motors(scripted, 1.0)), (
-        "the cascade should fly a scripted evader, whatever the network asked for"
-    )
-
-    free = params.replace(scripted=())
-    idle, full = evader_motors(free, -1.0), evader_motors(free, 1.0)
-    assert jnp.all(full > 1.05 * idle), (
-        "with nothing scripted the network's action must reach the motors"
-    )
-
-
 def test_vmap_matches_python_loop():
     params = a_to_b.PRESETS["default"]
     act, pids = cascade_policy(params)

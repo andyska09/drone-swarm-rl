@@ -20,8 +20,6 @@ class Common:
     model: dynamics.Params = flax.struct.field(default_factory=dynamics.default_params)
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("drone",))
-    # A scripted role is flown inside step() and never enters the PPO loss.
-    scripted: tuple = flax.struct.field(pytree_node=False, default=())
     n_neighbors: int = flax.struct.field(pytree_node=False, default=6)
 
     sim_dt: float = 0.005

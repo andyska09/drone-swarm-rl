@@ -1,7 +1,7 @@
 """N drones chase one evader and catch it with a net hung under the pursuer's body.
 
-Replicates Gavin & Bronz 2026 (arXiv:2607.05939) with the evader flown by the
-cascade instead of a policy. Design and sources: research/notes/task_chase.md.
+Replicates Gavin & Bronz 2026 (arXiv:2607.05939). Design and sources:
+research/notes/task_chase.md.
 """
 
 import flax.struct
@@ -32,7 +32,6 @@ class EnvParams(core.Common):
     reward: RewardConfig = flax.struct.field(default_factory=RewardConfig)
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("pursuer", "evader"))
-    scripted: tuple = flax.struct.field(pytree_node=False, default=("evader",))
     max_steps: int = flax.struct.field(pytree_node=False, default=1000)
 
     net_side: float = 1.0
@@ -46,7 +45,6 @@ class EnvParams(core.Common):
 class EnvState:
     drone: dynamics.State
     rate_pid: control.PIDState
-    evader_pid: tuple
     waypoint: jnp.ndarray
     key: jnp.ndarray
     alive: jnp.ndarray
@@ -194,25 +192,6 @@ def _waypoint(key, x, params):
     return centre + jnp.clip(offset, -limit, limit)
 
 
-def _fly_scripted(state, action, params):
-    """The cascade flies the evader to its waypoint; its network row is dropped."""
-
-    if "evader" not in params.scripted:
-        return action, state.evader_pid
-
-    _, evader = _sides(params)
-    (throttle, rate), pid = control.cascade_outer(
-        jax.tree.map(lambda a: a[evader], state.drone),
-        state.waypoint,
-        0.0,
-        state.evader_pid,
-        control.cascade_gains(params.model),
-        params.model,
-        params.policy_dt,
-    )
-    return action.at[evader].set(core.command_to_action(throttle, rate, params)), pid
-
-
 def reset(key, params):
     n = params.n_drones
     _, evader = _sides(params)
@@ -226,7 +205,6 @@ def reset(key, params):
     state = EnvState(
         drone=drone,
         rate_pid=control.pid_init((n, 3)),
-        evader_pid=control.cascade_init(),
         waypoint=_waypoint(k_wp, drone.x[evader], params),
         key=k_state,
         alive=jnp.ones(n, bool),
@@ -240,7 +218,6 @@ def step(key, state, action, params):
     # one key per rollout still get a fresh draw every step.
     del key
     pursuers, evader = _sides(params)
-    action, evader_pid = _fly_scripted(state, action, params)
     drone, rate_pid, rate_ref = core.fly(state.drone, state.rate_pid, action, params)
 
     caught = jnp.any(is_caught(drone, params)) & jnp.all(state.alive)
@@ -259,7 +236,6 @@ def step(key, state, action, params):
     new_state = EnvState(
         drone=drone,
         rate_pid=rate_pid,
-        evader_pid=evader_pid,
         waypoint=waypoint,
         key=key,
         alive=alive,
@@ -302,5 +278,4 @@ def step(key, state, action, params):
 
 PRESETS = {
     "default": EnvParams(),
-    "duel": EnvParams(scripted=()),
 }

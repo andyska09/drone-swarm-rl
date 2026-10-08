@@ -1,5 +1,9 @@
 # Task chase — the spec
 
+**Now:** `chase` trains only as the duel ([task_chase_duel.md](task_chase_duel.md)),
+and its one preset, `default`, is that duel. The `scripted` field is gone. The
+cascade evader below is the eval baseline `--seat evader cascade`.
+
 N drones chase an evader that the cascade flies to random waypoints. A pursuer
 catches it with a net. Task 3 on the ladder in `goals.local.md`, and the seat for
 tasks 4 and 5 — the pursuer count comes from `roles`, and dropping `"evader"` from

@@ -72,7 +72,7 @@ def _saved(run, source, checkpoint):
 def make_policy(cfg, env, env_params, run, checkpoint, seats):
     """Who flies each role: this run's weights, another run's, or the cascade."""
 
-    slices = ppo.role_slices(env_params.roles, env_params.scripted)
+    slices = ppo.role_slices(env_params.roles)
     for role in seats:
         if role not in slices:
             raise ValueError(f"{role!r} has no seat; roles are {sorted(slices)}")
@@ -144,7 +144,7 @@ def _mean_defined(values):
     return float(x[good].mean()) if good.any() else float("nan")
 
 
-def summarize(reward, info, live, columns):
+def summarize(reward, info, live, slices):
     """One number per metric, reduced the way the task asked for — see the env
     contract in `swarm/envs/__init__.py`."""
 
@@ -153,7 +153,7 @@ def summarize(reward, info, live, columns):
     over_steps = lambda x: jnp.sum(x * live) / steps
 
     def split(name, x, per_drone):
-        return ppo.by_role(name, x.astype(jnp.float32), columns, per_drone)
+        return ppo.by_role(name, x.astype(jnp.float32), slices, per_drone)
 
     out = {"ep_length": steps.astype(jnp.float32)}
     out |= split("return", reward.sum(0), True)
@@ -175,11 +175,11 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
 
     keys = jax.random.split(jax.random.PRNGKey(EVAL_SEED), episodes)
 
-    columns = ppo.role_columns(env_params.roles)
+    slices = ppo.role_slices(env_params.roles)
 
     def measure(key):
         _, _, _, reward, info, live = rollout(key, env, env_params, act, carry)
-        return summarize(reward, info, live, columns)
+        return summarize(reward, info, live, slices)
 
     def trace(key):
         drone, goal, action, _, _, live = rollout(key, env, env_params, act, carry)
@@ -198,10 +198,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
             {
                 "task": cfg.task,
                 "preset": cfg.preset,
-                "seats": {
-                    r: seats.get(r, "checkpoint")
-                    for r in ppo.role_slices(env_params.roles, env_params.scripted)
-                },
+                "seats": {r: seats.get(r, "checkpoint") for r in slices},
                 "checkpoint": checkpoint if step is not None else None,
                 "update": step,
                 "episodes": episodes,
@@ -228,9 +225,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
     # obs carries a target. For anyone else it is only the baseline's input.
     obs0, _ = env.reset(jax.random.PRNGKey(EVAL_SEED), env_params)
     goal = [
-        bool(obs0.target.shape[-1])
-        or role in env_params.scripted
-        or seats.get(role) == "cascade"
+        bool(obs0.target.shape[-1]) or seats.get(role) == "cascade"
         for role in env_params.roles
     ]
 

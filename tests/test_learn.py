@@ -41,7 +41,7 @@ def test_metrics_carry_the_env_measurements():
 
 
 def test_a_frozen_role_does_not_move():
-    """Both sides learn, but train_roles names one. Task 4 alternates like this."""
+    """Both sides learn, but train_roles names one."""
 
     cfg = config.TrainConfig(
         num_envs=64,
@@ -51,8 +51,7 @@ def test_a_frozen_role_does_not_move():
         train_roles=("pursuer",),
     )
     env, env_params = envs.make("chase", "default")
-    # Nothing scripted, so the evader gets its own weights and its own loss.
-    env_params = env_params.replace(scripted=(), max_steps=100)
+    env_params = env_params.replace(max_steps=100)
 
     init, update = ppo.make(cfg, env, env_params)
     carry = init(jax.random.PRNGKey(0))
@@ -65,7 +64,7 @@ def test_a_frozen_role_does_not_move():
     assert not any(jax.tree.leaves(moved["evader"])), "a frozen role took a step"
     assert any(jax.tree.leaves(moved["pursuer"])), "the trained role did not move"
 
-    # The swap passes the turn in as an argument, which overrides train_roles.
+    # A turn passed in as an argument overrides train_roles.
     before = jax.tree.map(jnp.copy, {r: t.params for r, t in carry[0].items()})
     carry, _ = update(*carry, {"pursuer": False, "evader": True})
     after = {r: t.params for r, t in carry[0].items()}

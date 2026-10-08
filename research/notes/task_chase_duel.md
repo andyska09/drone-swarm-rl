@@ -1,5 +1,8 @@
 # Task 4 — duel
 
+**Now:** the preset is named `default`, and the `scripted` field and the
+`swap_min` turn-taking below are gone.
+
 `chase` with nothing scripted. Both sides learn, one at a time, in one run.
 
 Task 3 stands at `caught 0.999`, `1.34 s` to catch, `0.42 m` off the net centre.

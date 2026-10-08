@@ -98,7 +98,7 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
 Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
-`circle8`; `chase` has `default` (1 pursuer) and `three`. A preset picks env
+`circle8`; `chase` has `default`. A preset picks env
 values only — hyperparameters live in `learn/config.py` and are overridden with
 `--set`.
 
@@ -116,14 +116,14 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   `make(task, preset)` and **the env contract every task file must meet** — read it
   before writing a task. Every task carries a drone axis, `N = 1` included, and each
   has a note beside it in `research/notes/task_<name>.md`.
-- **`envs/core.py` holds everything the tasks share**: `Common` (the 15 `EnvParams`
+- **`envs/core.py` holds everything the tasks share**: `Common` (the `EnvParams`
   fields every task has, which each task's `EnvParams` inherits), `fly` (the rate
   loop and the plant for one policy step), `own_obs`/`target_obs`/`neighbors`,
   `spawn`, `hits`, `is_dead`, and the CTBR action conversion. A task file holds only
   what makes that task different. Do not copy a helper into a task file.
 - **No task names a drone by number.** `roles` is static, so a task reads its own
-  index arrays from it — see `chase._sides`. That is what lets `PRESETS["three"]`
-  add two more pursuers with no other change.
+  index arrays from it — see `chase._sides`. That is what lets a longer `roles`
+  add more pursuers with no other change.
 - **Every task uses the same observation shape**: `Obs(own, others, others_mask,
   target)`. `own` is body-frame velocity, `R`, `omega` and height. `others` holds
   the K nearest drones, whatever their role — body-frame offset, body-frame
@@ -152,8 +152,7 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   takes an env *module* and one network per role.
 - **Every role is its own learner.** One `TrainState` per role, so gradient
   clipping, Adam state, advantage scaling and reward scaling never mix two sides of
-  a game. `cfg.train_roles` names the roles that take a step; empty means all. That
-  is how task 4 alternates — freeze the pursuer, train the evader, switch.
+  a game. `cfg.train_roles` names the roles that take a step; empty means all.
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
@@ -184,7 +183,7 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 |---|---|
 | `test_dynamics.py` | the plant against the goldens |
 | `test_control.py` | the cascade against the goldens |
-| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, a net on another pursuer kills both, and `scripted` decides who flies the evader |
+| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, and a net on another pursuer kills both |
 | `test_learn.py` | it learns, the same seed gives the same numbers, and a frozen role does not move |
 | `test_runner.py` | a run says what produced it and resumes |
 | `test_eval.py` | the cascade in the policy's seat scores the cascade's number |

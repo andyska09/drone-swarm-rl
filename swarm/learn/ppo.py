@@ -92,33 +92,27 @@ def entropy(draw, std):
     return gauss + jnp.sum(_log_slope(draw), axis=-1)
 
 
-def role_slices(roles, scripted=()):
-    """One entry per learned role. A scripted role gets no weights and no loss."""
+def role_slices(roles):
+    """Each role's drone indices."""
 
     return {
         name: jnp.array([i for i, r in enumerate(roles) if r == name])
         for name in dict.fromkeys(roles)
-        if name not in scripted
     }
 
 
-def role_columns(roles):
+def column(role, name, slices):
     """Metric column per role: `pursuer_return`. A one-role task keeps `return`."""
 
-    names = dict.fromkeys(roles)
-    tag = (lambda r: f"{r}_") if len(names) > 1 else (lambda r: "")
-    return {
-        r: (tag(r), jnp.array([i for i, x in enumerate(roles) if x == r]))
-        for r in names
-    }
+    return f"{role}_{name}" if len(slices) > 1 else name
 
 
-def by_role(name, x, columns, per_drone):
+def by_role(name, x, slices, per_drone):
     """One column for a scene fact, one per role for anything with a drone axis."""
 
     if not per_drone:
         return {name: x}
-    return {tag + name: x[..., drones].mean(-1) for tag, drones in columns.values()}
+    return {column(r, name, slices): x[..., d].mean(-1) for r, d in slices.items()}
 
 
 def _mean(x, mask):
@@ -149,12 +143,12 @@ def make_net(cfg, env):
     )
 
 
-def opponent_slices(roles, slices):
+def opponent_slices(roles):
     """Every drone whose role is not mine. Teammates are left out."""
 
     return {
         role: jnp.array([i for i, r in enumerate(roles) if r != role], dtype=jnp.int32)
-        for role in slices
+        for role in dict.fromkeys(roles)
     }
 
 
@@ -171,7 +165,6 @@ def make_actor(net, slices):
     def apply(params, obs):
         lead = obs.own.shape[:-1]
         mean = jnp.zeros(lead + (net.num_actions,))
-        # A scripted role has no weights, so its rows keep std 1 and log(std) stays finite.
         std = jnp.ones(lead + (net.num_actions,))
         for role, drones in slices.items():
             m, s = net.apply(params[role]["actor"], envs.take(obs, drones))
@@ -217,9 +210,8 @@ def make(cfg, env, env_params):
     batch_size = cfg.num_envs * cfg.num_steps
 
     actor_net, critic_net = make_net(cfg, env)
-    slices = role_slices(env_params.roles, env_params.scripted)
-    columns = role_columns(env_params.roles)
-    opponents = opponent_slices(env_params.roles, slices)
+    slices = role_slices(env_params.roles)
+    opponents = opponent_slices(env_params.roles)
     actor = make_actor(actor_net, slices)
     critic = make_critic(critic_net, slices, opponents)
 
@@ -383,7 +375,7 @@ def make(cfg, env, env_params):
                     for role, t in ts.items()
                 }
                 return stepped, {
-                    columns[role][0] + name: _mean(x[..., drones], tr.mask[..., drones])
+                    column(role, name, slices): _mean(x[..., drones], tr.mask[..., drones])
                     for name, x in aux.items()
                     for role, drones in slices.items()
                 }
@@ -407,7 +399,7 @@ def make(cfg, env, env_params):
             return jnp.where(n > 0, total / jnp.maximum(n, 1.0), jnp.nan)
 
         def split(name, x, per_drone):
-            return by_role(name, x.astype(done.dtype), columns, per_drone)
+            return by_role(name, x.astype(done.dtype), slices, per_drone)
 
         metrics = {"episodes": episodes, "ep_length": at_end(info["ep_length"])}
         for name, x in (
@@ -425,7 +417,7 @@ def make(cfg, env, env_params):
         for role, drones in slices.items():
             target, value = targets[..., drones], traj.value[..., drones]
             var_y = jnp.var(target)
-            metrics[columns[role][0] + "explained_var"] = jnp.where(
+            metrics[column(role, "explained_var", slices)] = jnp.where(
                 var_y > 0, 1.0 - jnp.var(target - value) / var_y, jnp.nan
             )
         metrics |= jax.tree.map(lambda x: x[-1].mean(), stats)
