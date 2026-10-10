@@ -17,7 +17,7 @@ from swarm.learn import ppo
 
 # A task that does not report one of these is printed without it. A per-role
 # metric arrives as `<role>_<name>`, so every role of it prints.
-PROGRESS = ("ep_length", "death_rate", "caught", "rho")
+PROGRESS = ("ep_length", "death_rate", "caught_evader", "rho")
 
 
 def _progress(row):

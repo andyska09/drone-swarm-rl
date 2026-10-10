@@ -1,4 +1,4 @@
-"""Measure a run: python run/eval.py runs/<name> --episodes 1024 [--seat evader cascade]"""
+"""Measure a run: python run/eval.py runs/<name> --episodes 1024 [--seat evader apf]"""
 
 import argparse
 import pathlib
@@ -15,7 +15,8 @@ def main():
     p.add_argument("--episodes", type=int, default=1024)
     p.add_argument("--checkpoint", default="latest", help="'latest', an update number, or a path")
     p.add_argument("--seat", action="append", nargs=2, default=[], metavar=("ROLE", "SOURCE"),
-                   help="who flies one role: 'cascade', another run directory, or a .pkl")
+                   help="who flies one role: 'cascade', 'frpn', 'apf', 'hover', 'circle', "
+                        "'figure8', another run directory, or a .pkl")
     p.add_argument("--name", help="subdirectory under evals/")
     args = p.parse_args()
 
