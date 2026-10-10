@@ -2,48 +2,57 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## IMPORTANT NOTE TO ALL AI CHATBOTS
+## Rules — every AI agent follows these, in every reply and every change
 
-When talking to me start the message with "TARS:"
+These rules are not optional. They come before your own defaults and before any skill's
+instructions. If a rule seems to clash with what I ask, ask me before you act.
 
-## Design Philosophy
+### Talking to me
 
-When building always do only what I ask for. Do not add unwanted features. You can ask about them in the chat or raise it with me when chatting with me, but do not put them into code right away. 
+- Start every message with `TARS:`.
+- Write every reply in the [simple-english](.claude/output-styles/simple-english.md)
+  output style.
+- **Answer the question I asked, and nothing more.** Be short and direct.
+- A question is not a sign that you were wrong. Do not re-analyse the plan, change your
+  recommendations or rewrite your conclusions unless I tell you to. If something I said
+  changes an earlier conclusion, say so in one line at the end, then stop and wait.
+- When I give you new information, take it in and answer. Redo the analysis only if I
+  ask for it.
+- I am new to this field. Explain every term in plain words. When I ask what a term
+  means, explain the idea, not the literature.
 
-When designing code, keep it simple. By this I mean the logic should be easy to follow and clean - lines of code is wrong metric for this. This requires you to think about it rather then just bust out code. If there two approaches possible with no clear better one - ask me for input. Always.
+### Doing the work
 
-For all your responses always use [.claude/output-styles/simple-english.md](.claude/output-styles/simple-english.md) output style. 
+- **Do only what I ask.** Do not add features, knobs, tests or metrics that I did not ask
+  for. Suggest them in the chat instead.
+- If one approach is clearly better, recommend it. If two are equally good, ask me.
+  Always.
+- Keep it simple. Simple means logic that is easy to follow, not few lines. Think first,
+  then write the code.
+- Keep diffs small. I want to read a change and know what it does.
+- Everything stays under the repo root, `handoff.md` included. Scripts, probes and build
+  artifacts go in `scratch/` (gitignored), never in `/tmp` or a session scratchpad.
+- Unpublished papers under `research/papers/` stay local, and `CLAUDE.local.md` names
+  them. Never commit one, never `git add -f` one, and never quote, summarise or name one
+  in a tracked file, this one included.
 
-### Style
+### Code style
 
-For code:
-- Blunt, minimal code. No base classes, protocols, registries. One file per
-  concern, readable top to bottom.
-- When implementing stuff KEEP IT SIMPLE. This important. I do not want to read 1000 lines of diffs, I want to look at the change and know what it does. 
-- **Comments: as few as possible.** Only where the code cannot say it itself —
-  a constraint, a non-obvious reason, a trap. Never restate what the line does.
-  One clear sentence beats three. No banner blocks, no section dividers.
-- Same for docstrings: a module gets a short one, a function only if its
-  contract is not obvious from its name and signature.
+- Blunt, minimal code. No base classes, protocols or registries. One file per concern,
+  readable top to bottom.
+- Comments: as few as possible. Write one only where the code cannot say it itself: a
+  constraint, a non-obvious reason, a trap. Never restate what the line does. One clear
+  sentence beats three. No banner blocks, no section dividers.
+- **Comments and docstrings say what the code does now.** No story and no claim about
+  what the code does not do. No history and no sources in code: git keeps the history,
+  and the notes keep the sources.
+- Docstrings: a module gets a short one. A function gets one only if its contract is not
+  obvious from its name and signature.
 
-**Answer the question I actually asked. Nothing more.** If I ask what a term means, explain
-the term - do not re-analyse the plan, do not revise your recommendations, do not rewrite
-your conclusions. A question is not a signal that you were wrong. When I hand you new
-information, absorb it and answer; only redo the analysis if I explicitly tell you to. If
-something I said genuinely changes an earlier conclusion, say so in one line at the end and
-stop there - wait for me to ask before expanding it.
+### For Codex
 
-I am new to this field. When I ask about a term, assume I want the concept explained plainly,
-not a literature review.
-
-### Scratch files
-
-**Everything stays under the repo root.** No scripts, probes, or build artifacts in
-`/tmp` or any session scratchpad directory — put them in `scratch/` (gitignored).
-
-#### FOR CODEX:
-
-Edit only the named file. Do not run tests. Stop after the edit, summarize it, and wait for approval before touching another file. Unless I say to you to run wild.
+Edit only the named file. Do not run tests. Stop after the edit, summarize it, and wait
+for approval before you touch another file. The only exception: I tell you to run wild.
 
 ## What this repository is
 
@@ -81,7 +90,7 @@ Every command below needs the `conda run -n drone-swarm` prefix. Pins in
 `requirements.txt` (jax 0.11.1, flax 0.12.9, numpy 2.5.2, matplotlib 3.11.2,
 pytest 9.1.1).
 
-No pytest alone, since there is also code in other folders. Always need to specify pytest tests/ 
+Run `pytest tests/`, never bare `pytest`, because other folders hold tests too.
 
 ```bash
 pytest tests/test_control.py                           # one file
@@ -208,12 +217,9 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
   `pdftotext -layout <file>.pdf <file>.md`.
 - Only the PDFs are gitignored. Transcripts and `bibliography_index.md` are
   tracked, so a fresh clone can grep every paper without the binaries.
-- **Some material under `research/papers/` is unpublished and must stay local.**
-  Those files are excluded through `.git/info/exclude`, which is itself untracked
-  — so the exclusion names them and no tracked file ever does. Do not add them to
-  the index table, do not quote, summarise, or name them in any tracked file (this
-  one included), and never `git add -f` one. Only add an index row for a paper
-  that is publicly published. See `CLAUDE.local.md` (untracked) for specifics.
+- The unpublished papers (see Rules) are excluded through `.git/info/exclude`, which is
+  itself untracked, so no tracked file names them. Add an index row only for a paper
+  that is publicly published.
 - `quad-swarm-rl` is a **live clone with its own `.git` and an `origin` pointing at
   the upstream GitHub repo**. Never commit or push from inside it. Treat every
   `code_sources/` tree as a read-only reference unless the user says otherwise.
