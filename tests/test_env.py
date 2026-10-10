@@ -135,7 +135,7 @@ def test_chase_reads_its_drone_count_from_roles(pursuers):
     # chase flies at a drone, never at a fixed point, so it has no target block.
     assert obs.target.shape == (n, 0)
     assert flat(obs).shape == (n, 20 + k * core.OTHER_FEATURES + k)
-    assert reward.shape == (n,) and done.shape == () and info["end"]["caught"].shape == ()
+    assert reward.shape == (n,) and done.shape == () and info["end"]["caught_evader"].shape == ()
     assert chase.reference(state, params).shape == (n, 3)
     assert chase.is_caught(state.drone, params).shape == (params.roles.count("pursuer"),)
 
@@ -186,7 +186,7 @@ def test_a_net_on_another_pursuer_kills_both():
     # Pursuer 2 is clear, and no net catches the drone it hangs under.
     assert list(chase.net_collision(drone, params)) == [True, True, False, False]
     assert list(chase.collPP(drone, params)) == [True, True, False, False]
-    assert not jnp.any(chase.crashed(drone, params)), "nobody hit a wall"
+    assert not jnp.any(chase.failed(drone, params)), "nobody hit a wall"
 
 
 def test_vmap_matches_python_loop():

@@ -24,7 +24,7 @@ class RewardConfig:
     catch: float = 10.0  # λcatch  = 10.0
     collPE: float = 10.0  # λcollPE = 0.1, per step, the episode goes on
     collPP: float = 10.0  # λcollPP = 10.0, ends the episode
-    crash: float = 30.0  # λfail   = 30.0, a wall or the ground, ends the episode
+    fail: float = 30.0  # λfail   = 30.0, the ground, a wall or the ceiling, ends the episode
 
 
 @flax.struct.dataclass
@@ -120,8 +120,8 @@ def get_obs(state, params):
     )
 
 
-def crashed(drone, params):
-    """Hit the world: a wall, the ground, the ceiling, or a non-finite state."""
+def failed(drone, params):
+    """Left the arena through the ground, a wall or the ceiling, or a non-finite state."""
 
     return core.out_of_arena(drone, params)
 
@@ -144,7 +144,7 @@ def collPE(drone, params):
 def is_dead(drone, params):
     """Both end the episode, but they are paid at different rates, so `step` keeps them apart"""
 
-    return crashed(drone, params) | collPP(drone, params)
+    return failed(drone, params) | collPP(drone, params)
 
 
 def reference(state, params):
@@ -157,7 +157,7 @@ def reference(state, params):
     return jnp.broadcast_to(state.waypoint, (params.n_drones, 3)).at[pursuers].set(aim)
 
 
-def compute_reward(state, rate_ref, alive, crash, collide, caught, params):
+def compute_reward(state, rate_ref, alive, fail, collide, caught, params):
     cfg, d = params.reward, state.drone
     pursuers, evader = _sides(params)
     distance = core.norm(d.x[evader] - net_centre(d, params))
@@ -178,7 +178,7 @@ def compute_reward(state, rate_ref, alive, crash, collide, caught, params):
         )
         + catch * caught
         - cfg.collPP * collide
-        - cfg.crash * crash
+        - cfg.fail * fail
     )
 
 
@@ -222,9 +222,9 @@ def step(key, state, action, params):
 
     caught = jnp.any(is_caught(drone, params)) & jnp.all(state.alive)
     # The net hangs through the hitbox, so a catch is a catch, not a collision.
-    crash = state.alive & crashed(drone, params) & ~caught
+    fail = state.alive & failed(drone, params) & ~caught
     collide = state.alive & collPP(drone, params) & ~caught
-    died = crash | collide
+    died = fail | collide
     alive = state.alive & ~died
 
     key, k_wp = jax.random.split(state.key)
@@ -243,7 +243,7 @@ def step(key, state, action, params):
     )
 
     reward = compute_reward(
-        new_state, rate_ref, state.alive, crash, collide, caught, params
+        new_state, rate_ref, state.alive, fail, collide, caught, params
     )
     truncated = new_state.time >= params.max_steps
     done = truncated | caught | ~jnp.all(alive)
@@ -255,15 +255,28 @@ def step(key, state, action, params):
         (died[evader] & ~jnp.any(died[pursuers])).astype(float),
     )
 
+    # A failure through the floor, or a broken state, is a crash. The rest is OOB.
+    floor = params.center[2] - 0.5 * params.arena[2]
+    crash = fail & ((drone.x[:, 2] < floor) | ~jnp.all(jnp.isfinite(drone.x), axis=-1))
+    oob = fail & ~crash
+    p_fail, e_fail = jnp.any(fail[pursuers]), fail[evader]
+
     on_net = net_frame(drone, params)[:, evader, 1:]
     info = {
         "alive": alive,
         "died_this_step": died,
         "truncated": truncated,
         "end": {
-            "caught": caught,
+            # One outcome per episode, so in 1v1 these seven sum to 1.
+            "caught_evader": caught,
+            "crash_pursuer": jnp.any(crash[pursuers]) & ~e_fail,
+            "OOB_pursuer": jnp.any(oob[pursuers]) & ~e_fail,
+            "timeout": truncated & ~caught & ~jnp.any(died),
+            "crash_evader": crash[evader] & ~p_fail,
+            "OOB_evader": oob[evader] & ~p_fail,
+            "fail_both": p_fail & e_fail,
+            "time_to_catch": jnp.where(caught, new_state.time * params.policy_dt, jnp.nan),
             "rho": rho,
-            "crashed": crash,
             "collPP": jnp.any(collide),
             "catch_offset": jnp.where(caught, jnp.min(core.norm(on_net)), jnp.nan),
         },
