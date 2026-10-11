@@ -7,9 +7,9 @@ python run/eval.py runs/<run> --seat evader apf      # the run's pursuer against
 python run/eval.py runs/<run> --seat pursuer frpn    # the run's evader against FRPN
 ```
 
-They exist only in eval. Training never sees them. The code is in
-[guidance.py](../../swarm/sim/guidance.py) (the laws and the paths) and in `guided_policy`
-in [evaluate.py](../../swarm/learn/evaluate.py).
+FRPN and `paths` also start the two training pools ([AMSPBH.md](AMSPBH.md)). APF and the
+cascade never enter training. The code is in [guidance.py](../../swarm/sim/guidance.py)
+(the laws and the paths) and in `guided_policy` in [seats.py](../../swarm/learn/seats.py).
 
 ## The lineup
 
@@ -27,8 +27,9 @@ RPM range.
 | `hover` | evader | holds one point |
 | `circle` | evader | flies a circle, stretched into a mild ellipse |
 | `figure8` | evader | flies a figure-eight |
+| `paths` | evader | flies a hover, a circle or a figure-eight, drawn for each episode |
 
-`SOURCES` in `evaluate.py` holds this table. A source in the wrong role raises an error.
+`SOURCES` in `seats.py` holds this table. A source in the wrong role raises an error.
 
 ## How a baseline flies
 
@@ -94,7 +95,7 @@ Each pursuer pushes the evader away from the pursuer's body:
 
 ### How a path is made
 
-At the start of each episode, `start(state)` in `evaluate.py` does three things:
+At the start of each episode, `start(state)` in `seats.py` does three things:
 
 1. It draws one path with `draw_path`: a size, a speed, a start point and a direction.
 2. It puts the path at a random place where all of it fits 2 m inside the walls, at a
@@ -174,7 +175,6 @@ Every episode ends with exactly one of these, in `info["end"]`. In 1v1 they sum 
 - With more than one pursuer, `collPP` also ends an episode. It is not one of the seven.
 - `time_to_catch` is in seconds, for catches only. Other episodes give NaN, so the mean is
   over the catches. This is not Gavin's right-censored time.
-- `rho` keeps Gavin's definition, so an evader failure scores 1. We keep it for PFSP.
 
 ## Results
 

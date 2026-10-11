@@ -8,23 +8,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from swarm import envs
-from swarm.envs import core
 from swarm.learn import config, ppo, runner
-from swarm.sim import control, guidance
+from swarm.learn.seats import SOURCES, combine, net_policy, scripted
 
 # Far from any training seed, so eval never flies an episode training saw.
 EVAL_SEED = 1_000_000
 TRAJECTORIES = 8
-
-# The role each hand-written source flies. The cascade flies any.
-SOURCES = {
-    "cascade": None,
-    "frpn": "pursuer",
-    "apf": "evader",
-    "hover": "evader",
-    "circle": "evader",
-    "figure8": "evader",
-}
 
 
 def load_config(run):
@@ -38,101 +27,6 @@ def checkpoint_name(text):
     if text.isdigit():
         return f"checkpoints/{int(text):07d}.pkl"
     return text if text.endswith(".pkl") else f"{text}.pkl"
-
-
-def net_policy(cfg, env, weights, slices):
-    apply = ppo.make_actor(ppo.make_net(cfg, env)[0], slices)
-
-    def act(state, obs, carry):
-        del state
-        mean, _ = apply(weights, obs)
-        return ppo.squash(mean), carry
-
-    return act
-
-
-def _per_row(tree, n):
-    return jax.tree.map(lambda x: jnp.broadcast_to(x, (n,) + x.shape), tree)
-
-
-def cascade_policy(env, env_params, rows):
-    gains = control.cascade_gains(env_params.model)
-
-    def act(state, obs, pids):
-        del obs
-
-        def one(drone, goal, pid):
-            (throttle, rate_ref), pid = control.cascade_outer(
-                drone, goal, 0.0, pid, gains, env_params.model, env_params.policy_dt
-            )
-            return core.command_to_action(throttle, rate_ref, env_params), pid
-
-        drone = jax.tree.map(lambda a: a[rows], state.drone)
-        return jax.vmap(one)(drone, env.reference(state, env_params)[rows], pids)
-
-    return act, lambda state: (state, _per_row(control.cascade_init(), len(rows)))
-
-
-def guided_policy(env, env_params, source, rows):
-    """FRPN, APF or a path. The law gives a world acceleration, and MRS's
-    acceleration and attitude levels turn it into the CTBR action a network sends."""
-
-    model, dt = env_params.model, env_params.policy_dt
-    gains = control.attitude_gains(max_rate_yaw=env_params.max_rate_yaw)
-    pursuers = jnp.array([i for i, r in enumerate(env_params.roles) if r == "pursuer"])
-    evader = env_params.roles.index("evader")
-    lo = jnp.asarray(env_params.center) - core.half(env_params)
-    hi = jnp.asarray(env_params.center) + core.half(env_params)
-    n = len(rows)
-
-    def fly(drone, a, pid):
-        heading = jnp.arctan2(drone.R[1, 0], drone.R[0, 0])
-        orientation, throttle = control.acceleration_controller(
-            drone, guidance.drone_limit(a, model), heading, model
-        )
-        # MRS takes the square root of the thrust unguarded. A negative thrust, from a
-        # reversal over 1 g, gives a zero throttle, as in Němeček's copy of MRS.
-        throttle = jnp.where(jnp.isnan(throttle), 0.0, throttle)
-        rate, pid = control.attitude_controller(drone, orientation, pid, gains, dt)
-        return core.command_to_action(throttle, rate, env_params), pid
-
-    def start(state):
-        pids = _per_row(control.pid_init(), n)
-        if source in ("frpn", "apf"):
-            return state, (pids, None)
-        draw = lambda k: guidance.draw_path(
-            k, source, lo + env_params.margin, hi - env_params.margin
-        )
-        paths = jax.vmap(draw)(jax.random.split(state.key, n))
-        on = jax.vmap(lambda p: guidance.path_at(source, p, 0.0))(paths)
-        drone = state.drone.replace(
-            x=state.drone.x.at[rows].set(on[:, 0]), v=state.drone.v.at[rows].set(on[:, 1])
-        )
-        return state.replace(drone=drone), (pids, paths)
-
-    def act(state, obs, carry):
-        del obs
-        pids, paths = carry
-        d = state.drone
-        x, v = d.x[rows], d.v[rows]
-        if source == "frpn":
-            # `reference` is where the pursuer flies its net centre onto the evader.
-            aim = env.reference(state, env_params)[rows]
-            a = jax.vmap(guidance.frpn)(aim - x, d.v[evader] - v)
-        elif source == "apf":
-            a = jax.vmap(guidance.apf, in_axes=(0, 0, None, None, None, None))(
-                x, v, d.x[pursuers], d.v[pursuers], lo, hi
-            )
-        else:
-            target = jax.vmap(lambda p: guidance.path_at(source, p, state.time * dt))(paths)
-            a = jax.vmap(guidance.follow)(x, v, target)
-        if source in ("frpn", "apf"):
-            a = jax.vmap(guidance.nemecek_limit)(a, v)
-
-        action, pids = jax.vmap(fly)(jax.tree.map(lambda q: q[rows], d), a, pids)
-        return action, (pids, paths)
-
-    return act, start
 
 
 def _saved(run, source, checkpoint):
@@ -163,30 +57,11 @@ def make_policy(cfg, env, env_params, run, checkpoint, seats):
     step = next((s["update"] for s in saved.values()), None)
 
     fixed = {
-        r: cascade_policy(env, env_params, slices[r])
-        if s == "cascade"
-        else guided_policy(env, env_params, s, slices[r])
+        r: scripted(env, env_params, s, slices[r])
         for r, s in seats.items()
         if s in SOURCES
     }
-    if not fixed:
-        return net, lambda state: (state, None), step
-
-    def act(state, obs, carry):
-        action, _ = net(state, obs, None)
-        out = {}
-        for role, (fly, _) in fixed.items():
-            flown, out[role] = fly(state, obs, carry[role])
-            action = action.at[slices[role]].set(flown)
-        return action, out
-
-    def start(state):
-        carry = {}
-        for role, (_, seat_start) in fixed.items():
-            state, carry[role] = seat_start(state)
-        return state, carry
-
-    return act, start, step
+    return *combine(net, fixed, slices), step
 
 
 def _hold(done, new, old):

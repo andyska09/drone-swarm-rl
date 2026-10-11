@@ -99,6 +99,9 @@ python run/sim.py tumble --steps 500 --every 50        # open loop, you give thr
 python run/fly.py --target 3 -2 5                      # closed loop, the cascade flies
 python run/train.py --task a_to_b --preset default --steps 5e6  # PPO -> runs/<name>/
 python run/train.py --set gamma=0.99 --set ent_coef=0.01        # any TrainConfig field
+python run/train.py --task chase --set gamma=0.99 --set generations=13 --steps 1.4e9  # pools
+python run/train.py --resume runs/<name>               # a pool run, from its unfinished phase
+python run/matrix.py runs/<name>                       # every pursuer against every evader
 python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
 python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role's seat
 python run/replay.py                                   # serve + open the 3D viewer
@@ -157,11 +160,16 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - `learn/` — our PPO. `ppo.py` (ActorCritic + `make`, one compiled update),
   `vecenv.py` (vmap, auto-reset, normalization), `runner.py` (the update loop, run
   directory, checkpoints, wandb), `config.py` (hyperparameters), `evaluate.py`
-  (fixed eval seeds, mean actions, no auto-reset). Knows nothing about drones: it
-  takes an env *module* and one network per role.
+  (fixed eval seeds, mean actions, no auto-reset), `seats.py` (who flies a seat: a
+  network, the cascade, FRPN, APF or a path; eval and training share it), `pool.py`
+  (chase against pools of frozen opponents: generations, phases, Hedge, pool files,
+  resume). `ppo.py`, `vecenv.py` and `runner.py` know nothing about drones: they take
+  an env *module* and one network per role. `seats.py` and `pool.py` know chase.
 - **Every role is its own learner.** One `TrainState` per role, so gradient
-  clipping, Adam state, advantage scaling and reward scaling never mix two sides of
-  a game. `cfg.train_roles` names the roles that take a step; empty means all.
+  clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
+  mix two sides of a game. `cfg.train_roles` names the roles that take a step; empty
+  means all. `cfg.generations` above 0 trains chase with pools instead, one side at a
+  time — the design is in [research/notes/AMSPBH.md](research/notes/AMSPBH.md).
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
@@ -192,9 +200,10 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 |---|---|
 | `test_dynamics.py` | the plant against the goldens |
 | `test_control.py` | the cascade against the goldens |
-| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, and a net on another pursuer kills both |
+| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, a net on another pursuer kills both, and after a failure only the survivor bootstraps |
 | `test_learn.py` | it learns, the same seed gives the same numbers, and a frozen role does not move |
 | `test_runner.py` | a run says what produced it and resumes |
+| `test_pool.py` | the Hedge weights follow eq. 12, and a resume in the middle of a generation keeps its pool |
 | `test_eval.py` | the cascade in the policy's seat scores the cascade's number |
 
 ## research/ and the reference code

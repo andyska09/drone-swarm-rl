@@ -13,8 +13,8 @@ class TrainConfig:
     num_steps: int = 64
     total_timesteps: int = 100_000_000
 
-    lr: float = 3e-4
-    anneal_lr: bool = True
+    # The start. After that, each role's lr follows its KL (ppo.adapt_lr).
+    lr: float = 2e-4
 
     gamma: float = 0.998
     gae_lambda: float = 0.95
@@ -23,12 +23,15 @@ class TrainConfig:
     update_epochs: int = 4
     clip_eps: float = 0.2
     vf_coef: float = 0.5
-    ent_coef: float = 0.0
+    ent_coef: float = 0.001
     max_grad_norm: float = 0.5
 
     # Which roles take gradient steps. Empty means all of them. Freezing one side
     # and training the other is how the evader learns without runaway self-play.
     train_roles: tuple = ()
+    # Above 0, chase trains against pools of frozen opponents: generation 0, then
+    # this many more (pool.py). At 0 both sides learn at once.
+    generations: int = 0
 
     hidden: tuple = (256, 256)
     activation: str = "tanh"

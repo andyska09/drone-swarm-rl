@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from swarm.learn import config, runner
+from swarm.learn import config, pool, runner
 
 
 def cast(current, text):
@@ -32,7 +32,14 @@ def main():
                    help="any other TrainConfig field")
     p.add_argument("--out", default="runs")
     p.add_argument("--wandb", action="store_true")
+    p.add_argument("--resume", metavar="RUN",
+                   help="run a pool run on from its unfinished phase; every other flag is ignored")
     args = p.parse_args()
+
+    if args.resume:
+        path, _ = pool.resume(args.resume, use_wandb=args.wandb)
+        print(f"wrote {path}")
+        return
 
     cfg = config.TrainConfig()
     for field in dataclasses.fields(cfg):
@@ -43,7 +50,8 @@ def main():
         name, _, text = override.partition("=")
         setattr(cfg, name, cast(getattr(cfg, name), text))
 
-    path, _ = runner.train(cfg, root=args.out, use_wandb=args.wandb)
+    train = pool.train if cfg.generations else runner.train
+    path, _ = train(cfg, root=args.out, use_wandb=args.wandb)
     print(f"wrote {path}")
 
 

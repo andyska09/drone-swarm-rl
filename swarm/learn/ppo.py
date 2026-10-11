@@ -19,6 +19,31 @@ LOG_2 = math.log(2.0)
 
 MIN_STD = 1e-3  # keeps log(std) finite
 
+KL_TARGET = 0.016
+LR_MIN, LR_MAX = 1e-5, 1e-2
+
+
+def adapt_lr(lr, kl):
+    """Divide the lr by 1.5 when the KL is over twice the target, and multiply it by
+    1.5 when the KL is under half of it."""
+
+    return jnp.select(
+        [kl > 2.0 * KL_TARGET, (kl > 0.0) & (kl < 0.5 * KL_TARGET)],
+        [jnp.maximum(lr / 1.5, LR_MIN), jnp.minimum(lr * 1.5, LR_MAX)],
+        lr,
+    )
+
+
+def lr_of(t):
+    return t.opt_state.hyperparams["learning_rate"]
+
+
+def with_lr(t, lr):
+    state = t.opt_state
+    return t.replace(
+        opt_state=state._replace(hyperparams={**state.hyperparams, "learning_rate": lr})
+    )
+
 
 def _inv_softplus(x):
     return math.log(math.expm1(x))
@@ -204,7 +229,10 @@ class Transition:
     mask: jnp.ndarray
 
 
-def make(cfg, env, env_params):
+def make(cfg, env, env_params, pool_seat=None):
+    """`pool_seat` is a `seats.pool_seat`. It flies its rows over what the actors draw,
+    and `update` then takes the pool as its last argument."""
+
     assert cfg.num_updates > 0, "total_timesteps < num_envs * num_steps"
     assert (cfg.num_envs * cfg.num_steps) % cfg.num_minibatches == 0
     batch_size = cfg.num_envs * cfg.num_steps
@@ -214,6 +242,7 @@ def make(cfg, env, env_params):
     opponents = opponent_slices(env_params.roles)
     actor = make_actor(actor_net, slices)
     critic = make_critic(critic_net, slices, opponents)
+    pool_rows, pool_act, pool_start = pool_seat or (None, None, None)
 
     # Whose turn it is. A traced flag, so alternating needs no second compile.
     every_turn = {r: not cfg.train_roles or r in cfg.train_roles for r in slices}
@@ -225,15 +254,6 @@ def make(cfg, env, env_params):
         one_scene = jax.tree.map(lambda x: x[:1], obs)
         one_action = jnp.zeros((1, env_params.n_drones, env.NUM_ACTIONS))
         keys = jax.random.split(k_net, len(slices))
-
-        if cfg.anneal_lr:
-
-            def lr(count):
-                done = count // (cfg.update_epochs * cfg.num_minibatches)
-                return cfg.lr * (1.0 - done / cfg.num_updates)
-
-        else:
-            lr = cfg.lr
 
         def params(role, drones, k):
             k_a, k_c = jax.random.split(k)
@@ -249,10 +269,13 @@ def make(cfg, env, env_params):
             role: TrainState.create(
                 apply_fn=None,
                 params=params(role, drones, k),
-                tx=optax.chain(
-                    optax.clip_by_global_norm(cfg.max_grad_norm),
-                    optax.adam(lr, eps=1e-5),
-                ),
+                # The lr sits in the optimizer state, so each role carries its own.
+                tx=optax.inject_hyperparams(
+                    lambda learning_rate: optax.chain(
+                        optax.clip_by_global_norm(cfg.max_grad_norm),
+                        optax.adam(learning_rate, eps=1e-5),
+                    )
+                )(learning_rate=cfg.lr),
             )
             for (role, drones), k in zip(slices.items(), keys)
         }
@@ -261,32 +284,49 @@ def make(cfg, env, env_params):
     def weights(ts):
         return {role: t.params for role, t in ts.items()}
 
-    def value_at(ts, obs, key):
-        """No action exists at this state yet, so draw one."""
+    def update(ts, vec, obs, key, train=every_turn, pool=None):
+        # 1 for each drone whose role takes a step: only these rows enter the loss.
+        learns = jnp.stack([jnp.asarray(train[r]) for r in env_params.roles]).astype(float)
+        start = None if pool_seat is None else lambda state: pool_start(state, pool)
 
-        mean, std = actor(weights(ts), obs)
-        return critic(weights(ts), obs, squash(sample(key, mean, std)))
+        def act(ts, state, obs, seat, key):
+            mean, std = actor(weights(ts), obs)
+            draw = sample(key, mean, std)
+            action = squash(draw)
+            if pool_seat is not None:
+                flown, seat = pool_act(state, obs, seat, pool)
+                action = action.at[:, pool_rows].set(flown)
+            return action, draw, mean, std, seat
 
-    def update(ts, vec, obs, key, train=every_turn):
+        def value_at(ts, state, obs, seat, key):
+            """No action exists at this state yet, so draw one."""
+
+            return critic(weights(ts), obs, act(ts, state, obs, seat, key)[0])
+
         def rollout(carry, _):
             ts, vec, obs, key = carry
-            key, k = jax.random.split(key)
-            mean, std = actor(weights(ts), obs)
-            draw = sample(k, mean, std)
-            action = squash(draw)
+            key, k, k_final = jax.random.split(key, 3)
+            action, draw, mean, std, seat = act(ts, vec.env, obs, vec.seat, k)
             value = critic(weights(ts), obs, action)
             next_obs, vec, reward, done, info = vecenv.step(
-                vec, action, env, env_params, cfg
+                vec.replace(seat=seat), action, env, env_params, cfg, learns, start
             )
+            # Bootstrap truncations from the final observation before the scene resets.
+            # A diverged drone makes v_final NaN, also for a survivor that sees it, and
+            # NaN * 0 is NaN, so select instead.
+            v_final = value_at(
+                ts, info.pop("final_state"), info.pop("final_obs"), seat, k_final
+            )
+            bootstrap = (info["bootstrap"] > 0) & jnp.isfinite(v_final)
             transition = Transition(
                 obs,
                 draw,
                 action,
                 log_prob(draw, mean, std),
                 value,
-                reward,
+                reward + cfg.gamma * jnp.where(bootstrap, v_final, 0.0),
                 info["cont"],
-                info["mask"],
+                info["mask"] * learns,
             )
             return (ts, vec, next_obs, key), (transition, info)
 
@@ -294,17 +334,8 @@ def make(cfg, env, env_params):
             rollout, (ts, vec, obs, key), None, length=cfg.num_steps
         )
 
-        key, k_final, k_last = jax.random.split(key, 3)
-
-        # Bootstrap timeouts from the final observation before the scene resets.
-        # A diverged drone makes v_final NaN, and NaN * 0 is NaN, so select instead.
-        v_final = value_at(ts, info["final_obs"], k_final)
-        traj = traj.replace(
-            reward=traj.reward
-            + cfg.gamma * jnp.where(info["bootstrap"] > 0, v_final, 0.0)
-        )
-
-        last_value = value_at(ts, obs, k_last)
+        key, k_last = jax.random.split(key)
+        last_value = value_at(ts, vec.env, obs, vec.seat, k_last)
 
         def gae_step(carry, tr):
             gae, next_value = carry
@@ -368,17 +399,21 @@ def make(cfg, env, env_params):
                     }
 
                 (_, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(weights(ts))
-                # Selecting the whole TrainState freezes the Adam moments and the
-                # step count too, not only the weights.
-                stepped = {
-                    role: hold(train[role], t.apply_gradients(grads=grads[role]), t)
-                    for role, t in ts.items()
-                }
-                return stepped, {
+                stats = {
                     column(role, name, slices): _mean(x[..., drones], tr.mask[..., drones])
                     for name, x in aux.items()
                     for role, drones in slices.items()
                 }
+
+                def step(role, t):
+                    lr = adapt_lr(lr_of(t), stats[column(role, "approx_kl", slices)])
+                    return with_lr(t, lr).apply_gradients(grads=grads[role])
+
+                # Selecting the whole TrainState freezes the Adam moments, the lr and
+                # the step count too, not only the weights.
+                return {
+                    role: hold(train[role], step(role, t), t) for role, t in ts.items()
+                }, stats
 
             ts, stats = lax.scan(minibatch, ts, minibatches)
             return (ts, key), stats
@@ -421,6 +456,7 @@ def make(cfg, env, env_params):
                 var_y > 0, 1.0 - jnp.var(target - value) / var_y, jnp.nan
             )
         metrics |= jax.tree.map(lambda x: x[-1].mean(), stats)
+        metrics |= {column(role, "lr", slices): lr_of(t) for role, t in ts.items()}
 
         return (ts, vec, obs, key), metrics
 

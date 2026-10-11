@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import pytest
 
 from swarm.envs import a_to_b, chase, core, flat
+from swarm.learn import config, vecenv
 from swarm.sim import control
 
 PRESETS = ("hover", "default")
@@ -187,6 +188,21 @@ def test_a_net_on_another_pursuer_kills_both():
     assert list(chase.net_collision(drone, params)) == [True, True, False, False]
     assert list(chase.collPP(drone, params)) == [True, True, False, False]
     assert not jnp.any(chase.failed(drone, params)), "nobody hit a wall"
+
+
+def test_after_a_failure_only_the_survivor_bootstraps():
+    params = chase.PRESETS["default"]
+    cfg = config.TrainConfig(task="chase", num_envs=1)
+    _, vec = vecenv.reset(jax.random.PRNGKey(0), chase, params, cfg)
+
+    # The evader starts under the floor, far from the pursuer.
+    drone = vec.env.drone.replace(x=jnp.array([[[5.0, 0.0, 8.0], [-5.0, 0.0, -0.5]]]))
+    vec = vec.replace(env=vec.env.replace(drone=drone, time=jnp.zeros(1, jnp.int32)))
+    action = jnp.zeros((1, params.n_drones, chase.NUM_ACTIONS))
+
+    _, _, _, done, info = vecenv.step(vec, action, chase, params, cfg)
+    assert bool(done[0]) and bool(info["end"]["crash_evader"][0])
+    assert list(info["bootstrap"][0]) == [1.0, 0.0], "pursuer, evader"
 
 
 def test_vmap_matches_python_loop():

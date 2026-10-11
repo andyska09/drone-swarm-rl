@@ -245,15 +245,8 @@ def step(key, state, action, params):
     reward = compute_reward(
         new_state, rate_ref, state.alive, fail, collide, caught, params
     )
-    truncated = new_state.time >= params.max_steps
-    done = truncated | caught | ~jnp.all(alive)
-
-    # Gavin's score for the pursuers, read at the step the episode ends.
-    rho = jnp.where(
-        caught,
-        1.0 - new_state.time / params.max_steps,
-        (died[evader] & ~jnp.any(died[pursuers])).astype(float),
-    )
+    limit = new_state.time >= params.max_steps
+    done = limit | caught | ~jnp.all(alive)
 
     # A failure through the floor, or a broken state, is a crash. The rest is OOB.
     floor = params.center[2] - 0.5 * params.arena[2]
@@ -265,18 +258,19 @@ def step(key, state, action, params):
     info = {
         "alive": alive,
         "died_this_step": died,
-        "truncated": truncated,
+        # Only a catch is terminal. The trainer bootstraps every drone still alive, so
+        # after a failure the survivors bootstrap and the drone that failed does not.
+        "truncated": done & ~caught,
         "end": {
             # One outcome per episode, so in 1v1 these seven sum to 1.
             "caught_evader": caught,
             "crash_pursuer": jnp.any(crash[pursuers]) & ~e_fail,
             "OOB_pursuer": jnp.any(oob[pursuers]) & ~e_fail,
-            "timeout": truncated & ~caught & ~jnp.any(died),
+            "timeout": limit & ~caught & ~jnp.any(died),
             "crash_evader": crash[evader] & ~p_fail,
             "OOB_evader": oob[evader] & ~p_fail,
             "fail_both": p_fail & e_fail,
             "time_to_catch": jnp.where(caught, new_state.time * params.policy_dt, jnp.nan),
-            "rho": rho,
             "collPP": jnp.any(collide),
             "catch_offset": jnp.where(caught, jnp.min(core.norm(on_net)), jnp.nan),
         },

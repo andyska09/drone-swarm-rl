@@ -17,7 +17,7 @@ from swarm.learn import ppo
 
 # A task that does not report one of these is printed without it. A per-role
 # metric arrives as `<role>_<name>`, so every role of it prints.
-PROGRESS = ("ep_length", "death_rate", "caught_evader", "rho")
+PROGRESS = ("ep_length", "death_rate", "caught_evader")
 
 
 def _progress(row):
@@ -63,22 +63,27 @@ def say(path, line):
         f.write(line + "\n")
 
 
-def append_metrics(path, row):
-    with (path / "metrics.csv").open("a", newline="") as f:
+def append_row(file, row):
+    with file.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(row))
         if f.tell() == 0:
             writer.writeheader()
         writer.writerow(row)
 
 
-def save(path, update, carry):
-    train_state, vec, obs, key = carry
+def snapshot(path, update, train_state):
     weights = {
         "update": update,
         "params": jax.device_get({r: t.params for r, t in train_state.items()}),
     }
     with (path / "checkpoints" / f"{update:07d}.pkl").open("wb") as f:
         pickle.dump(weights, f)
+    return weights
+
+
+def save(path, update, carry):
+    train_state, vec, obs, key = carry
+    weights = snapshot(path, update, train_state)
 
     # Numbered files store policy snapshots; latest.pkl also stores training state.
     with (path / "latest.pkl").open("wb") as f:
@@ -145,7 +150,7 @@ def train(cfg, root="runs", use_wandb=False):
             "seconds": round(elapsed, 1),
             **{k: float(v) for k, v in metrics.items()},
         }
-        append_metrics(path, row)
+        append_row(path / "metrics.csv", row)
         if tracker is not None:
             tracker.log(row, step=steps)
         if i == 0 or (i + 1) % cfg.log_every == 0:
