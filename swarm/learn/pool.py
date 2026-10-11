@@ -120,7 +120,7 @@ def resume(path, use_wandb=False):
 
     path = Path(path)
     cfg = evaluate.load_config(path)
-    env, env_params = envs.make(cfg.task, cfg.preset)
+    env, env_params = evaluate.load_env(path)
     saved = runner.load(path)
     init, _ = ppo.make(cfg, env, env_params)
     ts = runner.restore(init(jax.random.PRNGKey(cfg.seed)), saved)[0]

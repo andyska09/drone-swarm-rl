@@ -98,7 +98,7 @@ pytest tests/test_dynamics.py -k tumble                # one test
 python run/train.py --task circle_swap --preset pair --steps 5e6  # PPO -> runs/<name>/
 python run/train.py --task circle_swap --preset pair --set gamma=0.99  # any TrainConfig field
 python run/train.py --task chase --preset default --set gamma=0.99 --set generations=13 --steps 1.4e9  # pools
-python run/train.py --resume runs/<name>               # a pool run, from its unfinished phase
+python run/train.py --resume runs/<name>               # a pool run, from its unfinished phase, in its recorded env
 python run/matrix.py runs/<name>                       # every pursuer against every evader
 python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
 python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role's seat

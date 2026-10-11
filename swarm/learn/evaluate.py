@@ -1,5 +1,7 @@
 """Measure a policy: fixed eval seeds, mean actions, no auto-reset, per-episode only."""
 
+import dataclasses
+import importlib
 import json
 from pathlib import Path
 
@@ -21,6 +23,31 @@ def load_config(run):
     cfg = config.TrainConfig(**spec["train"])
     cfg.hidden = tuple(cfg.hidden)
     return cfg
+
+
+def load_env(run):
+    """The task module and the env the run trained in, rebuilt from its config.json."""
+
+    spec = json.loads((Path(run) / "config.json").read_text())
+    env = importlib.import_module(f"swarm.envs.{spec['train']['task']}")
+    return env, _from_json(env.EnvParams, spec["env"])
+
+
+def _from_json(cls, record):
+    """JSON turned the nested classes into dicts, and the tuples and arrays into lists."""
+
+    kinds = {f.name: f.type for f in dataclasses.fields(cls)}
+    values = {}
+    for name, value in record.items():
+        kind = kinds.get(name)
+        if dataclasses.is_dataclass(kind):
+            value = _from_json(kind, value)
+        elif kind is tuple:
+            value = tuple(value)
+        elif kind is jnp.ndarray:
+            value = jnp.asarray(value)
+        values[name] = value
+    return cls(**values)
 
 
 def checkpoint_name(text):
