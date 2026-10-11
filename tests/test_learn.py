@@ -14,9 +14,10 @@ from swarm.learn import config, ppo
 
 def train(updates, seed=0):
     cfg = config.TrainConfig(
-        seed=seed, num_envs=128, num_steps=32, total_timesteps=300_000, num_minibatches=4
+        task="circle_swap", preset="pair", seed=seed, num_envs=128, num_steps=32,
+        total_timesteps=300_000, num_minibatches=4,
     )
-    env, env_params = envs.make("a_to_b", "hover")
+    env, env_params = envs.make(cfg.task, cfg.preset)
     # Short episodes so some finish inside a rollout and the per-episode metrics exist.
     env_params = env_params.replace(max_steps=100)
     init, update = ppo.make(cfg, env, env_params)
@@ -41,14 +42,15 @@ def test_metrics_carry_the_env_measurements():
 
 
 def test_a_frozen_role_does_not_move():
-    """Both sides learn, but train_roles names one."""
+    """The turn passed to the update freezes every role it marks False."""
 
     cfg = config.TrainConfig(
+        task="chase",
+        preset="default",
         num_envs=64,
         num_steps=32,
         total_timesteps=100_000,
         num_minibatches=4,
-        train_roles=("pursuer",),
     )
     env, env_params = envs.make("chase", "default")
     env_params = env_params.replace(max_steps=100)
@@ -56,7 +58,7 @@ def test_a_frozen_role_does_not_move():
     init, update = ppo.make(cfg, env, env_params)
     carry = init(jax.random.PRNGKey(0))
     before = jax.tree.map(jnp.copy, {r: t.params for r, t in carry[0].items()})
-    carry, _ = update(*carry)
+    carry, _ = update(*carry, {"pursuer": True, "evader": False})
     after = {r: t.params for r, t in carry[0].items()}
 
     assert set(before) == {"pursuer", "evader"}
@@ -64,7 +66,7 @@ def test_a_frozen_role_does_not_move():
     assert not any(jax.tree.leaves(moved["evader"])), "a frozen role took a step"
     assert any(jax.tree.leaves(moved["pursuer"])), "the trained role did not move"
 
-    # A turn passed in as an argument overrides train_roles.
+    # Then the other turn.
     before = jax.tree.map(jnp.copy, {r: t.params for r, t in carry[0].items()})
     carry, _ = update(*carry, {"pursuer": False, "evader": True})
     after = {r: t.params for r, t in carry[0].items()}

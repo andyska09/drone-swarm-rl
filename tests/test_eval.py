@@ -1,4 +1,4 @@
-"""Check that eval measures what training measured, and that the cascade scores the M2 gate."""
+"""Check what eval writes, and that hand-written seats score their known numbers."""
 
 import json
 import sys
@@ -34,19 +34,23 @@ def fixed_match(seats, episodes=64):
 
 def small(**overrides):
     return config.TrainConfig(
-        task="a_to_b", preset="hover", num_envs=8, num_steps=8, total_timesteps=8 * 8 * 4,
+        task="circle_swap", preset="pair", num_envs=8, num_steps=8, total_timesteps=8 * 8 * 4,
         num_minibatches=2, checkpoint_every=2, log_every=100, **overrides
     )
 
 
-def test_cascade_in_the_seat_reproduces_the_gate(tmp_path):
-    path, _ = runner.train(small(), root=tmp_path)
-    out, summary = evaluate.evaluate(path, episodes=32, seats=[("drone", "cascade")])
+def test_cascade_in_both_seats_scores_its_baseline(tmp_path):
+    """A seat that names a source loads no weights, so the run needs only its config."""
 
-    assert summary["distance"] < 0.2, f"cascade settled at {summary['distance']:.3f} m"
-    assert summary["ep_length"] == 500.0, "the cascade did not fly the whole episode"
-    assert summary["death_rate"] == 0.0
-    assert out.name == "drone_cascade"
+    _, params = envs.make("chase", "default")
+    path = runner.new_run(config.TrainConfig(task="chase", preset="default"), params, tmp_path)
+    out, summary = evaluate.evaluate(
+        path, episodes=32, seats=[("pursuer", "cascade"), ("evader", "cascade")]
+    )
+
+    caught = summary["caught_evader"]
+    assert caught > 0.9, f"the cascade caught the cascade in only {caught:.2f} of episodes"
+    assert out.name == "evader_cascade_pursuer_cascade"
 
 
 def test_eval_writes_what_the_viewer_needs(tmp_path):
@@ -57,13 +61,13 @@ def test_eval_writes_what_the_viewer_needs(tmp_path):
     assert episodes["return"].shape == (16,), "per-episode arrays, one row per episode"
 
     traj = np.load(out / "trajectory.npz")
-    assert traj["x"].shape == (evaluate.TRAJECTORIES, 500, 1, 3)
-    assert traj["R"].shape == (evaluate.TRAJECTORIES, 500, 1, 3, 3)
+    assert traj["x"].shape == (evaluate.TRAJECTORIES, 700, 2, 3)
+    assert traj["R"].shape == (evaluate.TRAJECTORIES, 700, 2, 3, 3)
     # The goal is recorded per step, because a chase target moves.
-    assert traj["goal"].shape == (evaluate.TRAJECTORIES, 500, 1, 3)
+    assert traj["goal"].shape == (evaluate.TRAJECTORIES, 700, 2, 3)
 
     header = json.loads((out / "header.json").read_text())
-    assert header["roles"] == ["drone"] and header["arena"] == [32.0, 32.0, 16.0]
+    assert header["roles"] == ["drone", "drone"] and header["arena"] == [32.0, 32.0, 16.0]
 
     spec = json.loads((out / "eval.json").read_text())
     assert spec["eval_seed"] == evaluate.EVAL_SEED and spec["episodes"] == 16
@@ -72,16 +76,14 @@ def test_eval_writes_what_the_viewer_needs(tmp_path):
 def test_a_dead_episode_stops_counting(tmp_path):
     """No auto-reset: a crash ends the episode and the held tail must not score."""
 
-    # The wide preset, so an untrained policy leaves the arena and the episode ends.
-    cfg = small()
-    cfg.preset = "default"
-    path, _ = runner.train(cfg, root=tmp_path)
+    path, _ = runner.train(small(), root=tmp_path)
     out, _ = evaluate.evaluate(path, episodes=64)
 
+    # One death ends a circle_swap episode, so a crash shows as a death rate above 0.
     episodes = np.load(out / "episodes.npz")
-    died = episodes["death_rate"] == 1.0
-    assert died.any(), "an untrained policy on the wide preset never crashed"
-    assert np.all(episodes["ep_length"][died] < 500), "a crashed episode ran the full length"
+    died = episodes["death_rate"] > 0.0
+    assert died.any(), "an untrained policy never crashed"
+    assert np.all(episodes["ep_length"][died] < 700), "a crashed episode ran the full length"
 
 
 def test_every_episode_has_exactly_one_outcome():
@@ -90,6 +92,6 @@ def test_every_episode_has_exactly_one_outcome():
     assert np.allclose(total, 1.0), f"outcomes sum to {sorted(set(total.round(3)))}"
 
 
-def test_frpn_catches_a_hovering_evader():
-    caught = float(np.mean(fixed_match({"pursuer": "frpn", "evader": "hover"})["caught_evader"]))
-    assert caught > 0.7, f"FRPN caught a hovering evader in only {caught:.2f} of episodes"
+def test_frpn_catches_the_path_evader():
+    caught = float(np.mean(fixed_match({"pursuer": "frpn", "evader": "paths"})["caught_evader"]))
+    assert caught > 0.6, f"FRPN caught the path evader in only {caught:.2f} of episodes"

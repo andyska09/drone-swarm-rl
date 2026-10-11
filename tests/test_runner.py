@@ -15,7 +15,7 @@ from swarm.learn import config, ppo, runner
 
 def small(**overrides):
     return config.TrainConfig(
-        task="a_to_b", preset="hover", num_envs=8, num_steps=8, total_timesteps=8 * 8 * 4,
+        task="circle_swap", preset="pair", num_envs=8, num_steps=8, total_timesteps=8 * 8 * 4,
         num_minibatches=2, checkpoint_every=2, log_every=100, **overrides
     )
 
@@ -27,7 +27,7 @@ def test_run_writes_itself(tmp_path):
     spec = json.loads((path / "config.json").read_text())
     assert spec["git"]["commit"], "a run with no commit cannot be reproduced"
     assert spec["train"]["seed"] == cfg.seed
-    assert spec["env"]["max_steps"] == 500, "the env config is not on the record"
+    assert spec["env"]["max_steps"] == 700, "the env config is not on the record"
 
     rows = list(csv.DictReader((path / "metrics.csv").open()))
     assert len(rows) == cfg.num_updates
@@ -39,7 +39,7 @@ def test_run_writes_itself(tmp_path):
 
 
 def test_the_hash_follows_the_config(tmp_path):
-    _, env_params = envs.make("a_to_b", "hover")
+    _, env_params = envs.make("circle_swap", "pair")
 
     def digest(cfg, where):
         return runner.new_run(cfg, env_params, tmp_path / where).name.split("_")[-1]

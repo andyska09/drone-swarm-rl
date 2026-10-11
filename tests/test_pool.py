@@ -30,7 +30,7 @@ def test_hedge_weights_follow_eq_12():
 def test_a_resume_mid_generation_keeps_its_pool(tmp_path, monkeypatch):
     # Generations 0 and 1 make four phases of two updates each.
     cfg = config.TrainConfig(
-        task="chase", num_envs=64, num_steps=8, num_minibatches=2,
+        task="chase", preset="default", num_envs=64, num_steps=8, num_minibatches=2,
         total_timesteps=8 * 64 * 8, generations=1, checkpoint_every=100, log_every=100,
     )
     monkeypatch.setattr(pool, "HEDGE_EPISODES", 4)

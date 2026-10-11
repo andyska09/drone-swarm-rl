@@ -9,11 +9,12 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from swarm.envs import a_to_b, chase, core, flat
+from swarm.envs import chase, circle_swap, core, flat
 from swarm.learn import config, vecenv
 from swarm.sim import control
 
-PRESETS = ("hover", "default")
+# One drone, so the cascade flies straight across the circle with nobody to hit.
+SOLO = circle_swap.EnvParams(roles=("drone",))
 
 
 def cascade_policy(params):
@@ -40,20 +41,19 @@ def replay(state, actions):
 
 
 def rollout(params, key, act, carry):
-    _, state = a_to_b.reset(key, params)
+    _, state = circle_swap.reset(key, params)
 
     def body(both, _):
         state, carry = both
         action, carry = act(state, carry)
-        _, state, reward, done, info = a_to_b.step(key, state, action, params)
+        _, state, reward, done, info = circle_swap.step(key, state, action, params)
         return (state, carry), (reward, done, info["end"]["distance"], info["alive"])
 
     return jax.lax.scan(body, (state, carry), None, length=params.max_steps)
 
 
-@pytest.mark.parametrize("preset", PRESETS)
-def test_cascade_arrives_and_stays(preset):
-    params = a_to_b.PRESETS[preset]
+def test_cascade_arrives_and_stays():
+    params = SOLO
     act, pids = cascade_policy(params)
     keys = jax.random.split(jax.random.PRNGKey(0), 32)
 
@@ -66,17 +66,19 @@ def test_cascade_arrives_and_stays(preset):
 
 
 def test_shapes_and_dtypes_survive_a_step():
-    params = a_to_b.PRESETS["default"]
+    params = circle_swap.PRESETS["pair"]
     n, k = params.n_drones, params.n_visible
-    obs, state = a_to_b.reset(jax.random.PRNGKey(0), params)
+    obs, state = circle_swap.reset(jax.random.PRNGKey(0), params)
 
     assert obs.own.shape == (n, 20)
     assert obs.others.shape == (n, k, core.OTHER_FEATURES)
     assert obs.target.shape == (n, 6)
     assert flat(obs).shape == (n, 20 + k * core.OTHER_FEATURES + k + 6)
 
-    action = jnp.zeros((n, a_to_b.NUM_ACTIONS))
-    obs2, state2, reward, done, info = a_to_b.step(jax.random.PRNGKey(1), state, action, params)
+    action = jnp.zeros((n, circle_swap.NUM_ACTIONS))
+    obs2, state2, reward, done, info = circle_swap.step(
+        jax.random.PRNGKey(1), state, action, params
+    )
 
     assert reward.shape == (n,) and done.shape == ()
     assert info["alive"].shape == (n,) and info["truncated"].shape == ()
@@ -88,10 +90,10 @@ def test_shapes_and_dtypes_survive_a_step():
 
 
 def test_random_actions_stay_finite_and_terminate():
-    params = a_to_b.PRESETS["hover"]
+    params = SOLO
     key = jax.random.PRNGKey(0)
     actions = jax.random.uniform(
-        key, (params.max_steps, params.n_drones, a_to_b.NUM_ACTIONS), minval=-1, maxval=1
+        key, (params.max_steps, params.n_drones, circle_swap.NUM_ACTIONS), minval=-1, maxval=1
     )
     _, (reward, done, distance, _) = rollout(params, key, replay, actions)
 
@@ -100,7 +102,7 @@ def test_random_actions_stay_finite_and_terminate():
 
 
 def test_dead_drone_stays_dead():
-    params = a_to_b.PRESETS["hover"]
+    params = SOLO
     key = jax.random.PRNGKey(0)
     actions = jnp.tile(
         jnp.array([-1.0, 0.0, 0.0, 0.0]), (params.max_steps, params.n_drones, 1)
@@ -115,12 +117,12 @@ def test_dead_drone_stays_dead():
 
 
 def test_timeout_truncates_without_terminating():
-    params = a_to_b.PRESETS["hover"]
-    _, state = a_to_b.reset(jax.random.PRNGKey(0), params)
+    params = SOLO
+    _, state = circle_swap.reset(jax.random.PRNGKey(0), params)
     state = state.replace(time=jnp.int32(params.max_steps - 1))
-    action = jnp.zeros((params.n_drones, a_to_b.NUM_ACTIONS))
+    action = jnp.zeros((params.n_drones, circle_swap.NUM_ACTIONS))
 
-    _, _, _, done, info = a_to_b.step(jax.random.PRNGKey(1), state, action, params)
+    _, _, _, done, info = circle_swap.step(jax.random.PRNGKey(1), state, action, params)
     assert bool(done) and bool(info["truncated"]) and bool(jnp.all(info["alive"]))
 
 
@@ -192,7 +194,7 @@ def test_a_net_on_another_pursuer_kills_both():
 
 def test_after_a_failure_only_the_survivor_bootstraps():
     params = chase.PRESETS["default"]
-    cfg = config.TrainConfig(task="chase", num_envs=1)
+    cfg = config.TrainConfig(task="chase", preset="default", num_envs=1)
     _, vec = vecenv.reset(jax.random.PRNGKey(0), chase, params, cfg)
 
     # The evader starts under the floor, far from the pursuer.
@@ -206,7 +208,7 @@ def test_after_a_failure_only_the_survivor_bootstraps():
 
 
 def test_vmap_matches_python_loop():
-    params = a_to_b.PRESETS["default"]
+    params = SOLO
     act, pids = cascade_policy(params)
     keys = jax.random.split(jax.random.PRNGKey(3), 4)
 
