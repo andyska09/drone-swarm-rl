@@ -1,7 +1,6 @@
 """N drones on a circle, each flying to the opposite point; any contact ends the episode."""
 
 import flax.struct
-import jax
 import jax.numpy as jnp
 
 from swarm.envs import Obs, core
@@ -27,6 +26,7 @@ class EnvParams(core.Common):
     max_steps: int = flax.struct.field(pytree_node=False, default=700)
 
     radius: float = 3.0
+    close_dist: float = 1.5
 
 
 @flax.struct.dataclass
