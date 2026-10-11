@@ -56,19 +56,14 @@ def cascade_policy(env, env_params, rows):
     return act, lambda state: (state, _per_row(control.cascade_init(), len(rows)))
 
 
-def guided_policy(env, env_params, source, rows):
-    """FRPN, APF or a path. The law gives a world acceleration, and the cascade's
-    acceleration and attitude levels turn it into the CTBR action a network sends."""
+def _acceleration_to_action(env_params, drones, a, pids):
+    """The cascade's acceleration and attitude levels turn each drone's world
+    acceleration into the CTBR action a network sends."""
 
     model, dt = env_params.model, env_params.policy_dt
     gains = control.attitude_gains(max_rate_yaw=env_params.max_rate_yaw)
-    pursuers = jnp.array([i for i, r in enumerate(env_params.roles) if r == "pursuer"])
-    evader = env_params.roles.index("evader")
-    lo = jnp.asarray(env_params.center) - core.half(env_params)
-    hi = jnp.asarray(env_params.center) + core.half(env_params)
-    n = len(rows)
 
-    def fly(drone, a, pid):
+    def one(drone, a, pid):
         heading = jnp.arctan2(drone.R[1, 0], drone.R[0, 0])
         orientation, throttle = control.acceleration_controller(
             drone, guidance.drone_limit(a, model), heading, model
@@ -78,19 +73,56 @@ def guided_policy(env, env_params, source, rows):
         rate, pid = control.attitude_controller(drone, orientation, pid, gains, dt)
         return core.command_to_action(throttle, rate, env_params), pid
 
+    return jax.vmap(one)(drones, a, pids)
+
+
+def frpn_policy(env, env_params, rows):
+    evader = env_params.roles.index("evader")
+
+    def act(state, obs, pids):
+        del obs
+        d = state.drone
+        own = jax.tree.map(lambda q: q[rows], d)
+        # `reference` is where the pursuer flies its net centre onto the evader.
+        aim = env.reference(state, env_params)[rows]
+        a = jax.vmap(guidance.frpn)(aim - own.x, d.v[evader] - own.v)
+        a = jax.vmap(guidance.speed_limit)(a, own.v)
+        return _acceleration_to_action(env_params, own, a, pids)
+
+    return act, lambda state: (state, _per_row(control.pid_init(), len(rows)))
+
+
+def apf_policy(env, env_params, rows):
+    del env
+    pursuers = jnp.array([i for i, r in enumerate(env_params.roles) if r == "pursuer"])
+    lo = jnp.asarray(env_params.center) - core.half(env_params)
+    hi = jnp.asarray(env_params.center) + core.half(env_params)
+
+    def act(state, obs, pids):
+        del obs
+        d = state.drone
+        own = jax.tree.map(lambda q: q[rows], d)
+        a = jax.vmap(guidance.apf, in_axes=(0, 0, None, None, None, None))(
+            own.x, own.v, d.x[pursuers], d.v[pursuers], lo, hi
+        )
+        a = jax.vmap(guidance.speed_limit)(a, own.v)
+        return _acceleration_to_action(env_params, own, a, pids)
+
+    return act, lambda state: (state, _per_row(control.pid_init(), len(rows)))
+
+
+def paths_policy(env, env_params, rows):
+    del env
+    dt, n = env_params.policy_dt, len(rows)
+    lo = jnp.asarray(env_params.center) - core.half(env_params) + env_params.margin
+    hi = jnp.asarray(env_params.center) + core.half(env_params) - env_params.margin
+
     def at(path, t):
         return jnp.stack([guidance.path_at(s, path, t) for s in PATHS])[path["shape"]]
 
     def start(state):
-        pids = _per_row(control.pid_init(), n)
-        if source in ("frpn", "apf"):
-            return state, (pids, None)
-
         def draw(k):
-            drawn = [
-                guidance.draw_path(k, s, lo + env_params.margin, hi - env_params.margin)
-                for s in PATHS
-            ]
+            drawn = [guidance.draw_path(k, s, lo, hi) for s in PATHS]
             shape = jax.random.randint(jax.random.fold_in(k, 1), (), 0, len(PATHS))
             path = drawn[0]
             for i, other in enumerate(drawn[1:], 1):
@@ -103,28 +135,15 @@ def guided_policy(env, env_params, source, rows):
         drone = state.drone.replace(
             x=state.drone.x.at[rows].set(on[:, 0]), v=state.drone.v.at[rows].set(on[:, 1])
         )
-        return state.replace(drone=drone), (pids, paths)
+        return state.replace(drone=drone), (_per_row(control.pid_init(), n), paths)
 
     def act(state, obs, carry):
         del obs
         pids, paths = carry
-        d = state.drone
-        x, v = d.x[rows], d.v[rows]
-        if source == "frpn":
-            # `reference` is where the pursuer flies its net centre onto the evader.
-            aim = env.reference(state, env_params)[rows]
-            a = jax.vmap(guidance.frpn)(aim - x, d.v[evader] - v)
-        elif source == "apf":
-            a = jax.vmap(guidance.apf, in_axes=(0, 0, None, None, None, None))(
-                x, v, d.x[pursuers], d.v[pursuers], lo, hi
-            )
-        else:
-            target = jax.vmap(lambda p: at(p, (state.time - p["t0"]) * dt))(paths)
-            a = jax.vmap(guidance.follow)(x, v, target)
-        if source in ("frpn", "apf"):
-            a = jax.vmap(guidance.speed_limit)(a, v)
-
-        action, pids = jax.vmap(fly)(jax.tree.map(lambda q: q[rows], d), a, pids)
+        own = jax.tree.map(lambda q: q[rows], state.drone)
+        target = jax.vmap(lambda p: at(p, (state.time - p["t0"]) * dt))(paths)
+        a = jax.vmap(guidance.follow)(own.x, own.v, target)
+        action, pids = _acceleration_to_action(env_params, own, a, pids)
         return action, (pids, paths)
 
     return act, start
@@ -135,7 +154,11 @@ def scripted(env, env_params, source, rows):
 
     if source == "cascade":
         return cascade_policy(env, env_params, rows)
-    return guided_policy(env, env_params, source, rows)
+    if source == "frpn":
+        return frpn_policy(env, env_params, rows)
+    if source == "apf":
+        return apf_policy(env, env_params, rows)
+    return paths_policy(env, env_params, rows)
 
 
 def combine(net, fixed, slices):
