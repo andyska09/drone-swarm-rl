@@ -1,5 +1,5 @@
-"""Quadrotor plant. Reimplements ctu-mrs/mrs_multirotor_simulator's
-multirotor_model.hpp in JAX. Deviations are listed in research/notes/choices.md."""
+"""Quadrotor plant. It must match the C++ goldens in tests/golden; the deviations are
+in research/notes/choices.md."""
 
 import flax.struct
 import jax
@@ -49,7 +49,7 @@ def rest_state(rpm=0.0):
 
 
 def default_params(**overrides):
-    """x500 quadrotor, matching MultirotorModel::ModelParams."""
+    """x500 quadrotor, with the values in tests/golden/params.txt."""
 
     mass = 2.0
     kf = 0.00000027087
@@ -69,7 +69,7 @@ def default_params(**overrides):
     )
 
     # rows: roll, pitch, yaw, thrust. Maps squared motor RPM to torque and thrust.
-    # 0.707 is MRS's literal
+    # 0.707, not 1/sqrt(2): the goldens use 0.707.
     allocation_matrix = jnp.array(
         [
             [-0.707, 0.707, 0.707, -0.707],
@@ -108,7 +108,8 @@ def default_params(**overrides):
 
 
 def orthonormalize(R):
-    """See choices.md, fixed missing transpose in MRS ref"""
+    """R·L⁻ᵀ, where L is the Cholesky factor of RᵀR, so the result is orthonormal.
+    Why the C++ differs here: choices.md."""
 
     L = jnp.linalg.cholesky(R.T @ R)
     return jax.scipy.linalg.solve_triangular(L, R.T, lower=True).T

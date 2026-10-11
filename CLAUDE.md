@@ -119,6 +119,9 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
+- `sim/guidance.py` — the hand-written opponents for chase: FRPN, APF and the flown
+  paths. Each one gives a world acceleration, and `learn/seats.py` turns it into a
+  CTBR action.
 - `envs/` — one file per task (`circle_swap.py`, `chase.py`), each with
   `reset`, `step`, `get_obs`, `reference`, `compute_reward`, `RewardConfig`,
   `EnvParams` and `PRESETS`. Plain functions, no gymnax; auto-reset belongs to the
@@ -128,34 +131,38 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   has a note beside it in `research/notes/task_<name>.md`.
 - **`envs/core.py` holds everything the tasks share**: `Common` (the `EnvParams`
   fields every task has, which each task's `EnvParams` inherits), `fly` (the rate
-  loop and the plant for one policy step), `own_obs`/`target_obs`/`neighbors`,
+  loop and the plant for one policy step), `own_obs`/`target_obs`/`others`,
   `spawn`, `hits`, `is_dead`, and the CTBR action conversion. A task file holds only
   what makes that task different. Do not copy a helper into a task file.
 - **No task names a drone by number.** `roles` is static, so a task reads its own
   index arrays from it — see `chase._sides`. That is what lets a longer `roles`
   add more pursuers with no other change.
 - **Every task uses the same observation shape**: `Obs(own, others, others_mask,
-  target)`. `own` is body-frame velocity, `R`, `omega` and height. `others` holds
+  target, scene)`. `own` is body-frame velocity, `R`, `omega`, height, and the
+  distance to the arena wall ahead, behind, left and right. `others` holds
   the K nearest drones, whatever their role — body-frame offset, body-frame
   velocity, and a 0/1 flag saying whether that drone shares my role, so a teammate
   and an opponent are told apart by a number, not by sitting in different blocks.
   `target` is the body-frame offset to a goal point, and a task with no goal point
   gives it width 0 — `chase` does. `others_mask` is a 0/1 column, and `flat` zeroes
   the masked rows before it concatenates, so an empty seat becomes zeros and never
-  changes the vector width. Add a task, not a new obs format.
+  changes the vector width. `scene` is the critic's input: the whole game. Add a
+  task, not a new obs format.
 - The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
   with a one-off crash penalty. `circle_swap` adds a proximity cost and an upright
-  term. **`chase` keeps three words apart and never mixes them**: `crash` is a wall
-  or the ground, `collPP` is a pursuer hitting a pursuer (both end the episode), and
-  `collPE` is a pursuer hitting the evader, which costs per step and does not end it
-  — Gavin's names, used for the `RewardConfig` field, the function and the `info`
-  key alike. **This reward parks the drone 0.2-0.6 m short of the goal** — the open
+  term. **`chase` keeps three words apart and never mixes them**: `fail` is leaving
+  the box through the ground, a wall or the ceiling, `collPP` is a pursuer hitting a
+  pursuer (both end the episode), and `collPE` is a pursuer hitting the evader, which
+  costs per step and does not end it. `collPP` and `collPE` are Gavin's names, used
+  for the `RewardConfig` field, the function and the `info` key alike. The outcomes
+  split a `fail` into `crash` (the ground, or a broken state) and `OOB` (a wall or
+  the ceiling). **This reward parks the drone 0.2-0.6 m short of the goal** — the open
   problem, with the fixes other papers use, is in
   [research/notes/parking_error.md](research/notes/parking_error.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `learn/ppo.py` turns each distinct name in it into its own set of weights.
-- `learn/` — our PPO. `ppo.py` (ActorCritic + `make`, one compiled update),
+- `learn/` — our PPO. `ppo.py` (`Actor`, `Critic` and `make`, one compiled update),
   `vecenv.py` (vmap, auto-reset, normalization), `runner.py` (the update loop, run
   directory, checkpoints, wandb), `config.py` (hyperparameters), `evaluate.py`
   (fixed eval seeds, mean actions, no auto-reset), `seats.py` (who flies a seat: a

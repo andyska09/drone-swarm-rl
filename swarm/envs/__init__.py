@@ -42,7 +42,7 @@ class Obs:
     told apart by the last feature, not by sitting in different blocks. `target`
     holds a place to fly to, and a task that has none gives it zero width.
 
-    `scene` is the critic's input it holds the whole game - adapted from Gavin 2026
+    `scene` is the critic's input: the whole game.
     """
 
     own: jnp.ndarray  # (N, f)

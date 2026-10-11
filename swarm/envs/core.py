@@ -10,7 +10,6 @@ import numpy as np
 from swarm.sim import control, dynamics
 
 OTHER_FEATURES = 7  # body-frame offset and velocity of one drone, plus a role flag
-SCENE_FEATURES = 18  # world position, velocity, R and angular rate of one drone
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,9 +36,8 @@ class Common:
     start_tilt: float = 0.2
     random_yaw: bool = flax.struct.field(pytree_node=False, default=True)
 
-    # MRS kills on arm+prop+arm+prop; close_dist is where a soft cost can start.
+    # Two drones collide when their propeller tips touch: arm + prop + arm + prop.
     collision_dist: float = 0.8
-    close_dist: float = 1.5
 
     @property
     def n_drones(self):

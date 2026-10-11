@@ -1,7 +1,6 @@
 """N drones chase one evader and catch it with a net hung under the pursuer's body.
 
-Replicates Gavin & Bronz 2026 (arXiv:2607.05939). Design and sources:
-research/notes/task_chase.md.
+The design: research/notes/task_chase.md.
 """
 
 import flax.struct
@@ -16,15 +15,16 @@ NUM_ACTIONS = 4
 
 @flax.struct.dataclass
 class RewardConfig:
-    """Gavin Nv1 Table I. The per-step weights are his divided by policy_dt."""
+    """distance, step, cmd and collPE are per second: the reward multiplies them by
+    policy_dt. catch, collPP and fail are paid once."""
 
-    distance: float = 0.1  # λdist   = 0.001
-    step: float = 4.0  # λstep   = 0.04
-    cmd: float = 0.02  # λcmd    = 2e-4
-    catch: float = 10.0  # λcatch  = 10.0
-    collPE: float = 10.0  # λcollPE = 0.1, per step, the episode goes on
-    collPP: float = 10.0  # λcollPP = 10.0, ends the episode
-    fail: float = 30.0  # λfail   = 30.0, the ground, a wall or the ceiling, ends the episode
+    distance: float = 0.1
+    step: float = 4.0
+    cmd: float = 0.02
+    catch: float = 10.0
+    collPE: float = 10.0
+    collPP: float = 10.0
+    fail: float = 30.0
 
 
 @flax.struct.dataclass
@@ -66,7 +66,7 @@ def _drop(params):
 
 
 def net_centre(drone, params):
-    """Gavin's c_net: the middle of the square, straight down the body z axis."""
+    """The middle of the net square, straight down the body z axis."""
 
     pursuers, _ = _sides(params)
     return drone.x[pursuers] - _drop(params) * drone.R[pursuers, :, 2]
@@ -162,11 +162,11 @@ def compute_reward(state, rate_ref, alive, fail, collide, caught, params):
     pursuers, evader = _sides(params)
     distance = core.norm(d.x[evader] - net_centre(d, params))
 
-    # Gavin charges both sides the same for a pursuer-evader collision.
+    # A pursuer-evader collision costs both sides the same.
     hit = collPE(d, params)
     both = jnp.zeros(params.n_drones).at[pursuers].set(hit).at[evader].set(jnp.any(hit))
 
-    # The pursuers pay the clock and the evader earns it — Gavin's λstep.
+    # The pursuers pay the clock and the evader earns it.
     clock = jnp.full(params.n_drones, -cfg.step).at[evader].set(cfg.step)
     clock = clock.at[pursuers].add(-cfg.distance * distance) - cfg.collPE * both
     # One catch pays every pursuer and bills the evader once.

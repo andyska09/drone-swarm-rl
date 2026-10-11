@@ -57,7 +57,7 @@ def cascade_policy(env, env_params, rows):
 
 
 def guided_policy(env, env_params, source, rows):
-    """FRPN, APF or a path. The law gives a world acceleration, and MRS's
+    """FRPN, APF or a path. The law gives a world acceleration, and the cascade's
     acceleration and attitude levels turn it into the CTBR action a network sends."""
 
     model, dt = env_params.model, env_params.policy_dt
@@ -122,7 +122,7 @@ def guided_policy(env, env_params, source, rows):
             target = jax.vmap(lambda p: at(p, (state.time - p["t0"]) * dt))(paths)
             a = jax.vmap(guidance.follow)(x, v, target)
         if source in ("frpn", "apf"):
-            a = jax.vmap(guidance.nemecek_limit)(a, v)
+            a = jax.vmap(guidance.speed_limit)(a, v)
 
         action, pids = jax.vmap(fly)(jax.tree.map(lambda q: q[rows], d), a, pids)
         return action, (pids, paths)

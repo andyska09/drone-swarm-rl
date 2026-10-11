@@ -17,7 +17,7 @@ def rows(file):
         return list(csv.DictReader(f))
 
 
-def test_hedge_weights_follow_eq_12():
+def test_hedge_weights():
     c = np.array([0.8, 0.5, 0.0])
     weights = pool.hedge(1.0 - c)
     assert np.allclose(weights, 0.7 / 3 + 0.3 * c**2 / np.sum(c**2))

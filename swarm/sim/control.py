@@ -1,4 +1,4 @@
-"""The MRS controller cascade: position -> velocity -> acceleration -> attitude -> rate -> mixer. Reimplements controllers/*.hpp. Only the heading (not heading-rate) branch is here; that is the one the position command flows through."""
+"""The controller cascade: position -> velocity -> acceleration -> attitude -> rate -> mixer. It must match the C++ goldens in tests/golden. Only the heading (not heading-rate) branch is here; that is the one the position command flows through."""
 
 import flax.struct
 import jax.numpy as jnp
@@ -24,8 +24,8 @@ def pid_init(n=3):
 
 
 def pid_update(pid, error, gains, dt, measurement=None):
-    """By default D reacts to the error, like MRS. Pass `measurement` and D reacts
-    to that instead, so a reference that jumps no longer causes a spike."""
+    """By default D reacts to the error, as the goldens need. Pass `measurement` and D
+    reacts to that instead, so a reference that jumps causes no spike."""
 
     tracked = error if measurement is None else measurement
     sign = 1.0 if measurement is None else -1.0
@@ -72,7 +72,7 @@ def acceleration_controller(state, acceleration_ref, heading, params):
     """Desired force to (orientation, throttle). No PID — pure geometry.
 
     The throttle is derived from the force projected on the *current* body z, and
-    MRS takes its square root unguarded: an inverted drone gives NaN."""
+    its square root is unguarded, as the goldens need: an inverted drone gives NaN."""
 
     fd = (acceleration_ref + jnp.array([0.0, 0.0, params.g])) * params.mass
     body_z = fd / jnp.linalg.norm(fd)

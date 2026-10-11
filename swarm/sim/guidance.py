@@ -15,7 +15,7 @@ REACH = {"hover": (1.0, 1.0), "circle": (1.0, 1.0), "figure8": (1.0, 0.5)}
 K_P, K_V = 4.0, 4.0
 
 
-def nemecek_limit(a, v, top_acc=20.0, top_speed=12.0):
+def speed_limit(a, v, top_acc=20.0, top_speed=12.0):
     """Cap the acceleration at top_acc. At top_speed or faster, remove the part that
     points along the velocity, so the drone does not speed up."""
 
