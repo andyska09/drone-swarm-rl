@@ -66,9 +66,9 @@ it is for: **decentralized swarm interception** — N drones catching one agile
 evader, each seeing only itself, its neighbours and the target, with no
 communication between drones.
 
-Two tasks run today: `a_to_b` (one drone flies to a point and holds it) and
-`circle_swap` (N drones on a circle swap to the opposite side without touching).
-Chase, then interception, come next.
+Two tasks run today: `circle_swap` (N drones on a circle swap to the opposite side
+without touching) and `chase` (pursuers catch one evader with a net; its `default`
+preset is the duel, one against one).
 
 The work cycle for a task: write it in `swarm/envs/`, fly it with the cascade to
 prove it is possible at all, train a policy with `run/train.py`, score both in the
@@ -95,11 +95,9 @@ Run `pytest tests/`, never bare `pytest`, because other folders hold tests too.
 ```bash
 pytest tests/test_control.py                           # one file
 pytest tests/test_dynamics.py -k tumble                # one test
-python run/sim.py tumble --steps 500 --every 50        # open loop, you give throttles
-python run/fly.py --target 3 -2 5                      # closed loop, the cascade flies
-python run/train.py --task a_to_b --preset default --steps 5e6  # PPO -> runs/<name>/
-python run/train.py --set gamma=0.99 --set ent_coef=0.01        # any TrainConfig field
-python run/train.py --task chase --set gamma=0.99 --set generations=13 --steps 1.4e9  # pools
+python run/train.py --task circle_swap --preset pair --steps 5e6  # PPO -> runs/<name>/
+python run/train.py --task circle_swap --preset pair --set gamma=0.99  # any TrainConfig field
+python run/train.py --task chase --preset default --set gamma=0.99 --set generations=13 --steps 1.4e9  # pools
 python run/train.py --resume runs/<name>               # a pool run, from its unfinished phase
 python run/matrix.py runs/<name>                       # every pursuer against every evader
 python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
@@ -109,8 +107,8 @@ python run/plot.py runs/<name>/evals/latest            # time plots of one episo
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 ```
 
-Presets: `a_to_b` has `default` and `hover`; `circle_swap` has `pair` and
-`circle8`; `chase` has `default`. A preset picks env
+Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default`. `train.py`
+stops unless it gets both `--task` and `--preset`. A preset picks env
 values only — hyperparameters live in `learn/config.py` and are overridden with
 `--set`.
 
@@ -121,7 +119,7 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
-- `envs/` — one file per task (`a_to_b.py`, `circle_swap.py`, `chase.py`), each with
+- `envs/` — one file per task (`circle_swap.py`, `chase.py`), each with
   `reset`, `step`, `get_obs`, `reference`, `compute_reward`, `RewardConfig`,
   `EnvParams` and `PRESETS`. Plain functions, no gymnax; auto-reset belongs to the
   trainer. `__init__.py` holds the shared `Obs` layout, `flat`, `take`,
@@ -167,9 +165,8 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   an env *module* and one network per role. `seats.py` and `pool.py` know chase.
 - **Every role is its own learner.** One `TrainState` per role, so gradient
   clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
-  mix two sides of a game. `cfg.train_roles` names the roles that take a step; empty
-  means all. `cfg.generations` above 0 trains chase with pools instead, one side at a
-  time — the design is in [research/notes/AMSPBH.md](research/notes/AMSPBH.md).
+  mix two sides of a game. `cfg.generations` above 0 trains chase with pools, one side
+  at a time — the design is in [research/notes/AMSPBH.md](research/notes/AMSPBH.md).
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
@@ -200,11 +197,11 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 |---|---|
 | `test_dynamics.py` | the plant against the goldens |
 | `test_control.py` | the cascade against the goldens |
-| `test_env.py` | the cascade flies `a_to_b`; `chase` scales with `roles`, one catch pays every pursuer, a net on another pursuer kills both, and after a failure only the survivor bootstraps |
+| `test_env.py` | the cascade flies a lone drone across the circle; `chase` scales with `roles`, one catch pays every pursuer, a net on another pursuer kills both, and after a failure only the survivor bootstraps |
 | `test_learn.py` | it learns, the same seed gives the same numbers, and a frozen role does not move |
 | `test_runner.py` | a run says what produced it and resumes |
 | `test_pool.py` | the Hedge weights follow eq. 12, and a resume in the middle of a generation keeps its pool |
-| `test_eval.py` | the cascade in the policy's seat scores the cascade's number |
+| `test_eval.py` | the cascade in both chase seats scores its baseline number |
 
 ## research/ and the reference code
 
