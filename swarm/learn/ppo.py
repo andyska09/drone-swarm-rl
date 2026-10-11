@@ -245,7 +245,7 @@ def make(cfg, env, env_params, pool_seat=None):
     pool_rows, pool_act, pool_start = pool_seat or (None, None, None)
 
     # Whose turn it is. A traced flag, so alternating needs no second compile.
-    every_turn = {r: not cfg.train_roles or r in cfg.train_roles for r in slices}
+    every_turn = {r: True for r in slices}
 
     def init(key):
         key, k_env, k_net = jax.random.split(key, 3)

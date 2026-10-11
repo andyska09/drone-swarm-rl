@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 @dataclass
 class TrainConfig:
-    task: str = "a_to_b"
-    preset: str = "default"
+    task: str
+    preset: str
     seed: int = 0
 
     num_envs: int = 4096
@@ -26,9 +26,6 @@ class TrainConfig:
     ent_coef: float = 0.001
     max_grad_norm: float = 0.5
 
-    # Which roles take gradient steps. Empty means all of them. Freezing one side
-    # and training the other is how the evader learns without runaway self-play.
-    train_roles: tuple = ()
     # Above 0, chase trains against pools of frozen opponents: generation 0, then
     # this many more (pool.py). At 0 both sides learn at once.
     generations: int = 0
