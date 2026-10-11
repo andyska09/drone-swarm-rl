@@ -17,9 +17,6 @@ SOURCES = {
     "cascade": None,
     "frpn": "pursuer",
     "apf": "evader",
-    "hover": "evader",
-    "circle": "evader",
-    "figure8": "evader",
     "paths": "evader",
 }
 # `paths` draws one of these for each episode, all three equally likely.
@@ -69,7 +66,6 @@ def guided_policy(env, env_params, source, rows):
     evader = env_params.roles.index("evader")
     lo = jnp.asarray(env_params.center) - core.half(env_params)
     hi = jnp.asarray(env_params.center) + core.half(env_params)
-    shapes = PATHS if source == "paths" else (source,)
     n = len(rows)
 
     def fly(drone, a, pid):
@@ -83,7 +79,7 @@ def guided_policy(env, env_params, source, rows):
         return core.command_to_action(throttle, rate, env_params), pid
 
     def at(path, t):
-        return jnp.stack([guidance.path_at(s, path, t) for s in shapes])[path["shape"]]
+        return jnp.stack([guidance.path_at(s, path, t) for s in PATHS])[path["shape"]]
 
     def start(state):
         pids = _per_row(control.pid_init(), n)
@@ -93,9 +89,9 @@ def guided_policy(env, env_params, source, rows):
         def draw(k):
             drawn = [
                 guidance.draw_path(k, s, lo + env_params.margin, hi - env_params.margin)
-                for s in shapes
+                for s in PATHS
             ]
-            shape = jax.random.randint(jax.random.fold_in(k, 1), (), 0, len(shapes))
+            shape = jax.random.randint(jax.random.fold_in(k, 1), (), 0, len(PATHS))
             path = drawn[0]
             for i, other in enumerate(drawn[1:], 1):
                 path = jax.tree.map(lambda a, b: jnp.where(shape == i, b, a), path, other)
