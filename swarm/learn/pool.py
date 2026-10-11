@@ -32,7 +32,7 @@ LEARNER_STATS = (
 
 
 def hedge(win_rates):
-    """Eq. 12: an opponent's weight grows with how often it beats the learner."""
+    """An opponent's weight grows with how often it beats the learner."""
 
     c = 1.0 - np.asarray(win_rates, float)
     power = c**ETA_H
@@ -166,7 +166,7 @@ def _run(cfg, env, env_params, path, ts, rew_norm, key, first, use_wandb):
             matches[named] = match(cfg, env, env_params, sources, side, HEDGE_EPISODES)
         return float(matches[named](weights))
 
-    tracker = runner._wandb(cfg, path) if use_wandb else None
+    tracker = runner.start_wandb(cfg, path) if use_wandb else None
     runner.say(
         path,
         f"{path}  {len(order)} phases of {per_phase} updates of "
@@ -235,7 +235,7 @@ def _run(cfg, env, env_params, path, ts, rew_norm, key, first, use_wandb):
                 runner.say(
                     path,
                     f"{u + 1:6d} {row['steps']:>12,} {speed:>8.0f}/s  "
-                    + "  ".join(f"{k} {row[k]:8.3f}" for k in runner._progress(row)),
+                    + "  ".join(f"{k} {row[k]:8.3f}" for k in runner.progress_columns(row)),
                 )
             if (u + 1) % cfg.checkpoint_every == 0:
                 runner.snapshot(path, u + 1, carry[0])

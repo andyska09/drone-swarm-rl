@@ -20,11 +20,11 @@ from swarm.learn import ppo
 PROGRESS = ("ep_length", "death_rate", "caught_evader")
 
 
-def _progress(row):
+def progress_columns(row):
     return [k for p in PROGRESS for k in row if k == p or k.endswith("_" + p)]
 
 
-def _git():
+def git_state():
     def out(*args):
         return subprocess.run(args, capture_output=True, text=True, check=False).stdout.strip()
 
@@ -52,7 +52,7 @@ def new_run(cfg, env_params, root="runs"):
     path = Path(root) / f"{cfg.task}_{cfg.preset}_s{cfg.seed}_{stamp}_{digest}"
     (path / "checkpoints").mkdir(parents=True)
     (path / "config.json").write_text(
-        json.dumps({**spec, "git": _git()}, indent=2, sort_keys=True)
+        json.dumps({**spec, "git": git_state()}, indent=2, sort_keys=True)
     )
     return path
 
@@ -119,7 +119,7 @@ def restore(carry, saved):
     return train_state, saved["vec"], saved["obs"], saved["key"]
 
 
-def _wandb(cfg, path):
+def start_wandb(cfg, path):
     import wandb  # Optional dependency, loaded only when logging is enabled.
 
     return wandb.init(
@@ -134,7 +134,7 @@ def train(cfg, root="runs", use_wandb=False):
     env, env_params = envs.make(cfg.task, cfg.preset)
     path = new_run(cfg, env_params, root)
     init, update = ppo.make(cfg, env, env_params)
-    tracker = _wandb(cfg, path) if use_wandb else None
+    tracker = start_wandb(cfg, path) if use_wandb else None
 
     carry = init(jax.random.PRNGKey(cfg.seed))
     say(path, f"{path}  {cfg.num_updates} updates of {cfg.num_envs} envs x {cfg.num_steps} steps")
@@ -157,7 +157,7 @@ def train(cfg, root="runs", use_wandb=False):
             say(
                 path,
                 f"{i + 1:6d} {steps:>12,} {steps / elapsed:>8.0f}/s  "
-                + "  ".join(f"{k} {row[k]:8.3f}" for k in _progress(row)),
+                + "  ".join(f"{k} {row[k]:8.3f}" for k in progress_columns(row)),
             )
         if (i + 1) % cfg.checkpoint_every == 0 or i + 1 == cfg.num_updates:
             save(path, i + 1, carry)

@@ -168,7 +168,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
                 "update": step,
                 "episodes": episodes,
                 "eval_seed": EVAL_SEED,
-                "git": runner._git(),
+                "git": runner.git_state(),
                 "summary": summary,
             },
             indent=2,
