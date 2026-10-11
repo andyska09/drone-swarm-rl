@@ -205,12 +205,14 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   The squashed entropy has no closed form, so we estimate it from the stored draw.
   Neither paper publishes an initial std; ours is `init_std = 0.6`, the same value
   the old `init_log_std = −0.5` gave.
-- **`ent_coef` stays 0, and Gavin's 0.01 does not transfer.** Fourteen `chase` runs,
+- **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** Fourteen `chase` runs,
   and the two with `ent_coef = 0.01` are the only two with a broken std: 112 to
   60784 under the clip, 371 to 942 under the squash. The other twelve all end
   between 0.02 and 0.51, and the two runs that solve `chase default` (`caught`
   0.996 and 1.000) end at 0.08 to 0.13. PPO shrinks the std by itself once
   precision pays — that is `E[A(u²−1)] < 0` — and the bonus fights exactly that.
+  At 0.001 the pull on the mean in the next point is ten times weaker, so it
+  crosses the policy's own pull near `s = 150`, not `s = 15`.
 - **Why the bonus breaks each design, which is not the same reason.** Write `H` for
   the entropy, `m` for the mean, `s` for the std, `u = (z−m)/s`. Under the clip,
   `∂H/∂log s = +1`, a constant that never decays, so noise pays for ever and
@@ -254,7 +256,9 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   a truncation: training stops the rollout but still uses the estimated future
   value `V(s_T)` for surviving drones. A failed drone has zero future value.
   `done` tells the trainer to reset the scene; `died_this_step` identifies drones
-  that just failed; `truncated` indicates that the time limit was reached.
+  that just failed; `truncated` says that every drone still alive bootstraps. That is
+  the time limit, and in `chase` also a failure without a catch: only a catch is
+  terminal for the survivor.
 - **Discount factor `gamma = 0.998`.** Resolved; it was open until the learner
   ran. The effective horizon is `1/(1−gamma)` policy steps, and at `policy_dt =
   0.01 s` that is 500 steps, exactly one episode. The first real run used `0.995`
@@ -303,7 +307,9 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
 - **Results stay with the run.** Evaluation writes to
   `runs/<run>/evals/<name>/`, keeping results with the run they measure.
 - **Policy selection.** One flag names one seat: `--seat ROLE SOURCE`, where the
-  source is this run's checkpoint, another run's, a `.pkl`, or `cascade`. A role
+  source is this run's checkpoint, another run's, a `.pkl`, or a hand-written source
+  from `seats.SOURCES` (`cascade`, `frpn`, `apf`, `hover`, `circle`, `figure8`,
+  `paths`). A role
   nobody names flies this run's own checkpoint. That is what lets a duel measure
   one side against a fixed opponent.
 - **Replay data.** The viewer reads task, preset, arena, roles and `policy_dt`
@@ -323,6 +329,57 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   `quadrotor_multi_visualization.py`. The shadow helps show altitude by spreading
   and fading as the drone rises. The arrow projects the current velocity 0.4 s
   ahead.
+
+## Pool training (AMSPBH)
+
+The design is in [AMSPBH.md](AMSPBH.md). We keep to Sánchez Roncero 2026
+([2506.02849v3](../papers/2506.02849v3.md)). Where it is silent, we follow Němeček's
+`train_pipeline.py`.
+
+- **PPO defaults for every task.** `lr` 2e-4 and `ent_coef` 0.001 are the paper's.
+  The lr is KL-adaptive with rsl_rl's rule around the paper's target of 0.016: ÷1.5
+  above 0.032, ×1.5 below 0.008, kept in [1e-5, 1e-2]. `anneal_lr` is gone. Each role
+  keeps its lr in its own TrainState, so a frozen role keeps its lr.
+- **The KL is `approx_kl`**, a sample estimate of KL(old ‖ new), the KL that rsl_rl
+  computes in closed form. The KL of a minibatch sets the lr that the step of the
+  same minibatch uses, as in rsl_rl.
+- **The seeds stay in the pools** in every generation, as in the paper: Fig. 6 and
+  §IV-C, "heuristic opponents (FRPN, trajectories) retain non-trivial weight even in
+  later generations". Fig. 2's `Π0P = {πP0}` reads otherwise, but the results do not.
+- **After a failure only the survivors bootstrap.** A failure used to be terminal for
+  every drone, so the pursuer gained when the evader failed: it stopped paying the
+  clock, worth about 4 at γ = 0.99 against a catch of 10.
+- **The critic sees the action the opponent really flies**, also at the states it
+  bootstraps from, so it is not told it faces the wrong opponent.
+- **A NaN bootstrap value is dropped.** A diverged opponent puts NaN into the
+  survivor's observation.
+- **Each phase starts fresh episodes**, and each side keeps its own reward scale
+  across phases. The normalizer counts per drone column, so a frozen column stays
+  exact.
+- **Hedge runs before every phase**, generation 0 included, where the one member
+  gets weight 1 anyway. Frozen networks fly their mean action, as Němeček's do.
+- **64 blocks of envs**, fixed for a phase, rounded by largest remainder. `num_envs`
+  must be a multiple of 64.
+- **`--steps` is the whole run**, split into `2 × (generations + 1)` phases of
+  `num_updates // phases` updates. The updates left over are not run.
+- **Resume restarts the unfinished phase** from its start. `latest.pkl` only ever
+  holds a phase boundary.
+
+Where we differ from the paper:
+
+| topic | paper | ours |
+|---|---|---|
+| failure | out-of-bounds is a truncation for every agent, also the one that left | the drone that failed does not bootstrap |
+| Hedge pass | 600 episodes "under training conditions" | 600 episodes under eval conditions: mean actions, the fixed eval seeds |
+| budget | 50M frames at 50 Hz per phase, 6144 envs, 13 phases per agent | 49.8M steps at 100 Hz per phase (half the flight time), 4096 envs, 14 phases per agent |
+| PPO | 5 epochs × 8 minibatches, value loss scale 1.0 | 4 × 32, so the lr adapts 128 times per update, not 40; `vf_coef` 0.5 |
+| networks | separate MLPs [512, 256, 256, 128], ELU; the critic sees `o_t` | [256, 256], tanh; the CTDE critic sees the scene and the opponent's action |
+| FRPN seed | G = 5, W = 0.2, a velocity command | Němeček's G = 6.677, W = 0.337, an acceleration |
+| path seeds | radius 0.6–1.0 m, speed 1–2 m/s | ×8 in size and ×√8 in speed for our arena; one `paths` member that draws its shape per episode |
+| wins | capture or evader OOB; escape or pursuer OOB | the same, with our ground `crash` counted as OOB, and `fail_both` as half a win to each side |
+| final eval | fixed starts at (0, ±1.5, 1) m, 1024 episodes × 3 seeds | random spawns on `EVAL_SEED`, 1024 episodes, one seed |
+| silent | — | the evader learns first in each generation; 64 fixed blocks per phase |
+| ours by decision | — | the reward, the observation, the 100 Hz policy, the arena, the net, the spawn, no domain randomization |
 
 ## Revisit later
 
