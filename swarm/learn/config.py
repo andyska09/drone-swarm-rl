@@ -32,8 +32,8 @@ class TrainConfig:
 
     hidden: tuple = (256, 256)
     activation: str = "tanh"
-    # The std a new policy starts at, before it learns one per state.
-    init_std: float = 0.6
+    # The std a new policy starts at.
+    init_std: float = 1.0
 
     normalize_reward: bool = True
 

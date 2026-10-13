@@ -194,17 +194,18 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   rates map to ±4 rad/s, and yaw to ±2 rad/s. A new policy outputs values near
   zero, which gives a throttle near 0.5, close to the hover value of 0.4654.
   `quad-swarm-rl` allows ±31.4 rad/s for more acrobatic flight.
-- **The bound is a squash, not a clip.** "The output layer produces the mean and
-  standard-deviation of a multivariate Gaussian, followed by a tanh squashing to
-  obtain bounded continuous actions" — Gavin et al. 2026 §IV-C and Gavin & Bronz
-  2026 §III-E, the same sentence in both. Two linear heads on the shared trunk:
-  the mean as is, and a raw number per action that `softplus` turns into the std,
-  so the std is per state and no longer one learned vector for all of them. The
-  rollout keeps the Gaussian draw, not the action, because recovering the draw
-  needs `atanh`, which blows up at ±1.
-  The squashed entropy has no closed form, so we estimate it from the stored draw.
-  Neither paper publishes an initial std; ours is `init_std = 0.6`, the same value
-  the old `init_log_std = −0.5` gave.
+- **The bound is a clip, and the std is one learned number per action.** The action
+  is `clip(mean + std·noise, −1, 1)`, the std is the same in every state, and
+  `init_std = 1.0`. The log-prob and the entropy are the plain Gaussian's, in closed
+  form. The rollout keeps the draw before the clip, because the log-prob needs it.
+  AMSPBH does not state its std. This form is the default of rsl_rl, rl_games and
+  skrl, the PPO libraries of Isaac Lab, and of Němeček's SB3. It replaced Gavin's
+  per-state std with a `tanh` squash after the pool run
+  `chase_default_s0_20261011-103639_797201`: the pursuer's roll/pitch std fell from
+  0.43/0.33 to 0.06/0.16, and from generation 6 no pursuer beat a new evader. A new
+  std head on `pursuer_13` lifted its win rate against `evader_07` from 0.20 to 0.95
+  in 50 updates. A per-state std can shrink just where precision pays, near the
+  evader, and that is where the pursuer must find its next move.
 - **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** Fourteen `chase` runs,
   and the two with `ent_coef = 0.01` are the only two with a broken std: 112 to
   60784 under the clip, 371 to 942 under the squash. The other twelve all end

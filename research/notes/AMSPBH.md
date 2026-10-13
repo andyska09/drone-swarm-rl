@@ -99,6 +99,7 @@ so its weight is 1.
 | lr | 2e-4 at the start, then adaptive | the paper |
 | adaptive lr | target KL 0.016. KL > 0.032: lr ÷ 1.5. 0 < KL < 0.008: lr × 1.5. The lr stays in [1e-5, 1e-2] | the paper's target, rsl_rl's rule |
 | entropy coefficient | 0.001 | the paper |
+| action std | one learned number per action, 1.0 at the start; the action is clipped to [−1, 1] | the paper is silent; the default of rsl_rl, rl_games and skrl, the PPO libraries of Isaac Lab |
 
 - After the forward pass of each minibatch, read the learner's mean `approx_kl`. It is a
   sample estimate of KL(old ‖ new), the KL that rsl_rl computes in closed form.
@@ -108,7 +109,7 @@ so its weight is 1.
 
 Everything else stays ours: `[256, 256]`, tanh, 4 epochs × 32 minibatches, `vf_coef`
 0.5, 4096 envs, rollout 64, clip 0.2, GAE 0.95, grad clip 0.5, reward normalization, raw
-obs, a per-state std with the tanh squash, `init_std` 0.6, and `gamma` 0.99 for chase.
+obs, and `gamma` 0.99 for chase.
 The reward, the observation, the CTDE critic, the 100 Hz policy, the arena, the net, the
 spawn, no domain randomization, and the final evals are ours too.
 

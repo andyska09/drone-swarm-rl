@@ -15,9 +15,6 @@ from swarm import envs
 from swarm.learn import vecenv
 
 LOG_2PI = math.log(2.0 * math.pi)
-LOG_2 = math.log(2.0)
-
-MIN_STD = 1e-3  # keeps log(std) finite
 
 KL_TARGET = 0.016
 LR_MIN, LR_MAX = 1e-5, 1e-2
@@ -45,10 +42,6 @@ def with_lr(t, lr):
     )
 
 
-def _inv_softplus(x):
-    return math.log(math.expm1(x))
-
-
 def _trunk(x, hidden, activation):
     act = nn.tanh if activation == "tanh" else nn.relu
     for h in hidden:
@@ -64,17 +57,18 @@ class Actor(nn.Module):
     num_actions: int
     hidden: tuple = (256, 256)
     activation: str = "tanh"
-    init_std: float = 0.6
+    init_std: float = 1.0
 
     @nn.compact
     def __call__(self, obs):
         x = _trunk(envs.flat(obs), self.hidden, self.activation)
-        head = lambda bias: nn.Dense(
-            self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(bias)
+        mean = nn.Dense(
+            self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
         )(x)
-        mean = head(0.0)
-        std = nn.softplus(head(_inv_softplus(self.init_std))) + MIN_STD
-        return mean, std
+        log_std = self.param(
+            "log_std", constant(math.log(self.init_std)), (self.num_actions,)
+        )
+        return mean, jnp.broadcast_to(jnp.exp(log_std), mean.shape)
 
 
 class Critic(nn.Module):
@@ -92,29 +86,17 @@ def sample(key, mean, std):
     return mean + std * jax.random.normal(key, mean.shape)
 
 
-def squash(draw):
-    return jnp.tanh(draw)
-
-
-def _log_slope(draw):
-    """log(1 - tanh(draw)^2), stable at large |draw|."""
-
-    return 2.0 * (LOG_2 - draw - jax.nn.softplus(-2.0 * draw))
+def bound(draw):
+    return jnp.clip(draw, -1.0, 1.0)
 
 
 def log_prob(draw, mean, std):
-    """Log density of tanh(draw) under the squashed Gaussian."""
-
     z = (draw - mean) / std
-    gauss = -0.5 * jnp.sum(z**2 + 2.0 * jnp.log(std) + LOG_2PI, axis=-1)
-    return gauss - jnp.sum(_log_slope(draw), axis=-1)
+    return -0.5 * jnp.sum(z**2 + 2.0 * jnp.log(std) + LOG_2PI, axis=-1)
 
 
-def entropy(draw, std):
-    """Entropy of the squashed Gaussian, estimated from one draw."""
-
-    gauss = jnp.sum(jnp.log(std) + 0.5 * (LOG_2PI + 1.0), axis=-1)
-    return gauss + jnp.sum(_log_slope(draw), axis=-1)
+def entropy(std):
+    return jnp.sum(jnp.log(std) + 0.5 * (LOG_2PI + 1.0), axis=-1)
 
 
 def role_slices(roles):
@@ -220,7 +202,7 @@ def make_critic(net, slices, opponents):
 @flax.struct.dataclass
 class Transition:
     obs: envs.Obs
-    draw: jnp.ndarray  # pre-squash sample; atanh of the action is unstable at ±1
+    draw: jnp.ndarray  # before the clip, which the log-prob needs
     action: jnp.ndarray
     log_prob: jnp.ndarray
     value: jnp.ndarray
@@ -292,7 +274,7 @@ def make(cfg, env, env_params, pool_seat=None):
         def act(ts, state, obs, seat, key):
             mean, std = actor(weights(ts), obs)
             draw = sample(key, mean, std)
-            action = squash(draw)
+            action = bound(draw)
             if pool_seat is not None:
                 flown, seat = pool_act(state, obs, seat, pool)
                 action = action.at[:, pool_rows].set(flown)
@@ -383,7 +365,7 @@ def make(cfg, env, env_params, pool_seat=None):
                         jnp.clip(ratio, 1 - cfg.clip_eps, 1 + cfg.clip_eps) * a_n,
                     )
                     squared = 0.5 * (value - target) ** 2
-                    ent = entropy(tr.draw, std)
+                    ent = entropy(std)
 
                     loss = (
                         _mean(clipped, tr.mask)

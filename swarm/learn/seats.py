@@ -29,7 +29,7 @@ def net_policy(cfg, env, weights, slices):
     def act(state, obs, carry):
         del state
         mean, _ = apply(weights, obs)
-        return ppo.squash(mean), carry
+        return ppo.bound(mean), carry
 
     return act
 
@@ -207,7 +207,7 @@ def pool_seat(cfg, env, env_params, role, seed):
         # An empty target block prevents inferring the block size with -1.
         split = jax.tree.map(lambda x: x.reshape((blocks, n // blocks) + x.shape[1:]), obs)
         mean, _ = jax.vmap(lambda w, o: actor({role: {"actor": w}}, o))(weights, split)
-        net = ppo.squash(mean.reshape((n,) + mean.shape[2:]))[:, rows]
+        net = ppo.bound(mean.reshape((n,) + mean.shape[2:]))[:, rows]
         return jnp.where(is_seed(member, n)[:, None, None], flown, net), carry
 
     def start(state, pool):
