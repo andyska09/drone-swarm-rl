@@ -135,8 +135,9 @@ ls -t runs | head
 tail -n 3 runs/<name>/metrics.csv
 ```
 
-The job log lands in `logs/<job name>.o<job id>` only when the job ends, because PBS
-holds it until then. Its top lines show the arguments, the card and `jax.devices()`.
+The job log lands in `logs/<job id>.OU`, for example `logs/24639435.pbs-m1.metacentrum.cz.OU`,
+only when the job ends, because PBS holds it until then. Its top lines show the
+arguments, the card, `jax.devices()` and the run folder.
 
 ## 5. Copy back
 
