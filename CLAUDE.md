@@ -105,6 +105,7 @@ python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role'
 python run/replay.py                                   # serve + open the 3D viewer
 python run/plot.py runs/<name>/evals/latest            # time plots of one episode
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
+python3 tools/metacentrum/submit.py -- --task chase --preset default  # on MetaCentrum: tools/metacentrum/metacentrum.md
 ```
 
 Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default`. `train.py`
