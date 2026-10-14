@@ -2,6 +2,7 @@
 frozen opponents, weighted by a Hedge sampler. The design: research/notes/AMSPBH.md."""
 
 import csv
+import math
 import pickle
 import time
 from pathlib import Path
@@ -60,6 +61,14 @@ def members(side, generation):
     """The pool of `side` at the end of generation − 1: its seed, then its policies."""
 
     return [SEEDS[side]] + [f"{side}_{g:02d}" for g in range(generation)]
+
+
+def with_std(t, std):
+    """The TrainState with its actor's std set to `std` for every action."""
+
+    actor = t.params["actor"]["params"]
+    log_std = jnp.full_like(actor["log_std"], math.log(std))
+    return t.replace(params={**t.params, "actor": {"params": {**actor, "log_std": log_std}}})
 
 
 def match(cfg, env, env_params, sources, role, episodes):
@@ -212,6 +221,8 @@ def _run(cfg, env, env_params, path, ts, rew_norm, key, first, use_wandb):
         obs, vec = vecenv.reset(
             k, env, env_params, cfg, lambda state: pool_seats[side][2](state, pool)
         )
+        # The std shrinks within a phase, and the learner must explore again against a new pool.
+        ts = {**ts, side: with_std(ts[side], cfg.init_std)}
         carry = (ts, vec.replace(rew_norm=rew_norm), obs, key)
         train = {side: True, rival: False}
         frozen = {ppo.column(rival, name, slices) for name in LEARNER_STATS}
