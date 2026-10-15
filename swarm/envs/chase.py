@@ -15,7 +15,7 @@ NUM_ACTIONS = 4
 
 @flax.struct.dataclass
 class RewardConfig:
-    """distance, step, cmd and collPE are per second: the reward multiplies them by
+    """distance, step, cmd, collPE and outside are per second: the reward multiplies them by
     policy_dt. catch, collPP and fail are paid once."""
 
     distance: float = 0.1
@@ -25,6 +25,8 @@ class RewardConfig:
     collPE: float = 10.0
     collPP: float = 10.0
     fail: float = 30.0
+    # The evader pays it while it is outside the arena box.
+    outside: float = 0.0
 
 
 @flax.struct.dataclass
@@ -33,6 +35,8 @@ class EnvParams(core.Common):
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("pursuer", "evader"))
     max_steps: int = flax.struct.field(pytree_node=False, default=1000)
+    # Without walls, only a crash ends an episode.
+    walls: bool = flax.struct.field(pytree_node=False, default=True)
 
     net_side: float = 1.0
     net_offset: float = 0.4
@@ -120,10 +124,17 @@ def get_obs(state, params):
     )
 
 
-def failed(drone, params):
-    """Left the arena through the ground, a wall or the ceiling, or a non-finite state."""
+def crashed(drone, params):
+    """Through the ground, or a non-finite state."""
 
-    return core.out_of_arena(drone, params)
+    floor = params.center[2] - 0.5 * params.arena[2]
+    return (drone.x[:, 2] < floor) | ~jnp.all(jnp.isfinite(drone.x), axis=-1)
+
+
+def failed(drone, params):
+    """A crash, and with walls also a wall or the ceiling."""
+
+    return core.out_of_arena(drone, params) if params.walls else crashed(drone, params)
 
 
 def collPP(drone, params):
@@ -169,6 +180,7 @@ def compute_reward(state, rate_ref, alive, fail, collide, caught, params):
     # The pursuers pay the clock and the evader earns it.
     clock = jnp.full(params.n_drones, -cfg.step).at[evader].set(cfg.step)
     clock = clock.at[pursuers].add(-cfg.distance * distance) - cfg.collPE * both
+    clock = clock.at[evader].add(-cfg.outside * core.out_of_arena(d, params)[evader])
     # One catch pays every pursuer and bills the evader once.
     catch = jnp.full(params.n_drones, cfg.catch).at[evader].set(-cfg.catch)
 
@@ -249,8 +261,7 @@ def step(key, state, action, params):
     done = limit | caught | ~jnp.all(alive)
 
     # A failure through the floor, or a broken state, is a crash. The rest is OOB.
-    floor = params.center[2] - 0.5 * params.arena[2]
-    crash = fail & ((drone.x[:, 2] < floor) | ~jnp.all(jnp.isfinite(drone.x), axis=-1))
+    crash = fail & crashed(drone, params)
     oob = fail & ~crash
     p_fail, e_fail = jnp.any(fail[pursuers]), fail[evader]
 
@@ -285,4 +296,5 @@ def step(key, state, action, params):
 
 PRESETS = {
     "default": EnvParams(),
+    "open": EnvParams(walls=False, reward=RewardConfig(outside=57.0)),
 }

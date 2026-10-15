@@ -230,6 +230,10 @@ independence from the control rate.
 | step limit, 1000 | yes | nothing | same |
 | **evader** crashes | yes | nothing, to either side | "neither receives a reward when the opponent reaches a failure state" |
 
+In the `open` preset, a wall or the ceiling ends nothing. Only the ground and a
+non-finite state are a `crash`. The evader pays `outside`, 57 per second, while it is
+outside the box. The pursuer pays nothing there.
+
 `crash` and `collPP` are charged only for a drone's own death. `crashed` goes into
 `info` per drone, so it is reported as `pursuer_crashed` and `evader_crashed` — one
 is a loss, the other is a win, and one merged number hides which happened. A drone

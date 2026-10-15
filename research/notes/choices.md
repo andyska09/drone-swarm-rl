@@ -260,6 +260,12 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   that just failed; `truncated` says that every drone still alive bootstraps. That is
   the time limit, and in `chase` also a failure without a catch: only a catch is
   terminal for the survivor.
+- **`chase open` has Němeček's arena rules.** Only the ground, or a non-finite
+  state, ends an episode. The pursuer has no walls and no ceiling, and pays nothing
+  outside the box. The evader flies on outside the box and pays `outside` = 57 per
+  second. Němeček's evader pays 0.1 per step outside against a survival pay of
+  0.007 per step, a ratio of 14.3, and 14.3 × our `step` of 4 per second is 57.
+  `default` keeps the hard walls for both.
 - **Discount factor `gamma = 0.998`.** Resolved; it was open until the learner
   ran. The effective horizon is `1/(1−gamma)` policy steps, and at `policy_dt =
   0.01 s` that is 500 steps, exactly one episode. The first real run used `0.995`

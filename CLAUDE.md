@@ -108,7 +108,7 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 python3 tools/metacentrum/submit.py -- --task chase --preset default  # on MetaCentrum: tools/metacentrum/metacentrum.md
 ```
 
-Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default`. `train.py`
+Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default` and `open`. `train.py`
 stops unless it gets both `--task` and `--preset`. A preset picks env
 values only — hyperparameters live in `learn/config.py` and are overridden with
 `--set`.
@@ -152,7 +152,8 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
   with a one-off crash penalty. `circle_swap` adds a proximity cost and an upright
   term. **`chase` keeps three words apart and never mixes them**: `fail` is leaving
-  the box through the ground, a wall or the ceiling, `collPP` is a pursuer hitting a
+  the box through the ground, a wall or the ceiling (in the `open` preset only the
+  ground, and the evader pays `outside` per second instead), `collPP` is a pursuer hitting a
   pursuer (both end the episode), and `collPE` is a pursuer hitting the evader, which
   costs per step and does not end it. `collPP` and `collPE` are Gavin's names, used
   for the `RewardConfig` field, the function and the `info` key alike. The outcomes
