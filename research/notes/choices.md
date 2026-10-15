@@ -266,6 +266,11 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   second. Němeček's evader pays 0.1 per step outside against a survival pay of
   0.007 per step, a ratio of 14.3, and 14.3 × our `step` of 4 per second is 57.
   `default` keeps the hard walls for both.
+- **`chase small` is `default` in a 24 × 24 × 16 m box.** Only the floor is smaller.
+  The saved policies of `chase_default_s0_20261014-100847_9e4242`, put in this box,
+  caught the newest evader in 0.39 of the episodes, against 0.17 in 32 × 32 m. The
+  evader left the box no more often (0.03), and the pursuer left it twice as often
+  (0.16, against 0.08).
 - **Discount factor `gamma = 0.998`.** Resolved; it was open until the learner
   ran. The effective horizon is `1/(1−gamma)` policy steps, and at `policy_dt =
   0.01 s` that is 500 steps, exactly one episode. The first real run used `0.995`

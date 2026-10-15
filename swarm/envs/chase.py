@@ -297,4 +297,5 @@ def step(key, state, action, params):
 PRESETS = {
     "default": EnvParams(),
     "open": EnvParams(walls=False, reward=RewardConfig(outside=57.0)),
+    "small": EnvParams(arena=(24.0, 24.0, 16.0)),
 }
