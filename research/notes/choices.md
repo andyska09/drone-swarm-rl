@@ -271,6 +271,9 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   caught the newest evader in 0.39 of the episodes, against 0.17 in 32 × 32 m. The
   evader left the box no more often (0.03), and the pursuer left it twice as often
   (0.16, against 0.08).
+- **`chase nemecek` is `open` in Němeček's box**, 20 × 20 × 10 m with the floor at 0,
+  the box of his main runs (thesis, Fig. 8.10, and `arena_size_ = 10.0` in his
+  `environment.h`). His 12 m/s speed cap and his 12 s episodes are not in it.
 - **Discount factor `gamma = 0.998`.** Resolved; it was open until the learner
   ran. The effective horizon is `1/(1−gamma)` policy steps, and at `policy_dt =
   0.01 s` that is 500 steps, exactly one episode. The first real run used `0.995`

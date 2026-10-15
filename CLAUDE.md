@@ -108,7 +108,7 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 python3 tools/metacentrum/submit.py -- --task chase --preset default  # on MetaCentrum: tools/metacentrum/metacentrum.md
 ```
 
-Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default`, `open` and `small`. `train.py`
+Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default`, `open`, `small` and `nemecek`. `train.py`
 stops unless it gets both `--task` and `--preset`. A preset picks env
 values only — hyperparameters live in `learn/config.py` and are overridden with
 `--set`.

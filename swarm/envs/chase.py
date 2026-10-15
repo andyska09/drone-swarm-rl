@@ -298,4 +298,8 @@ PRESETS = {
     "default": EnvParams(),
     "open": EnvParams(walls=False, reward=RewardConfig(outside=57.0)),
     "small": EnvParams(arena=(24.0, 24.0, 16.0)),
+    "nemecek": EnvParams(
+        arena=(20.0, 20.0, 10.0), center=(0.0, 0.0, 5.0), walls=False,
+        reward=RewardConfig(outside=57.0),
+    ),
 }
