@@ -34,6 +34,8 @@ class TrainConfig:
     activation: str = "tanh"
     # The std a new policy starts at.
     init_std: float = 1.0
+    # Each pool phase sets the learner's std back to init_std.
+    reset_std: bool = True
 
     normalize_reward: bool = True
 

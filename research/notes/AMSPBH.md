@@ -42,6 +42,7 @@ plus the Hedge passes.
   paper calls this full-agent loading.
 - Except the std: each phase sets the learner's std back to `init_std`. Ours. The std
   shrinks within a phase, and the learner must explore again against the new pool.
+  `reset_std=false` turns it off.
 - Each phase starts fresh episodes. Each side keeps its own reward scale across phases.
 - Pools only grow. The opponent's identity never enters the observation.
 

@@ -222,7 +222,8 @@ def _run(cfg, env, env_params, path, ts, rew_norm, key, first, use_wandb):
             k, env, env_params, cfg, lambda state: pool_seats[side][2](state, pool)
         )
         # The std shrinks within a phase, and the learner must explore again against a new pool.
-        ts = {**ts, side: with_std(ts[side], cfg.init_std)}
+        if cfg.reset_std:
+            ts = {**ts, side: with_std(ts[side], cfg.init_std)}
         carry = (ts, vec.replace(rew_norm=rew_norm), obs, key)
         train = {side: True, rival: False}
         frozen = {ppo.column(rival, name, slices) for name in LEARNER_STATS}
