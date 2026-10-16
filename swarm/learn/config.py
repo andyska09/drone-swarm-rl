@@ -13,8 +13,9 @@ class TrainConfig:
     num_steps: int = 64
     total_timesteps: int = 100_000_000
 
-    # The start. After that, each role's lr follows its KL (ppo.adapt_lr).
+    # The start. With adaptive_lr, each role's lr then follows its KL (ppo.adapt_lr).
     lr: float = 2e-4
+    adaptive_lr: bool = True
 
     gamma: float = 0.998
     gae_lambda: float = 0.95

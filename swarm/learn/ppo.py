@@ -388,8 +388,10 @@ def make(cfg, env, env_params, pool_seat=None):
                 }
 
                 def step(role, t):
-                    lr = adapt_lr(lr_of(t), stats[column(role, "approx_kl", slices)])
-                    return with_lr(t, lr).apply_gradients(grads=grads[role])
+                    if cfg.adaptive_lr:
+                        lr = adapt_lr(lr_of(t), stats[column(role, "approx_kl", slices)])
+                        t = with_lr(t, lr)
+                    return t.apply_gradients(grads=grads[role])
 
                 # Selecting the whole TrainState freezes the Adam moments, the lr and
                 # the step count too, not only the weights.

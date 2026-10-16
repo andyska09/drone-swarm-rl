@@ -355,6 +355,7 @@ The design is in [AMSPBH.md](AMSPBH.md). We keep to Sánchez Roncero 2026
   The lr is KL-adaptive with rsl_rl's rule around the paper's target of 0.016: ÷1.5
   above 0.032, ×1.5 below 0.008, kept in [1e-5, 1e-2]. `anneal_lr` is gone. Each role
   keeps its lr in its own TrainState, so a frozen role keeps its lr.
+  `adaptive_lr=false` keeps the lr at `lr` for the whole run, as Němeček's fixed 3e-4.
 - **The KL is `approx_kl`**, a sample estimate of KL(old ‖ new), the KL that rsl_rl
   computes in closed form. The KL of a minibatch sets the lr that the step of the
   same minibatch uses, as in rsl_rl.
