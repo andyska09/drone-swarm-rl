@@ -145,19 +145,8 @@ observation.
 
 ## Where we differ from the paper
 
-| topic | paper | ours |
-|---|---|---|
-| failure | out-of-bounds is a truncation for every agent, also the one that left | the drone that failed does not bootstrap |
-| Hedge pass | 600 episodes "under training conditions" | 600 episodes under eval conditions: mean actions, the fixed eval seeds |
-| budget | 50M frames at 50 Hz per phase, 6144 envs, 13 phases per agent | 49.8M steps at 100 Hz per phase (half the flight time), 4096 envs, 14 phases per agent |
-| PPO | 5 epochs × 8 minibatches, value loss scale 1.0 | 4 × 32, so the lr adapts 128 times per update, not 40; `vf_coef` 0.5 |
-| networks | separate MLPs [512, 256, 256, 128], ELU; the critic sees `o_t` | [256, 256], tanh; the CTDE critic sees the scene and the opponent's action |
-| FRPN seed | G = 5, W = 0.2, a velocity command | Němeček's G = 6.677, W = 0.337, an acceleration |
-| path seeds | radius 0.6–1.0 m, speed 1–2 m/s | ×8 in size and ×√8 in speed for our arena; one `paths` member that draws its shape per episode |
-| wins | capture or evader OOB; escape or pursuer OOB | the same, with our ground `crash` counted as OOB, and `fail_both` as half a win to each side |
-| final eval | fixed starts at (0, ±1.5, 1) m, 1024 episodes × 3 seeds | random spawns on `EVAL_SEED`, 1024 episodes, one seed |
-| silent | — | the evader learns first in each generation; 64 fixed blocks per phase |
-| ours by decision | — | the reward, the observation, the 100 Hz policy, the arena, the net, the spawn, no domain randomization |
+Every difference from Roncero, and from Němeček, is in one table:
+[task_chase.md](task_chase.md), Against Roncero and Němeček.
 
 ## The run folder
 

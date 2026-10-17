@@ -334,6 +334,52 @@ python run/train.py --task chase --preset default --set gamma=0.99 --set generat
   `learn/config.py` stays at 0.998, a 5 s horizon, because `circle_swap` was trained
   at 0.998.
 
+## Against Roncero and Němeček
+
+Ours beside [Roncero v3](../papers/2506.02849v3.md) and
+[Němeček's thesis](../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) with his
+code. The observation and the reward, term by term: [comparisons.md](comparisons.md).
+What the runs scored against theirs:
+[experiments/chase_pools_log.md](experiments/chase_pools_log.md).
+
+| | ours | Roncero v3 | Němeček |
+|---|---|---|---|
+| **the game** | | | |
+| simulator | JAX, our port of the MRS model | Isaac Lab | Flightsim (C++) with the MRS drone model |
+| drone | X500, 2.0 kg | Crazyflie 2.1 brushless | X500, 2.0 kg |
+| domain randomization | none | mass, inertia, thrust, moment, motor lag, drag, rate PID gains | not stated |
+| arena | 20 × 20 × 10 m in `nemecek`, 32 × 32 × 16 m in `default` | 4 × 5 × 2 m | 20 × 20 × 10 m |
+| a wall or the ceiling | `default`: ends the episode. `nemecek`: not there, and the evader pays 57 per second outside | ends the episode, κb = 10 to the one who left | not there, and the evader pays κb = 0.1 per step outside |
+| the ground | ends the episode, `fail` = 30 | a face of the box, as above | ends the episode, κg = 10 |
+| catch | the evader touches the net square under the pursuer | the centres within 0.1 m. The bonus shrinks above 2 m/s of closing speed | the centres within 0.5 m |
+| episode | 10 s | 10 s | 12 s, 600 steps |
+| policy rate | 100 Hz | 50 Hz | 50 Hz |
+| action | CTBR | CTBR | world acceleration and heading rate |
+| spawn | anywhere 2 m inside the box, any heading, tilt up to 0.2 rad, up to 0.5 m/s | any heading, tilt up to 5°, up to 0.1 m/s, 0.5 m apart and from the bounds | not stated |
+| the value target at an episode end | a catch is terminal. After a failure the survivors bootstrap | a capture is terminal. Out of bounds and the timeout are truncations for every agent | every end is terminal, the timeout too: SB3 never gets `TimeLimit.truncated` |
+| **training** | | | |
+| method | AMSPBH, from Roncero v3 | AMSPBH, v3 (June 2026) | Roncero's [v1](https://arxiv.org/abs/2506.02849v1) (June 2025) for p_old and [v2](https://arxiv.org/abs/2506.02849v2) (September 2025) for the loop, before Hedge |
+| generations | 0 to 13 | pretraining, then 1 to 13 | pretraining as generation 0, then 1 to 7 |
+| steps per phase | 49.8M at 100 Hz: half of Roncero's flight time | 50M at 50 Hz | 30M at 50 Hz |
+| parallel envs | 4096 | 6144 | 100 |
+| who learns first | the evader | not stated: each side trains against generation k − 1 | the evader |
+| pursuer g trains against evader g | no | no | yes |
+| opponent mix | Hedge, γh = 0.7, ηh = 2: 70 % split evenly, 30 % mostly to the opponents that beat the learner | the same as ours | p_old = 0.75: the newest opponent gets 25 %, and the older ones share 75 % evenly, whatever their results |
+| win rates for Hedge | 600 episodes, mean actions, the fixed eval seeds | 600 episodes under training conditions | — |
+| opponent picked | once per phase, for each block of 64 envs | not stated | at each new episode |
+| a frozen opponent flies | its mean action | not stated | its mean action |
+| pursuer pool seed | FRPN, G = 6.677, W = 0.337, an acceleration | FRPN, G = 5.0, W = 0.20, a velocity command | FRPN. Thesis Table 8.1: G = 6.677, W = 0.337. His pool code: G = 0.665, W = 0.321 |
+| evader pool seeds | `paths`, one member that draws a hover, a circle or a figure-eight for each episode, 8 × Roncero's size and √8 × his speed | hover, circle and figure-eight, radius 0.6–1.0 m, 1–2 m/s | 200 recorded trajectories, and APF |
+| network | 2 × 256, tanh, one std per action | actor and critic [512, 256, 256, 128], ELU | actor and critic 3 × 256, ReLU |
+| critic input | the whole scene and the opponent's action | the actor's observation | the actor's observation |
+| PPO epochs × minibatches | 4 × 32 | 5 × 8 | 10 × 5 |
+| learning rate | 2e-4, KL-adaptive | 2e-4, KL-adaptive, target 0.016 | 3e-4, fixed |
+| entropy / clip / value loss | 0.001 / 0.2 / 0.5 | 0.001 / 0.2 / 1.0 | 0.001 / 0.1 / 1.0 |
+| γ | 0.99 | not stated | 0.99 |
+| **evaluation** | | | |
+| final eval | random spawns on `EVAL_SEED`, 1024 episodes, one seed per run | fixed starts at (0, ±1.5, 1) m, 1024 episodes × 3 seeds, no randomization | every generation against every generation, Fig. 8.12 |
+| a pursuer wins on | a catch, or a failure of the evader. `fail_both` is half a win to each side | a capture, or the evader out of bounds | a catch |
+
 ## Where it lives
 
 | file | what it holds for this task |

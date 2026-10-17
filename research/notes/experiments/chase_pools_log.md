@@ -48,18 +48,13 @@ pursuer cannot see which evader of the pool it flies against.
 
 ### Against the papers
 
-| | ours | [Němeček](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) | [Roncero v3](../../papers/2506.02849v3.md) |
+How the three setups differ: [task_chase.md](../task_chase.md), Against Roncero and
+Němeček.
+
+| | ours | [Roncero v3](../../papers/2506.02849v3.md) | [Němeček](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) |
 |---|---|---|---|
-| box | 20 × 20 × 10 m (`nemecek`) | 20 × 20 × 10 m | 4 × 5 × 2 m |
-| catch | the evader touches the net square under the pursuer | the drones come within 0.5 m | the centres come within 0.1 m |
-| generations | 0 to 13 | 0 to 7 | pretraining and 1 to 13 |
-| steps per phase | 50M | 30M | 50M |
-| network | 2 × 256, tanh | 3 × 256, ReLU (his code) | 512, 256, 256, 128, ELU |
-| pursuer g trains against evader g | no | yes | no |
-| opponent mix | Hedge, γh = 0.7, ηh = 2 | p_old = 0.75 | Hedge, γh = 0.7, ηh = 2 |
-| opponent picked | once per phase, for each block of 64 envs | at each new episode | not published |
-| older evaders, generations 0 to 7 | 0.93–0.98 | 0.97 | a heatmap, no numbers |
-| against the hand-written opponents | 0.94–0.95 | — | 0.93 |
+| older evaders, generations 0 to 7 | 0.93–0.98 | a heatmap, no numbers | 0.97 |
+| against the hand-written opponents | 0.94–0.95 | 0.93 | — |
 
 - Němeček's diagonal does not compare with ours, because his pursuer g trains against evader g. So the fair number is the older evaders.
 - A catch means something different in each setup. So the win rates compare only roughly.
@@ -68,17 +63,7 @@ pursuer cannot see which evader of the pool it flies against.
 
 ### The opponent mix
 
-Ours and Roncero v3 use the same formula (his eq. 12) and the same constants:
-
-```
-p_j = γh/N + (1 − γh) · c_j^ηh / Σ c^ηh        c_j = 1 − (the learner's win rate against j)
-```
-
-- **γh = 0.7.** 70 % of the mix is split equally over the N opponents. So no opponent drops out.
-- **ηh = 2.** The other 30 % goes mostly to the opponents that beat the learner. An opponent that wins twice as often gets 4 times as much of it.
-- **Němeček, p_old = 0.75.** The newest opponent gets 25 %. The older ones share 75 % equally. This rule does not look at results.
-
-The mix of the generation-3 pursuer:
+The mix of the generation-3 pursuer, ours under Hedge and Němeček's under p_old:
 
 | opponent | ours (`411ea3`) | Němeček |
 |---|---|---|
@@ -88,13 +73,6 @@ The mix of the generation-3 pursuer:
 | evader 1 | 23 % | 15 % |
 | evader 2 | 37 % | 15 % |
 | evader 3 | not in the pool | 25 % |
-
-Němeček's rule comes from earlier versions of Roncero's paper. Its v1
-(<https://arxiv.org/abs/2506.02849v1>, June 2025) uses p_old = 0.75. Němeček's
-Algorithm 2 matches Algorithm 1 of v2 (<https://arxiv.org/abs/2506.02849v2>,
-September 2025) line by line. There the pursuer of generation k trains against
-evader k, and a new opponent is picked at each episode. v3 (June 2026) replaced
-p_old with Hedge. It came out after Němeček's thesis (May 2026).
 
 ## Open
 
