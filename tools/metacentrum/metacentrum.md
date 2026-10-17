@@ -99,10 +99,10 @@ One job per seed:
 python3 tools/metacentrum/submit.py --seeds 0 1 2 -- --task chase --preset default --set generations=13 --steps 1.4e9
 ```
 
-More time:
+Set the time limit. A pool run of 1.4e9 steps takes 17–45 min, so 1 h is enough:
 
 ```
-python3 tools/metacentrum/submit.py --walltime 24:00:00 -- --task chase --preset default --set generations=13 --steps 1.4e9
+python3 tools/metacentrum/submit.py --walltime 1:00:00 -- --task chase --preset default --set generations=13 --steps 1.4e9
 ```
 
 Resume a pool run that ran out of time:

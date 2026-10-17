@@ -105,7 +105,7 @@ python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role'
 python run/replay.py                                   # serve + open the 3D viewer
 python run/plot.py runs/<name>/evals/latest            # time plots of one episode
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
-python3 tools/metacentrum/submit.py -- --task chase --preset default  # on MetaCentrum: tools/metacentrum/metacentrum.md
+python3 tools/metacentrum/submit.py --walltime 1:00:00 -- --task chase --preset default --set generations=13 --steps 1.4e9  # on MetaCentrum: tools/metacentrum/metacentrum.md. 1 h is enough for a 1.4e9 pool run: always give --walltime 1:00:00
 ```
 
 Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default`, `open`, `small` and `nemecek`. `train.py`
