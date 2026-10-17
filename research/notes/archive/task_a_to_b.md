@@ -1,5 +1,8 @@
 # Task A→B — the setting
 
+Archived: `swarm/envs/a_to_b.py` was deleted on 2026-10-11 (commit `6d892a6`). This
+note keeps the task as it was.
+
 One drone, one stationary goal. Fly there and stay. Implemented in
 `swarm/envs/a_to_b.py`; the shared interface is in `plan_t1t2.md`.
 
@@ -60,6 +63,26 @@ mode asks for it.
 
 - `default` — goal drawn in a ±(4,4,2) m box: fly there and hold.
 - `hover` — goal at the centre: hold against the reset perturbation.
+
+## Decisions, moved from choices.md
+
+- **Why `spin` is in.** The first trained `default` policy beat the cascade on
+  the objective (return −3.39 against −3.89) and still never settled. It orbited
+  the goal at 0.21 m with 0.28 m/s of tangential speed, and a 15 s rollout showed
+  a permanent limit cycle, not slow arrival. A pure distance cost pays the same
+  for circling at 0.21 m as for parking at 0.21 m, so nothing asked it to stop.
+  Both reference works carry a motion penalty at 0.1–0.2 of their own distance
+  weight: Huang et al. 2024 uses `0.1·‖ω‖` against `1.0·‖p‖`; Gavin et al. 2026
+  uses `2e-4·‖a_ω‖` against `1e-3·‖p‖`. We copy Huang's, because our reward has
+  the same `−dt · (weighted sum)` shape and the same distance weight, so the
+  number transfers with no rescaling. Gavin's term penalises the *command* and is
+  aimed at sim-to-real feasibility, not at settling.
+- **Discount factor `gamma = 0.998`.** Resolved; it was open until the learner
+  ran. The effective horizon is `1/(1−gamma)` policy steps, and at `policy_dt =
+  0.01 s` that is 500 steps, exactly one episode. The first real run used `0.995`
+  = 2 s, which was enough for `hover` (worst leg 0.87 m) and too short for
+  `default`, where the worst leg is about 6.9 m and takes 3 to 4 s to fly. A
+  policy cannot plan for a payoff it discounts away before it arrives.
 
 ## Why the learned policy will not park
 

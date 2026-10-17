@@ -9,7 +9,8 @@ python run/eval.py runs/<run> --seat pursuer frpn    # the run's evader against 
 
 FRPN and `paths` also start the two training pools ([AMSPBH.md](AMSPBH.md)). APF and the
 cascade never enter training. The code is in [guidance.py](../../swarm/sim/guidance.py)
-(the laws and the paths) and in `guided_policy` in [seats.py](../../swarm/learn/seats.py).
+(the laws and the paths) and in `frpn_policy`, `apf_policy` and `paths_policy` in
+[seats.py](../../swarm/learn/seats.py).
 
 ## The lineup
 
@@ -24,12 +25,16 @@ RPM range.
 | `cascade` | any | the MRS cascade, all six rungs, to `reference` |
 | `frpn` | pursuer | FRPN, Pliska's guidance law |
 | `apf` | evader | APF, pushed away from the pursuers and the walls |
-| `hover` | evader | holds one point |
-| `circle` | evader | flies a circle, stretched into a mild ellipse |
-| `figure8` | evader | flies a figure-eight |
-| `paths` | evader | flies a hover, a circle or a figure-eight, drawn for each episode |
+| `paths` | evader | one of three shapes, drawn for each episode with equal chance |
 
-`SOURCES` in `seats.py` holds this table. A source in the wrong role raises an error.
+The three shapes of `paths`:
+
+- `hover` holds one point.
+- `circle` flies a circle, stretched into a mild ellipse.
+- `figure8` flies a figure-eight.
+
+`SOURCES` in `seats.py` holds the table. A source in the wrong role raises an error. The
+three shapes are not sources of their own.
 
 ## How a baseline flies
 
@@ -39,7 +44,7 @@ Every drone flies the same physics, the same rate loop and the same CTBR limits:
 FRPN, APF and the paths go through this chain at every step:
 
 1. The law gives a world acceleration.
-2. FRPN and APF only: `nemecek_limit` allows at most 20 m/s², and no speeding up past 12 m/s.
+2. FRPN and APF only: `speed_limit` allows at most 20 m/s², and no speeding up past 12 m/s.
 3. `drone_limit` keeps the thrust between idle and full RPM. Height comes first and
    sideways gets the rest, so it never asks for a flip.
 4. MRS `acceleration_controller` turns the acceleration into an attitude and a throttle.
@@ -66,7 +71,7 @@ onto the evader. As an evader it flies to random waypoints.
 `dp` and `dv` are the evader minus the pursuer. The output is an acceleration.
 
 - **Values:** `G = 6.677`, `W = 0.337` (Němeček, Table 8.1). He tuned them under 12 m/s
-  and 20 m/s² (§8.1), so `nemecek_limit` applies both.
+  and 20 m/s² (§8.1), so `speed_limit` applies both.
 - **It aims its net centre at the evader**, not its body: `dp = chase.reference − x`.
 - **Roncero's FRPN is different.** Its output is a velocity command, clipped to the top
   speed, with `G = 5.0` and `W = 0.20`. A cascaded PID flies it.
@@ -159,29 +164,18 @@ From Němeček we take only one thing: the path decides where the evader starts.
 
 ## Outcomes
 
-Every episode ends with exactly one of these, in `info["end"]`. In 1v1 they sum to 1.
-
-| outcome | what happened |
-|---|---|
-| `caught_evader` | a pursuer's net caught the evader |
-| `crash_pursuer` | a pursuer hit the ground, or its state became NaN |
-| `OOB_pursuer` | a pursuer left through a wall or the ceiling |
-| `timeout` | 1000 steps (10 s) and nothing else happened |
-| `crash_evader` | the evader hit the ground, or its state became NaN |
-| `OOB_evader` | the evader left through a wall or the ceiling |
-| `fail_both` | a pursuer and the evader failed on the same step |
-
-- A catch beats a failure on the same step.
-- With more than one pursuer, `collPP` also ends an episode. It is not one of the seven.
-- `time_to_catch` is in seconds, for catches only. Other episodes give NaN, so the mean is
-  over the catches. This is not Gavin's right-censored time.
+Every episode ends with exactly one of seven outcomes. They and the other chase metrics
+are in [task_chase.md](task_chase.md), Metrics.
 
 ## Results
 
 `runs/chase_baselines/` (gitignored) holds every hand-written pursuer against every
 hand-written evader: 1024 episodes each, `EVAL_SEED = 1_000_000`, made after the path
-change. `scratch/baseline_evals.py` rebuilds it in about a minute. Rebuild it after any
-change to `guidance.py`.
+change. It was made at commit `06eac95`, in the `default` preset, when `hover`, `circle`
+and `figure8` were still sources of their own. `guidance.py` has changed only a name since
+then. `scratch/baseline_evals.py` rebuilds it in about a minute, but it still names the
+three shapes as sources, so it needs an update before it runs again. Rebuild it after
+any change to `guidance.py`.
 
 | pursuer | evader | caught | crash P | OOB P | timeout | time to catch |
 |---|---|---|---|---|---|---|
@@ -209,8 +203,9 @@ those columns.
   cascade evader 99.7%). It fails against a moving path (circle 10%), because it chases
   from behind.
 
-`tests/test_eval.py` checks two things. The seven outcomes sum to 1 (FRPN against APF).
-FRPN catches a hovering evader in more than 70% of 64 episodes.
+`tests/test_eval.py` checks three things. The seven outcomes sum to 1 (FRPN against APF,
+64 episodes). FRPN catches the `paths` evader in more than 60% of 64 episodes. The
+cascade catches the cascade evader in more than 90% of 32 episodes.
 
 ## Sources
 

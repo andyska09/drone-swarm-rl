@@ -9,7 +9,7 @@ other drone. The first design is the exact relative position and velocity. Later
 designs change only that input, and each design is scored on the same tunnel. In a
 multi-drone pursuit game, what a drone sees of the others matters, and this task
 prepares that question. The literature is in
-[lit_review.md](experiments/last_minute_avoidance/lit_review.md).
+[lit_review_tunnel.md](lit_review_tunnel.md).
 
 ## The tunnel
 

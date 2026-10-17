@@ -1,8 +1,10 @@
 # Design choices
 
-Decisions taken for the JAX simulator, and every place it differs from the MRS
-C++ reference (`research/code_sources/mrs_multirotor_simulator`). One line of
-reasoning each. Update this file when a decision changes.
+Decisions for the simulator and for what every task shares: the env contract, the
+learner, eval and replay. Also every place we differ from the MRS C++ reference
+(`research/code_sources/mrs_multirotor_simulator`). One line of reasoning each. A
+task's own settings live in its `task_<name>.md`, and pool training lives in
+[AMSPBH.md](AMSPBH.md). Update this file when a decision changes.
 
 ## The one deviation from the C++
 
@@ -32,10 +34,11 @@ two-line diff kept with the golden-trajectory harness.
 ## Model
 
 - State is `(x, v, R, ω, rpm)`. `R` is a 3×3 matrix, not a quaternion. It is
-  what MRS integrates, so it is what we can cross-check against. Revisit at M5
-  only with a profile in hand.
-- RK4 over the 18 rigid-body states. Not Euler: M1's value is the cross-check,
-  and the integrator is not the bottleneck next to a policy forward pass.
+  what MRS integrates, so it is what we can cross-check against. Revisit only
+  with a profile in hand.
+- RK4 over the 18 rigid-body states. Not Euler: the plant's value is the
+  cross-check against the C++, and the integrator is not the bottleneck next to a
+  policy forward pass.
 - **RPM is held constant across the four RK4 stages**, then updated by the exact
   exponential lag `rpm ← e^(−dt/τ)·rpm + (1 − e^(−dt/τ))·rpm_cmd`. MRS does this
   (its derivative reads the member, not the integrated state) and it is correct:
@@ -83,7 +86,7 @@ v.normalize()` becomes a `jnp.where` with a safe norm
 (`sqrt(sum(v*v) + 1e-12)`, because `norm` has a NaN gradient at zero). Same for
 the mixer's saturation branches.
 
-A `test_vmap_matches_loop` gate makes this real rather than aspirational.
+A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
 
 ## Controllers
 
@@ -132,10 +135,11 @@ A `test_vmap_matches_loop` gate makes this real rather than aspirational.
   The test replays the same inputs in JAX and asserts agreement to 1e-9.
   `research/code_sources/` is gitignored, so the committed CSVs and the harness
   are the only record — a fresh clone has no C++.
-- Scenarios: free fall; hover; tumble (throttles `0.55, 0.40, 0.52, 0.44`, 500
-  steps); spin-down from nonzero `ω` at equal throttle; one seeded random state.
-  A sixth covers the rate loop once it exists (`ω_ref = (0, 1, 0)`), which turns
-  "converges without oscillating" into a number.
+- Plant scenarios: free fall; hover; tumble (throttles `0.55, 0.40, 0.52, 0.44`,
+  500 steps); spin-down from nonzero `ω` at equal throttle; one seeded random
+  state. Controller scenarios: the mixer allocation, and a step for each rung of
+  the cascade: rate (`ω_ref = (0, 1, 0)`), attitude, velocity and position. The
+  rate step turns "converges without oscillating" into a number.
 - Hover alone is not a gate. It is an equilibrium, so a transposed allocation
   matrix, a flipped yaw sign, swapped inertia axes, or a missing `ω × Jω` all
   pass it. The torque path is only exercised while tumbling.
@@ -150,18 +154,14 @@ A `test_vmap_matches_loop` gate makes this real rather than aspirational.
 
 ## Environment
 
-Each task has its own file with `reset`, `step`, `get_obs` and a `PRESETS` dict.
-The first task is `swarm/envs/a_to_b.py`. The trainer handles automatic episode
-resets, so we do not need gymnax's auto-reset base class.
-
-`swarm/envs/__init__.py` defines the shared observation type `Obs` and two helpers:
-`flat()` combines the observation fields into a vector for networks without
-attention; `make(task, preset)` loads a task module by name. Adding a task does
-not require updating a registry.
-
-Single-drone and swarm tasks use the same interface, with a drone dimension on
-observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
-
+- **One file per task.** Each task lives in `swarm/envs/<task>.py` with `reset`,
+  `step`, `get_obs`, `reference` and a `PRESETS` dict. `swarm/envs/__init__.py`
+  holds the contract every task file meets, the shared `Obs`, and
+  `make(task, preset)`, which loads a task by name, so adding a task needs no
+  registry. `core.py` holds what the tasks share. The trainer handles automatic
+  episode resets, so we do not need gymnax's auto-reset base class. Single-drone
+  and swarm tasks use the same interface, with a drone dimension on observations,
+  actions and rewards.
 - **Update rates.** Physics, the rate controller and the mixer run at 200 Hz
   (`sim_dt = 0.005`). The policy runs at 100 Hz, so each action is held for two
   simulation steps (`steps_per_action = 2`). We chose 200 Hz to better resolve
@@ -170,13 +170,17 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   approximate time constant of 0.25 s at `kp = 4.0`, so either rate is sufficient
   for it. The extra physics step costs roughly 1% by operation count: about
   1,000 floating-point operations for RK4 versus 70,000 for a policy evaluation.
-- **Observation fields.** `own` contains the drone's velocity `Rᵀv`, all nine
-  entries of its rotation matrix `R`, and angular velocity `ω`. `target` contains
-  position error `Rᵀ(goal − x)` and velocity error `Rᵀ(v_goal − v)`; the A-to-B
-  task uses a stationary goal, so `v_goal = 0`. For each drone, `neighbors` has
-  shape `(K, 7)`, with a mask marking valid rows. It is empty for a single drone.
-  Keeping neighbors in a separate field lets an attention network read them
-  directly.
+- **Observation fields.** Every task fills the same
+  `Obs(own, others, others_mask, target, scene)`. `own` holds the drone's velocity
+  `Rᵀv`, all nine entries of its rotation matrix `R`, its angular velocity `ω`, its
+  height, and four distances to the arena walls along rays level with the floor.
+  `others` holds the K nearest drones, `(K, 7)`: body-frame offset, body-frame
+  velocity, and a flag that says whether that drone shares my role. `others_mask`
+  marks the filled seats, and `flat` zeroes the empty ones, so the vector width
+  never changes. `target` holds the position error `Rᵀ(goal − x)` and the velocity
+  error `Rᵀ(v_goal − v)`, and a task with no goal gives it width 0. `scene` is the
+  critic's input: every drone's exact state. Keeping the other drones in their own
+  field lets an attention network read them directly.
 - **Rotation representation.** Observations include all nine entries of `R`.
   This choice follows SimpleFlight's reported result of roughly 64% worse
   performance with quaternions.
@@ -194,6 +198,45 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   rates map to ±4 rad/s, and yaw to ±2 rad/s. A new policy outputs values near
   zero, which gives a throttle near 0.5, close to the hover value of 0.4654.
   `quad-swarm-rl` allows ±31.4 rad/s for more acrobatic flight.
+- **One centre.** `center` is the middle of the arena box, and each task spawns
+  its drones and draws its goals around it.
+- **Drone failure.** `core.is_dead` is the default rule: a drone fails if it
+  leaves the arena box, goes below z = 0, flips over (`R[2,2] < 0`), touches
+  another drone, or has a NaN or infinite position. Flipping over also causes
+  problems for `acceleration_controller`, which can return NaN when inverted. A
+  task with other rules writes its own `is_dead`. After failure, `alive` stays
+  false, and the drone receives no further rewards or penalties.
+- **State after failure.** Every task ends the episode when any drone fails, so
+  no failed drone has to stay frozen while others fly on. `evaluate.py` freezes
+  the whole scene at episode end to keep later scan steps from changing metrics
+  or replay.
+- **Episode endings.** The time limit, `max_steps` in each task, is a
+  truncation: training stops the rollout but still uses the estimated future
+  value `V(s_T)` for surviving drones. A failed drone has zero future value.
+  `done` tells the trainer to reset the scene; `died_this_step` identifies drones
+  that just failed; `truncated` says that every drone still alive bootstraps. That
+  is the time limit, and in `chase` also a failure without a catch: only a catch is
+  terminal for the survivor.
+- **The cascade uses the policy interface.** Every action follows the same path:
+  action → rate controller → mixer → physics. There is no separate `action_mode`.
+  `control.cascade_outer` runs the cascade's position, velocity, acceleration and
+  attitude stages, producing throttle and body-rate commands (CTBR).
+  `command_to_action` converts these to the four normalized action values that a
+  network would supply. Both controllers use the same rewards, starting states
+  and episode length, so their results can be compared directly. In this setup,
+  the outer controllers run at 100 Hz instead of 200 Hz, and their rate commands
+  are limited to ±4 rad/s for roll/pitch and ±2 rad/s for yaw.
+- **Controller state.** `EnvState` stores only the rate controller's `PIDState`.
+  The cascade policy stores the PID states for its position, velocity and
+  attitude controllers.
+- **Staggered clocks.** The trainer gives each scene a random clock value on the
+  first reset, and then calls `get_obs` again. Scenes that start together also end
+  together, and then most updates finish no episode and report nothing. Later
+  resets are not staggered, so no episode after the first is cut short. This is
+  the one place where the trainer uses a field of the env state by name (`time`).
+
+## Learner
+
 - **The bound is a clip, and the std is one learned number per action.** The action
   is `clip(mean + std·noise, −1, 1)`, the std is the same in every state, and
   `init_std = 1.0`. The log-prob and the entropy are the plain Gaussian's, in closed
@@ -225,79 +268,10 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   owns the mean, `m/s → 0`, and because the rate loop averages the command the
   drone flies `E[tanh z] ≈ 0.8·m/s ≈ 0`. That run ended at `distance` 11.40 m,
   where an untrained policy starts, against 0.5 to 4.0 m for every trained one.
-- **Reward.** `−policy_dt · (1.0·‖goal − x‖ + 0.1·‖ω‖)`, plus a one-time `10.0`
-  for a crash. Distance follows the swarm paper. Tilt, effort and action-rate
-  penalties had zero weights and were removed. Add them only to address an
-  observed problem.
-- **Why `spin` is in.** The first trained `default` policy beat the cascade on
-  the objective (return −3.39 against −3.89) and still never settled. It orbited
-  the goal at 0.21 m with 0.28 m/s of tangential speed, and a 15 s rollout showed
-  a permanent limit cycle, not slow arrival. A pure distance cost pays the same
-  for circling at 0.21 m as for parking at 0.21 m, so nothing asked it to stop.
-  Both reference works carry a motion penalty at 0.1–0.2 of their own distance
-  weight: Huang et al. 2024 uses `0.1·‖ω‖` against `1.0·‖p‖`; Gavin et al. 2026
-  uses `2e-4·‖a_ω‖` against `1e-3·‖p‖`. We copy Huang's, because our reward has
-  the same `−dt · (weighted sum)` shape and the same distance weight, so the
-  number transfers with no rescaling. Gavin's term penalises the *command* and is
-  aimed at sim-to-real feasibility, not at settling.
-- **Shared centre.** `center` replaces `start_center`, `goal_center` and
-  `arena_center`, which always held the same value.
-- **Drone failure.** A drone fails if it hits the ground, moves more than 10 m
-  from `center`, flips over (`R[2,2] < 0`), or has a NaN or infinite position.
-  Flipping over also causes problems for `acceleration_controller`, which can
-  return NaN when inverted. After failure, `alive` stays false. The drone receives
-  no further rewards or crash penalties. Other drones continue until all have
-  failed or time runs out.
-- **State after failure.** With one drone (`N = 1`), failure ends the episode and
-  the trainer resets the scene, so the environment does not freeze its state.
-  `evaluate.py` freezes the whole scene at episode end to keep later scan steps
-  from changing metrics or replay. Restore per-drone freezing when `N > 1`, so
-  failed drones stay fixed while others continue.
-- **Episode endings.** The time limit is 500 policy steps (5 seconds). This is
-  a truncation: training stops the rollout but still uses the estimated future
-  value `V(s_T)` for surviving drones. A failed drone has zero future value.
-  `done` tells the trainer to reset the scene; `died_this_step` identifies drones
-  that just failed; `truncated` says that every drone still alive bootstraps. That is
-  the time limit, and in `chase` also a failure without a catch: only a catch is
-  terminal for the survivor.
-- **`chase open` has Němeček's arena rules.** Only the ground, or a non-finite
-  state, ends an episode. The pursuer has no walls and no ceiling, and pays nothing
-  outside the box. The evader flies on outside the box and pays `outside` = 57 per
-  second. Němeček's evader pays 0.1 per step outside against a survival pay of
-  0.007 per step, a ratio of 14.3, and 14.3 × our `step` of 4 per second is 57.
-  `default` keeps the hard walls for both.
-- **`chase small` is `default` in a 24 × 24 × 16 m box.** Only the floor is smaller.
-  The saved policies of `chase_default_s0_20261014-100847_9e4242`, put in this box,
-  caught the newest evader in 0.39 of the episodes, against 0.17 in 32 × 32 m. The
-  evader left the box no more often (0.03), and the pursuer left it twice as often
-  (0.16, against 0.08).
-- **`chase nemecek` is `open` in Němeček's box**, 20 × 20 × 10 m with the floor at 0,
-  the box of his main runs (thesis, Fig. 8.10, and `arena_size_ = 10.0` in his
-  `environment.h`). His 12 m/s speed cap and his 12 s episodes are not in it.
-- **Discount factor `gamma = 0.998`.** Resolved; it was open until the learner
-  ran. The effective horizon is `1/(1−gamma)` policy steps, and at `policy_dt =
-  0.01 s` that is 500 steps, exactly one episode. The first real run used `0.995`
-  = 2 s, which was enough for `hover` (worst leg 0.87 m) and too short for
-  `default`, where the worst leg is about 6.9 m and takes 3 to 4 s to fly. A
-  policy cannot plan for a payoff it discounts away before it arrives.
-- **The cascade uses the policy interface.** Every action follows the same path:
-  action → rate controller → mixer → physics. There is no separate `action_mode`.
-  `control.cascade_outer` runs the cascade's position, velocity, acceleration and
-  attitude stages, producing throttle and body-rate commands (CTBR).
-  `command_to_action` converts these to the four normalized action values that a
-  network would supply. Both controllers use the same rewards, starting states
-  and episode length, so their results can be compared directly. The M3 success
-  criterion is unchanged: stay within 0.2 m of the goal for the final second.
-  In this setup, the outer controllers run at 100 Hz instead of 200 Hz, and their
-  rate commands are limited to ±4 rad/s for roll/pitch and ±2 rad/s for yaw.
-- **Controller state.** `EnvState` stores only the rate controller's `PIDState`.
-  The cascade policy stores the PID states for its position, velocity and
-  attitude controllers.
-- **Staggered clocks.** The trainer gives each scene a random clock value on the
-  first reset, and then calls `get_obs` again. Scenes that start together also end
-  together, and then most updates finish no episode and report nothing. Later
-  resets are not staggered, so no episode after the first is cut short. This is
-  the one place where the trainer uses a field of the env state by name (`time`).
+- **`gamma` defaults to 0.998**, a 5 s horizon at `policy_dt = 0.01 s`. Chase sets
+  0.99 ([task_chase.md](task_chase.md), Training). Why 0.998:
+  [archive/task_a_to_b.md](archive/task_a_to_b.md).
+- The lr, the adaptive lr and its rule come from AMSPBH: [AMSPBH.md](AMSPBH.md), PPO.
 
 ## Evaluation and replay
 
@@ -323,10 +297,9 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   `runs/<run>/evals/<name>/`, keeping results with the run they measure.
 - **Policy selection.** One flag names one seat: `--seat ROLE SOURCE`, where the
   source is this run's checkpoint, another run's, a `.pkl`, or a hand-written source
-  from `seats.SOURCES` (`cascade`, `frpn`, `apf`, `hover`, `circle`, `figure8`,
-  `paths`). A role
-  nobody names flies this run's own checkpoint. That is what lets a duel measure
-  one side against a fixed opponent.
+  from `seats.SOURCES` (`cascade`, `frpn`, `apf`, `paths`). A role nobody names
+  flies this run's own checkpoint. That is what lets a duel measure one side
+  against a fixed opponent.
 - **Replay data.** The viewer reads task, preset, arena, roles and `policy_dt`
   from `header.json`, and state from `trajectory.npz`. It does not import the
   environment.
@@ -345,64 +318,10 @@ observations, actions and rewards. See [plan_t1t2.md](plan_t1t2.md) for details.
   and fading as the drone rises. The arrow projects the current velocity 0.4 s
   ahead.
 
-## Pool training (AMSPBH)
-
-The design is in [AMSPBH.md](AMSPBH.md). We keep to Sánchez Roncero 2026
-([2506.02849v3](../papers/2506.02849v3.md)). Where it is silent, we follow Němeček's
-`train_pipeline.py`.
-
-- **PPO defaults for every task.** `lr` 2e-4 and `ent_coef` 0.001 are the paper's.
-  The lr is KL-adaptive with rsl_rl's rule around the paper's target of 0.016: ÷1.5
-  above 0.032, ×1.5 below 0.008, kept in [1e-5, 1e-2]. `anneal_lr` is gone. Each role
-  keeps its lr in its own TrainState, so a frozen role keeps its lr.
-  `adaptive_lr=false` keeps the lr at `lr` for the whole run, as Němeček's fixed 3e-4.
-- **The KL is `approx_kl`**, a sample estimate of KL(old ‖ new), the KL that rsl_rl
-  computes in closed form. The KL of a minibatch sets the lr that the step of the
-  same minibatch uses, as in rsl_rl.
-- **The seeds stay in the pools** in every generation, as in the paper: Fig. 6 and
-  §IV-C, "heuristic opponents (FRPN, trajectories) retain non-trivial weight even in
-  later generations". Fig. 2's `Π0P = {πP0}` reads otherwise, but the results do not.
-- **After a failure only the survivors bootstrap.** A failure used to be terminal for
-  every drone, so the pursuer gained when the evader failed: it stopped paying the
-  clock, worth about 4 at γ = 0.99 against a catch of 10.
-- **The critic sees the action the opponent really flies**, also at the states it
-  bootstraps from, so it is not told it faces the wrong opponent.
-- **A NaN bootstrap value is dropped.** A diverged opponent puts NaN into the
-  survivor's observation.
-- **Each phase starts fresh episodes**, and each side keeps its own reward scale
-  across phases. The normalizer counts per drone column, so a frozen column stays
-  exact.
-- **Hedge runs before every phase**, generation 0 included, where the one member
-  gets weight 1 anyway. Frozen networks fly their mean action, as Němeček's do.
-- **64 blocks of envs**, fixed for a phase, rounded by largest remainder. `num_envs`
-  must be a multiple of 64.
-- **`--steps` is the whole run**, split into `2 × (generations + 1)` phases of
-  `num_updates // phases` updates. The updates left over are not run.
-- **Resume restarts the unfinished phase** from its start. `latest.pkl` only ever
-  holds a phase boundary.
-
-Where we differ from the paper:
-
-| topic | paper | ours |
-|---|---|---|
-| failure | out-of-bounds is a truncation for every agent, also the one that left | the drone that failed does not bootstrap |
-| Hedge pass | 600 episodes "under training conditions" | 600 episodes under eval conditions: mean actions, the fixed eval seeds |
-| budget | 50M frames at 50 Hz per phase, 6144 envs, 13 phases per agent | 49.8M steps at 100 Hz per phase (half the flight time), 4096 envs, 14 phases per agent |
-| PPO | 5 epochs × 8 minibatches, value loss scale 1.0 | 4 × 32, so the lr adapts 128 times per update, not 40; `vf_coef` 0.5 |
-| networks | separate MLPs [512, 256, 256, 128], ELU; the critic sees `o_t` | [256, 256], tanh; the CTDE critic sees the scene and the opponent's action |
-| FRPN seed | G = 5, W = 0.2, a velocity command | Němeček's G = 6.677, W = 0.337, an acceleration |
-| path seeds | radius 0.6–1.0 m, speed 1–2 m/s | ×8 in size and ×√8 in speed for our arena; one `paths` member that draws its shape per episode |
-| wins | capture or evader OOB; escape or pursuer OOB | the same, with our ground `crash` counted as OOB, and `fail_both` as half a win to each side |
-| final eval | fixed starts at (0, ±1.5, 1) m, 1024 episodes × 3 seeds | random spawns on `EVAL_SEED`, 1024 episodes, one seed |
-| silent | — | the evader learns first in each generation; 64 fixed blocks per phase |
-| ours by decision | — | the reward, the observation, the 100 Hz policy, the arena, the net, the spawn, no domain randomization |
-
 ## Revisit later
 
-- Quaternions instead of `R`, at M5, if a profile says the matrix costs. Note the
-  cost is not just the rewrite: a quaternion model cannot be cross-checked
-  against the C++ at all.
-- Euler instead of RK4, at M5, if RK4 turns out to be more than ~5% of step time.
-- Rate-controller output: resolved. Keep it unclamped; the mixer rescales motor
-  commands to stay within their limits.
-- Attitude rate normalization, in future move it to newtons so it drone body doesnt matter. 
+- Quaternions instead of `R`, if a profile says the matrix costs. Note the cost
+  is not just the rewrite: a quaternion model cannot be cross-checked against the
+  C++ at all.
+- Euler instead of RK4, if RK4 turns out to be more than ~5% of step time.
+- Attitude rate normalization, in future move it to newtons so it drone body doesnt matter.

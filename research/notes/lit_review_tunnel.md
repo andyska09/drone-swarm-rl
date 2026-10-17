@@ -5,8 +5,8 @@ only inside a range `d`, through several sensor types, and nothing is sent by ra
 must dodge at the last moment, then go back to the line. Encounters are random, so a blind
 rule such as "always fly a bit to the right" fails.
 
-The main review is [lit_review.md](../../lit_review.md). The head-on case with full sight
-already exists as the `pair` preset in [task_circle_swap.md](../../task_circle_swap.md).
+The main review is [lit_review.md](lit_review.md). The head-on case with full sight
+already exists as the `pair` preset in [task_circle_swap.md](task_circle_swap.md).
 
 Each entry says what the paper does, then why it matters here. Lines marked **our
 arithmetic** or **our reading** are ours, not the paper's. "Title only" means only the

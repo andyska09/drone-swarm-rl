@@ -160,7 +160,7 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   split a `fail` into `crash` (the ground, or a broken state) and `OOB` (a wall or
   the ceiling). **This reward parks the drone 0.2-0.6 m short of the goal** — the open
   problem, with the fixes other papers use, is at the end of
-  [research/notes/task_a_to_b.md](research/notes/task_a_to_b.md).
+  [research/notes/archive/task_a_to_b.md](research/notes/archive/task_a_to_b.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `learn/ppo.py` turns each distinct name in it into its own set of weights.
@@ -189,9 +189,11 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - `sim/` is written for **one drone**. Both the drone axis and the parallel-env axis
   are `jax.vmap` at the env boundary. No Python branches on array values, no
   `.item()`, no value-dependent shapes — `test_vmap_matches_python_loop` enforces it.
-- Every design decision, deviation, and "revisit later" lives in
-  [research/notes/choices.md](research/notes/choices.md). **Read it before
-  changing the physics, and update it when a decision changes.**
+- Every design decision for the simulator and for what all tasks share, every
+  deviation, and every "revisit later" lives in
+  [research/notes/choices.md](research/notes/choices.md). A task's own settings live
+  in its task note, and pool training in `AMSPBH.md`. **Read it before changing the
+  physics, and update it when a decision changes.**
 - `conftest.py` turns on `jax_enable_x64` because the C++
 is double precision.
 - One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
@@ -215,12 +217,14 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 ## research/ and the reference code
 
 - `notes/` — working notes, Czech is fine. `goals.local.md` (GITIGNORED) holds
-  the task ladder and the gates. `choices.md` holds every design decision.
-  `task_<name>.md` is one note per task. `task_a_to_b.md` ends with the open reward
-  question, with the reward and observation terms every reference paper uses.
-  `comparisons.md` puts our observation layout beside both reference repos.
-  `lit_review.md` sorts the papers by milestone. `learning/` are explainers,
-  `experiments/` is one file per run.
+  the task ladder and the gates. `choices.md` holds the shared design decisions.
+  `task_<name>.md` is one note per task. `archive/` holds the notes about removed
+  code; `archive/task_a_to_b.md` ends with the open reward question, with the reward
+  and observation terms every reference paper uses. `comparisons.md` puts our
+  observation and reward beside the reference works. `lit_review.md` sorts the
+  papers by milestone, and `lit_review_tunnel.md` is the reading list for the tunnel
+  task. `learning/` are explainers, `experiments/` holds one run log per training
+  setup.
 - `code_sources/` (GITIGNORED) — reference code, **not ours**:
   `mrs_multirotor_simulator/` (the C++ we reimplement), `PPO_example/` (the
   supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone).
