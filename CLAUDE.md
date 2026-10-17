@@ -159,8 +159,8 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
   for the `RewardConfig` field, the function and the `info` key alike. The outcomes
   split a `fail` into `crash` (the ground, or a broken state) and `OOB` (a wall or
   the ceiling). **This reward parks the drone 0.2-0.6 m short of the goal** — the open
-  problem, with the fixes other papers use, is in
-  [research/notes/parking_error.md](research/notes/parking_error.md).
+  problem, with the fixes other papers use, is at the end of
+  [research/notes/task_a_to_b.md](research/notes/task_a_to_b.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `learn/ppo.py` turns each distinct name in it into its own set of weights.
@@ -216,7 +216,7 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 
 - `notes/` — working notes, Czech is fine. `goals.local.md` (GITIGNORED) holds
   the task ladder and the gates. `choices.md` holds every design decision.
-  `task_<name>.md` is one note per task. `parking_error.md` is the open reward
+  `task_<name>.md` is one note per task. `task_a_to_b.md` ends with the open reward
   question, with the reward and observation terms every reference paper uses.
   `comparisons.md` puts our observation layout beside both reference repos.
   `lit_review.md` sorts the papers by milestone. `learning/` are explainers,

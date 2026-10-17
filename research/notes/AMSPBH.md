@@ -6,9 +6,10 @@ Hedge sampler (eq. 12), §IV-A for the settings. We keep to the paper. Where it 
 we follow Němeček's code,
 `research/code_sources/rl_tracking_eagle-cleaned-up-logic/examples/deep_eagle/examples/train_pipeline.py`.
 
-The env, the observation, the reward and the eval seats are the duel's: read
-[task_chase.md](task_chase.md), then [task_chase_duel.md](task_chase_duel.md). This note
-replaces the duel's swap. The seed opponents are in [baselines.md](baselines.md).
+The env, the observation, the reward and the eval seats are in
+[task_chase.md](task_chase.md). This note replaces the duel's swap
+([experiments/chase_duel_log.md](experiments/chase_duel_log.md)). The seed opponents are
+in [baselines.md](baselines.md).
 
 ## The run
 
