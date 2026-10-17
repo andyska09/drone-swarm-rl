@@ -232,3 +232,4 @@ No file the `chase` code uses changed.
 | the critic gets one `scene` for both drones, so it predicts their mean value | as in every task |
 | a line follower in some training episodes | only if the robustness test fails |
 | tests | none yet |
+| the first CPU run, `d_inf`, 3e7 steps, 1024 envs | flies the legs at 4.8 m/s and hits a wall at the first bend in 96% of the episodes, so it never reaches a meeting yet |

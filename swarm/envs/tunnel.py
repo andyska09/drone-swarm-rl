@@ -147,7 +147,9 @@ def ray_length(p, d, poly):
     den = _cross(d, ab)
     safe = jnp.where(den == 0.0, 1.0, den)
     t, s = _cross(ap, ab) / safe, _cross(ap, d) / safe
-    hit = (den != 0.0) & (t >= 0.0) & (s >= 0.0) & (s <= 1.0)
+    # A ray through a corner can miss both of its walls by rounding, so the ends get
+    # a little slack.
+    hit = (den != 0.0) & (t >= 0.0) & (s >= -1e-4) & (s <= 1.0 + 1e-4)
     return jnp.min(jnp.where(hit, t, jnp.inf), axis=-1)
 
 
