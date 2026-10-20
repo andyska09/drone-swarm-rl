@@ -28,6 +28,7 @@ class EnvParams(core.Common):
     max_steps: int = flax.struct.field(pytree_node=False, default=600)
 
     cruise: float = 3.0
+    max_point_distance: float = 2.0
     angle_min: float = 90.0
     angle_max: float = 180.0
     meet_radius: float = 2.0
@@ -151,14 +152,16 @@ def step(key, state, action, params):
     del key
     drone, rate_pid, _ = core.fly(state.drone, state.rate_pid, action, params)
 
-    out = core.out_of_arena(drone, params)
-    contact = jnp.any(core.hits(drone, params), axis=-1)
-    died = state.alive & (out | contact)
-    alive = state.alive & ~died
-
     travelled = state.travelled + params.cruise * params.policy_dt
     point, _ = moving_point(state.replace(travelled=travelled), params)
     distance = core.norm(drone.x - point)
+
+    out = core.out_of_arena(drone, params)
+    contact = jnp.any(core.hits(drone, params), axis=-1)
+    lost = distance > params.max_point_distance
+    died = state.alive & (out | contact | lost)
+    alive = state.alive & ~died
+
     unseen = ~sees(drone.x, params)
 
     new_state = state.replace(
@@ -187,6 +190,7 @@ def step(key, state, action, params):
             "success": finished & ~crashed,
             "contact": jnp.any(died & contact),
             "out": jnp.any(died & out),
+            "lost": jnp.any(died & lost),
             "closest": new_state.closest,
             "point_distance_unseen": jnp.where(
                 new_state.unseen > 0,
