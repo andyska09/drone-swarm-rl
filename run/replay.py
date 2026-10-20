@@ -21,7 +21,7 @@ def evals():
     out = []
     for traj in found:
         d = traj.parent
-        spec = json.loads((d / "eval.json").read_text())
+        spec = json.loads((d / "eval.json").read_text(), parse_constant=lambda _: None)
         out.append(
             {
                 "path": d.relative_to(ROOT).as_posix(),
