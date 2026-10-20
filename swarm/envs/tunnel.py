@@ -40,7 +40,8 @@ class EnvParams(core.Common):
 
     line_offset: float = 0.5  # from the centre line, sideways and up or down
     start_offset: float = 0.5
-    start_gap: float = 2.0  # the closest a start gets to the bend
+    start_gap: float = 2.0  # the closest a start gets to the end of its line
+    start_apart: float = 2.0  # the closest two drones start
 
     look_ahead: float = 3.0
     sight: float = float("inf")
@@ -289,32 +290,52 @@ def reference(state, params):
     )
 
 
+def scenery(state, params):
+    """For the viewer: the corners of the tube floor in the world, (8, 3), and the
+    height of the walls."""
+
+    outline = walls(params)
+    floor = jnp.concatenate(
+        [outline, jnp.full_like(outline[:, :1], -0.5 * params.width)], axis=-1
+    )
+    return {
+        "walls": to_world(floor, state.heading, params),
+        "wall_height": jnp.asarray(params.width),
+    }
+
+
 def compute_reward(progress, distance, alive, died, params):
     cfg = params.reward
     earned = cfg.progress * progress - params.policy_dt * cfg.line * distance
     return jnp.where(alive, earned, 0.0) - cfg.crash * died
 
 
+def starts(key, params):
+    """(n, 3): a start for each drone, anywhere on the centre line moved up to
+    `start_offset` sideways and up or down, short of the last `start_gap` metres."""
+
+    n = params.n_drones
+    k_side, k_reach = jax.random.split(key)
+    side = jax.random.uniform(
+        k_side, (n, 2), minval=-params.start_offset, maxval=params.start_offset
+    )
+    line = lines(side, params)
+    room = jax.vmap(_knots)(line)[:, -1] - params.start_gap
+    return on_line(jax.random.uniform(k_reach, (n,)) * room, line, side)
+
+
 def reset(key, params):
     n = params.n_drones
-    k_heading, k_offset, k_reach, k_side, k_spawn = jax.random.split(key, 5)
+    k_heading, k_offset, k_start, k_spawn = jax.random.split(key, 4)
     heading = jax.random.uniform(k_heading, (), maxval=2.0 * jnp.pi)
     offset = jax.random.uniform(
         k_offset, (n, 2), minval=-params.line_offset, maxval=params.line_offset
     )
 
-    # A start sits on the centre line of the own leg, then moves off it.
-    centre = lines(jnp.zeros((n, 2)), params)
-    end, bend = centre[:, 0], centre[:, 1]
-    along = (bend - end) / core.norm(bend - end)[:, None]
-    across = jnp.stack([-along[:, 1], along[:, 0]], -1)
-    reach = jax.random.uniform(k_reach, (n,), maxval=params.leg - params.start_gap)
-    side = jax.random.uniform(
-        k_side, (n, 2), minval=-params.start_offset, maxval=params.start_offset
-    )
-    p = jnp.concatenate(
-        [end + reach[:, None] * along + side[:, :1] * across, side[:, 1:]], axis=-1
-    )
+    # Keep the first of 16 draws in which no two drones start closer than start_apart.
+    tries = jax.vmap(lambda k: starts(k, params))(jax.random.split(k_start, 16))
+    apart = jax.vmap(lambda p: jnp.min(core.pair_dist(p)))(tries) >= params.start_apart
+    p = tries[jnp.argmax(apart)]
     drone = core.spawn(k_spawn, to_world(p, heading, params), params)
 
     state = EnvState(
