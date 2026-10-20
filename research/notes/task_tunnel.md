@@ -147,10 +147,22 @@ flips keeps flying, as in `chase`.
 |---|---|
 | tunnel heading | uniform over the full circle. `own` holds `R` and the body-frame velocity, so with a fixed heading the flight direction in the world would tell the drone which piece it is in |
 | line offset | up to 0.5 m sideways and up or down, per drone |
-| start | a random point on the own leg, from its far end to `start_gap` = 2 m before the bend, then up to `start_offset` = 0.5 m off the centre line, sideways and up or down |
+| start | anywhere on the centre line moved up to `start_offset` = 0.5 m sideways and up or down, from the start of the own line to `start_gap` = 2 m before its end. No two drones start closer than `start_apart` = 2 m |
 | attitude and speed | `core.spawn`: random yaw, tilt up to 0.2 rad, up to 0.5 m/s on each axis |
 
-No drone sees the other at the start.
+A start anywhere on the line is the distributed initialization of Song et al. 2021,
+[arXiv:2103.08624](https://arxiv.org/abs/2103.08624), Section III-D-2. Early rollouts
+mostly end in a crash, so with one start point the data covers only a small part of the
+track. Song et al. start the drones hovering around the centres of all path segments.
+Once the policy passes the gates reliably, they start from states of earlier flights.
+
+What the starts do to the meetings, over 100,000 resets:
+
+| episode | share |
+|---|---|
+| a meeting ahead, the drones hidden from each other at the start | 33% |
+| a meeting ahead, in sight at the start | 27% |
+| the drones start past each other, no meeting | 40% |
 
 What the randomization buys. Without it, a drone that always flies 0.5 m right of the
 centre passes every meeting without looking: the drones are 1.0 m apart.
@@ -189,13 +201,14 @@ The trainer and the eval add `death_rate`.
   drone always moves aside too, so the policy may learn to move only half the
   distance.
 - `python run/eval_tunnel.py runs/<name> --line-drone 0 1`: both drones only follow
-  their lines. Over 1024 eval episodes: 81.6% contact, 0% wall hits, 18.4% success,
-  1.87 m/s, 0.13 m from the line. So four meetings in five need a dodge.
+  their lines. Over 1024 eval episodes: 52.5% contact, 0% wall hits, 47.5% success,
+  1.72 m/s, 0.22 m from the line. 60% of the episodes hold a meeting (Reset), so nearly
+  nine meetings in ten need a dodge.
 
 `run/eval.py --seat drone cascade` is not a baseline here. The cascade flies to
-`reference()`, the point 3 m ahead, at up to its 6 m/s cap, and hits a wall in 94% of
+`reference()`, the point 3 m ahead, at up to its 6 m/s cap, and hits a wall in 59% of
 the episodes (64 eval episodes). The follower is slow on purpose: at 3 m/s it already
-hits a wall in 14% of the episodes.
+hits a wall in 5% of the episodes (256 eval episodes).
 
 ## Presets
 
@@ -221,15 +234,16 @@ hits a wall in 14% of the episodes.
 | `swarm/envs/tunnel.py` | the task: the tube, the lines, sight, the reward |
 | `run/eval_tunnel.py` | the line follower and the eval against it |
 
-No file the `chase` code uses changed.
+Two shared files know about walls, not about the tunnel: `swarm/learn/evaluate.py` saves
+the `scenery()` of a task that has one into `trajectory.npz`, and `tools/viewer/index.html`
+draws those walls instead of the arena box.
 
 ## Open
 
 | question | state |
 |---|---|
-| the 3D viewer draws the arena box, not the tunnel | needs a change to `tools/viewer/index.html` |
 | `run/eval.py --seat` flies a whole role, so the one-drone seat lives in `run/eval_tunnel.py`, which imports private helpers of `seats.py` and `evaluate.py` | unify later |
 | the critic gets one `scene` for both drones, so it predicts their mean value | as in every task |
 | a line follower in some training episodes | only if the robustness test fails |
 | tests | none yet |
-| the first CPU run, `d_inf`, 3e7 steps, 1024 envs | flies the legs at 4.8 m/s and hits a wall at the first bend in 96% of the episodes, so it never reaches a meeting yet |
+| the first CPU run, `d_inf`, 3e7 steps, 1024 envs, starts in the legs only | flies the legs at 4.8 m/s and hits a wall at the first bend in 96% of the episodes, so it never reaches a meeting yet |
