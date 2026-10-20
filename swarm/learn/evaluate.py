@@ -173,12 +173,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
         _, _, _, reward, info, live = rollout(key, env, env_params, act, start)
         return summarize(reward, info, live, slices)
 
-    def trace(key):
-        drone, goal, action, _, _, live = rollout(key, env, env_params, act, start)
-        return drone, action, goal, live
-
     per_episode = jax.jit(jax.vmap(measure))(keys)
-    drone, action, goal, live = jax.jit(jax.vmap(trace))(keys[:TRAJECTORIES])
 
     named = "_".join(f"{r}_{Path(s).name}" for r, s in sorted(seats.items()))
     out = run / "evals" / (name or named or checkpoint)
@@ -203,11 +198,31 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
         )
     )
     np.savez(out / "episodes.npz", **{k: np.asarray(v) for k, v in per_episode.items()})
+    save_replay(out, cfg, env, env_params, act, start, keys[:TRAJECTORIES], seats)
+    return out, summary
+
+
+def save_replay(out, cfg, env, env_params, act, start, keys, seats):
+    """Fly the episodes of `keys` again and write what the viewer reads:
+    trajectory.npz and header.json."""
+
+    def trace(key):
+        drone, goal, action, _, _, live = rollout(key, env, env_params, act, start)
+        return drone, action, goal, live
+
+    drone, action, goal, live = jax.jit(jax.vmap(trace))(keys)
+    scenery = {}
+    if hasattr(env, "scenery"):
+        # The scenery stays fixed in an episode, so the reset state holds it.
+        scenery = jax.vmap(
+            lambda k: env.scenery(env.reset(k, env_params)[1], env_params)
+        )(keys)
     np.savez(
         out / "trajectory.npz",
         goal=np.asarray(goal),
         live=np.asarray(live),
         action=np.asarray(action),
+        **{k: np.asarray(v) for k, v in scenery.items()},
         **{
             f.name: np.asarray(getattr(drone, f.name))
             for f in drone.__dataclass_fields__.values()
@@ -244,4 +259,3 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
             sort_keys=True,
         )
     )
-    return out, summary

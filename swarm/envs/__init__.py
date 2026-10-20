@@ -14,6 +14,9 @@ A task module in this package is a set of plain functions:
                                cascade baseline flies to it and the viewer draws
                                it as the marker sphere.
     is_dead                 only if core.is_dead is the wrong rule for the task
+    scenery(state, params)  only for walls the viewer must draw: {"walls": (k, 3),
+                            the corners of a closed outline on the floor in the
+                            world, "wall_height": ()}
 
 `info` must carry `alive`, `died_this_step`, `truncated`, and two metric dicts:
 

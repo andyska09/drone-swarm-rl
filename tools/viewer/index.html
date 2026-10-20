@@ -138,6 +138,36 @@ function quadMesh(color) {
   return g;
 }
 
+// The walls of episode e: the closed outline on the floor, raised by wall_height.
+function tube(e) {
+  const k = traj.walls.shape[1], w = traj.walls.data;
+  const up = new THREE.Vector3(0, 0, traj.wall_height.data[e]);
+  const corners = [...Array(k).keys()].map(i => {
+    const p = at(traj.walls, [e, i, 0]);
+    return new THREE.Vector3(w[p], w[p + 1], w[p + 2]);
+  });
+  const quads = [], edges = [];
+  corners.forEach((a, i) => {
+    const b = corners[(i + 1) % k], a2 = a.clone().add(up), b2 = b.clone().add(up);
+    quads.push(a, b, b2, a, b2, a2);
+    edges.push(a, b, a2, b2, a, a2);
+  });
+
+  const g = new THREE.Group();
+  const sides = new THREE.BufferGeometry().setFromPoints(quads);
+  sides.computeVertexNormals();
+  // depthWrite would hide the drones behind a wall.
+  g.add(new THREE.Mesh(sides, new THREE.MeshLambertMaterial({ color: 0xb8c4d8,
+    transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false })));
+  const floor = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(corners)),
+    new THREE.MeshLambertMaterial({ color: 0x4a5468, side: THREE.DoubleSide }));
+  floor.position.z = corners[0].z;
+  g.add(floor);
+  g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(edges),
+    new THREE.LineBasicMaterial({ color: 0xffffff })));
+  return g;
+}
+
 // ---- orbit, written here so the viewer needs one script tag ----
 
 let target = new THREE.Vector3(0, 0, 3), theta = -1.0, phi = 1.15, radius = 12;
@@ -182,7 +212,7 @@ renderer.domElement.addEventListener("wheel", e => {
 // ---- trajectory ----
 
 let traj = null, header = {}, drones = [], goals = [], shadows = [], arrows = [];
-let trails = [], playing = false;
+let trails = [], tubes = [], playing = false;
 const id = name => document.getElementById(name);
 const bar = { episode: id("episode"), time: id("time"), read: id("read"), play: id("play") };
 
@@ -201,7 +231,8 @@ function build() {
   const n = traj.x.shape[2], T = traj.x.shape[1];
   const palette = [0x4fa3ff, 0xff8b5e, 0x62d38a, 0xd98bff, 0xffd166, 0x5edfd8, 0xff6b8a, 0x9aa7ff];
 
-  if (header.arena) {
+  // A task with walls of its own, the tunnel, flies free of the arena box.
+  if (header.arena && !traj.walls) {
     // A list is the box size. Older evals wrote one number: a kill radius.
     const a = header.arena;
     const bound = new THREE.Mesh(
@@ -211,6 +242,10 @@ function build() {
     bound.position.set(...(header.center || [0, 0, 0]));
     world.add(bound);
   }
+
+  // One tube per episode, because each episode turns the tube to its own heading.
+  tubes = traj.walls ? [...Array(traj.walls.shape[0]).keys()].map(tube) : [];
+  for (const t of tubes) world.add(t);
 
   for (let i = 0; i < n; i++) {
     const color = palette[i % palette.length];
@@ -283,6 +318,7 @@ function show() {
   const n = traj.x.shape[2], dt = header.policy_dt || 0.01;
   const x = traj.x.data, R = traj.R.data, g = traj.goal.data, v = traj.v.data;
   const live = traj.live ? traj.live.data[at(traj.live, [e, t])] : 1;
+  tubes.forEach((g, k) => { g.visible = k === e; });
 
   let far = 0, fastest = 0;
   for (let i = 0; i < n; i++) {
