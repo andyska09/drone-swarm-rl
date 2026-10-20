@@ -30,6 +30,10 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - Keep it simple. Simple means logic that is easy to follow, not few lines. Think first,
   then write the code.
 - Keep diffs small. I want to read a change and know what it does.
+- A task note, `research/notes/task_<name>.md`, holds only the current spec of the task.
+  Keep it clear and short, and write it in the
+  [simple-english](.claude/output-styles/simple-english.md) style. The history of the
+  decisions and the run results go to `research/notes/experiments/<name>_log.md`.
 - Everything stays under the repo root, `handoff.md` included. Scripts, probes and build
   artifacts go in `scratch/` (gitignored), never in `/tmp` or a session scratchpad.
 - Unpublished papers under `research/papers/` stay local, and `CLAUDE.local.md` names
