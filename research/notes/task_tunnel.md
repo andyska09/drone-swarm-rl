@@ -147,7 +147,8 @@ flips keeps flying, as in `chase`.
 |---|---|
 | tunnel heading | uniform over the full circle. `own` holds `R` and the body-frame velocity, so with a fixed heading the flight direction in the world would tell the drone which piece it is in |
 | line offset | up to 0.5 m sideways and up or down, per drone |
-| start | anywhere on the centre line moved up to `start_offset` = 0.5 m sideways and up or down, from the start of the own line to `start_gap` = 2 m before its end. No two drones start closer than `start_apart` = 2 m |
+| start, training | anywhere on the centre line moved up to `start_offset` = 0.5 m sideways and up or down, from the start of the own line to `start_gap` = 2 m before its end. No two drones start closer than `start_apart` = 2 m |
+| start, eval | at the start of the own line, the far end of the leg, moved up to `start_offset` sideways and up or down. `eval_params` sets `start_anywhere` to false, so every eval flies the whole tunnel and holds a meeting |
 | attitude and speed | `core.spawn`: random yaw, tilt up to 0.2 rad, up to 0.5 m/s on each axis |
 
 A start anywhere on the line is the distributed initialization of Song et al. 2021,
@@ -156,7 +157,7 @@ mostly end in a crash, so with one start point the data covers only a small part
 track. Song et al. start the drones hovering around the centres of all path segments.
 Once the policy passes the gates reliably, they start from states of earlier flights.
 
-What the starts do to the meetings, over 100,000 resets:
+What the training starts do to the meetings, over 100,000 resets:
 
 | episode | share |
 |---|---|
@@ -201,14 +202,14 @@ The trainer and the eval add `death_rate`.
   drone always moves aside too, so the policy may learn to move only half the
   distance.
 - `python run/eval_tunnel.py runs/<name> --line-drone 0 1`: both drones only follow
-  their lines. Over 1024 eval episodes: 52.5% contact, 0% wall hits, 47.5% success,
-  1.72 m/s, 0.22 m from the line. 60% of the episodes hold a meeting (Reset), so nearly
-  nine meetings in ten need a dodge.
+  their lines. Over 1024 eval episodes: 80.4% contact, 0% wall hits, 19.6% success,
+  1.90 m/s, 0.09 m from the line. Every eval episode holds a meeting, so four meetings
+  in five need a dodge.
 
 `run/eval.py --seat drone cascade` is not a baseline here. The cascade flies to
 `reference()`, the point 3 m ahead, at up to its 6 m/s cap, and hits a wall in 59% of
-the episodes (64 eval episodes). The follower is slow on purpose: at 3 m/s it already
-hits a wall in 5% of the episodes (256 eval episodes).
+the episodes (64 episodes, training starts). The follower is slow on purpose: at 3 m/s
+it already hits a wall in 5% of the episodes (256 episodes, training starts).
 
 ## Presets
 

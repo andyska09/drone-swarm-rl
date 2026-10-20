@@ -65,6 +65,7 @@ def main():
     run = pathlib.Path(args.run)
     cfg = evaluate.load_config(run)
     env, env_params = envs.make(cfg.task, cfg.preset)
+    env_params = env.eval_params(env_params)
     rows = jnp.array(args.line_drone)
     follow, start = line_follower(env_params, rows)
     saved = runner.load(run, evaluate.checkpoint_name(args.checkpoint))

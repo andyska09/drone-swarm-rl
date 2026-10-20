@@ -17,6 +17,8 @@ A task module in this package is a set of plain functions:
     scenery(state, params)  only for walls the viewer must draw: {"walls": (k, 3),
                             the corners of a closed outline on the floor in the
                             world, "wall_height": ()}
+    eval_params(params)     only if eval flies other params than training
+                            -> params
 
 `info` must carry `alive`, `died_this_step`, `truncated`, and two metric dicts:
 

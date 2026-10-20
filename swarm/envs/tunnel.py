@@ -40,6 +40,7 @@ class EnvParams(core.Common):
 
     line_offset: float = 0.5  # from the centre line, sideways and up or down
     start_offset: float = 0.5
+    start_anywhere: bool = True  # False starts each drone at the start of its line
     start_gap: float = 2.0  # the closest a start gets to the end of its line
     start_apart: float = 2.0  # the closest two drones start
 
@@ -311,8 +312,9 @@ def compute_reward(progress, distance, alive, died, params):
 
 
 def starts(key, params):
-    """(n, 3): a start for each drone, anywhere on the centre line moved up to
-    `start_offset` sideways and up or down, short of the last `start_gap` metres."""
+    """(n, 3): a start for each drone on the centre line moved up to `start_offset`
+    sideways and up or down. With `start_anywhere` it lies anywhere short of the last
+    `start_gap` metres of the line, else at the start of the line."""
 
     n = params.n_drones
     k_side, k_reach = jax.random.split(key)
@@ -321,7 +323,8 @@ def starts(key, params):
     )
     line = lines(side, params)
     room = jax.vmap(_knots)(line)[:, -1] - params.start_gap
-    return on_line(jax.random.uniform(k_reach, (n,)) * room, line, side)
+    anywhere = jax.random.uniform(k_reach, (n,)) * room
+    return on_line(jnp.where(params.start_anywhere, anywhere, 0.0), line, side)
 
 
 def reset(key, params):
@@ -417,6 +420,12 @@ def step(key, state, action, params):
         },
     }
     return get_obs(new_state, params), new_state, reward, done, info
+
+
+def eval_params(params):
+    """Eval flies the whole tunnel: each drone starts at the start of its line."""
+
+    return params.replace(start_anywhere=False)
 
 
 PRESETS = {

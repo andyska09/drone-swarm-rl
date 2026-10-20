@@ -161,6 +161,8 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
     run = Path(run)
     cfg = load_config(run)
     env, env_params = envs.make(cfg.task, cfg.preset)
+    if hasattr(env, "eval_params"):
+        env_params = env.eval_params(env_params)
 
     seats = dict(seats)
     act, start, step = make_policy(cfg, env, env_params, run, checkpoint, seats)
