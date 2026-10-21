@@ -1,5 +1,6 @@
 """Pool training for chase, AMSPBH: each side learns in turn against a growing pool of
-frozen opponents, weighted by a Hedge sampler. The design: research/notes/AMSPBH.md."""
+frozen opponents, weighted by a Hedge sampler. The design:
+research/notes/task_chase_training.md."""
 
 import csv
 import math

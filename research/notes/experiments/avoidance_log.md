@@ -99,3 +99,57 @@ are no walls, and only the sight range sets the warning time.
 
 Next: not decided. The options are a line follower in some training episodes, against
 the habit, and `--set ent_coef=0`, against the spread.
+
+## Redesign, 2026-10-21
+
+The task is now a closed square tube. The spec is in
+[task_avoidance.md](../task_avoidance.md). Everything above is about the old design.
+
+Why:
+
+- The task is a measuring instrument. The input is the sensor design, and the reading is
+  the success rate. Only the sensor may change the reading. The range must be wide: a
+  blind drone fails often, and a drone that sees everything almost always succeeds.
+- The reward must state only the goal, with no shaping terms. The moving point had a
+  shaped pay, the `exp` of the distance.
+- In self-play, the two drones can agree on a convention ("always left") and pass
+  without sensing much, as the runs above did. The known fix is Other-Play (Hu et al.
+  2020, [arXiv:2003.02979](https://arxiv.org/abs/2003.02979)), a left-right mirror for
+  drone B. The user decided to start without the mirror: debug runs first, and the
+  mirror only if a convention shows up.
+
+| decision | why |
+|---|---|
+| +1 for the arrival, −1 for a crash, 0 at every other step | It states only the goal. |
+| the 10 s limit is terminal, and it counts with the task's own `steps` | A drone that has not arrived must get nothing. `vecenv.reset` gives the first episode of each env a random `time`. The first moving-point version hit exactly this: 10-step episodes with 100% success. |
+| an arrived drone leaves the episode. The task gives `arrived` and `arrived_this_step`, and `vecenv` trains a drone while it is alive and has not arrived | It must stop giving training steps, but it is not a death. So `alive` and `died_this_step` keep their meaning, and `death_rate` stays right. |
+| the tube grows only when every episode of the update flew the current tube | The episodes that started before a change fly the short tube for up to 16 updates (10 s = 1000 steps, 64 steps per update). Without the check, the tube can grow 5 → 10 → 15 → 20 m in three updates in a row. |
+| the runner builds the update again when the tube grows | The params are constants in the compiled update. One rebuild compiled in about 2 s on the Mac (CPU), and a run has 3. `ppo.py` does not change. |
+| the crash is the 0.40 m ball, and the starts are in the middle 1.6 m × 1.6 m | The ball is the rule of the tunnel and of the 0.80 m contact. In a probe of 20,000 starts where the cascade holds the start point and the start heading, 0.9% of the starts in the middle 2 m × 2 m hit a wall, and 0% in 1.6 m × 1.6 m. |
+| `own` keeps the full `R`, and the tube has a random yaw | The user rejected a tilt-only `own`. |
+| `core.own_obs` takes the wall distances, and `core.box_dist` measures them in any box | The tube measures its own walls with the code of the arena, with no copy in the task. |
+
+**The cascade is no "never dodges" test here.** In both seats, the cascade flies each
+drone straight to its goal. 512 episodes, `d_inf`:
+
+| tube | heading | success | contact | wall |
+|---|---|---|---|---|
+| 5 m | turns to 0 (`seats.cascade_policy`) | 27.5% | 51.2% | 21.3% |
+| 5 m | keeps its start heading | 13.9% | 85.0% | 1.2% |
+| 20 m | turns to 0 | 4.1% | 3.7% | 92.2% |
+| 20 m | keeps its start heading | 9.2% | 4.7% | 86.1% |
+
+At 20 m, the cascade swings more than 1.1 m sideways and hits a side wall, in the
+median after about 1 s (checked for the version that turns to 0).
+
+**Local smoke run.** `d_inf`, `--set ent_coef=0`, 11 updates of 4096 envs × 64 steps,
+uncommitted code on top of `2b49f01`, about 42,000 steps/s on the Mac (CPU). The code
+runs, and nothing is learned yet. At update 11: 92% wall, 8% contact, 0.2% success, and
+the tube is still 5 m. The entropy fell from 5.67 to 5.49. The lr sits at its cap of
+1e-2 from update 1. Eval in the 20 m tube: 99.8% wall.
+
+A small run with the grow rule forced on (`grow_at` = −1, 256 envs) checked the
+curriculum: the tube grew 5 → 10 → 15 → 20 m, and it waited while episodes of the old
+tube still ended.
+
+Next: short debug runs on MetaCentrum.

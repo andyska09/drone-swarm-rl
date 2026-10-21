@@ -42,7 +42,7 @@ class EnvState:
 def get_obs(state, params):
     others, mask = core.others(state.drone, params)
     return Obs(
-        own=core.own_obs(state.drone, params),
+        own=core.own_obs(state.drone, core.wall_dist(state.drone, params)),
         others=others,
         others_mask=mask,
         target=core.target_obs(state.drone, state.goal),

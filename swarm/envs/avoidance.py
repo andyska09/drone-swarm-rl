@@ -1,5 +1,4 @@
-"""Two drones fly straight lines that meet, each paid for staying near a point that
-moves along its own line.
+"""Two drones fly head-on through a closed square tube, each to the other's start.
 
 The design: research/notes/task_avoidance.md.
 """
@@ -16,8 +15,8 @@ NUM_ACTIONS = 4
 
 @flax.struct.dataclass
 class RewardConfig:
-    scale: float = 1.0
-    crash: float = 30.0
+    arrive: float = 1.0
+    crash: float = 1.0
 
 
 @flax.struct.dataclass
@@ -25,17 +24,18 @@ class EnvParams(core.Common):
     reward: RewardConfig = flax.struct.field(default_factory=RewardConfig)
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("drone", "drone"))
-    max_steps: int = flax.struct.field(pytree_node=False, default=600)
+    max_steps: int = flax.struct.field(pytree_node=False, default=1100)
 
-    cruise: float = 3.0
-    max_point_distance: float = 2.0
-    angle_min: float = 90.0
-    angle_max: float = 180.0
-    meet_radius: float = 2.0
-    miss: float = 1.0
-    before_min: float = 6.0
-    before_max: float = 12.0
-    after: float = 4.0
+    width: float = 3.0
+    length: float = 5.0
+    length_step: float = 5.0
+    length_max: float = 20.0
+    grow_at: float = 0.8
+
+    start_gap: float = 1.0
+    start_box: float = 1.6
+    arrive_radius: float = 1.0
+    time_limit: float = 10.0
 
     sight: float = float("inf")
 
@@ -44,163 +44,190 @@ class EnvParams(core.Common):
 class EnvState:
     drone: dynamics.State
     rate_pid: control.PIDState
-    start: jnp.ndarray
-    direction: jnp.ndarray
+    heading: jnp.ndarray
     length: jnp.ndarray
-    travelled: jnp.ndarray
+    goal: jnp.ndarray
     alive: jnp.ndarray
+    arrived: jnp.ndarray
+    arrive_time: jnp.ndarray
+    steps: jnp.ndarray
     time: jnp.ndarray
     closest: jnp.ndarray
-    unseen: jnp.ndarray
-    unseen_distance: jnp.ndarray
 
 
-def moving_point(state, params):
-    point = state.start + state.travelled * state.direction
-    return point, params.cruise * state.direction
+def middle(params):
+    return jnp.array([params.center[0], params.center[1], 0.5 * params.width])
 
 
-def sees(x, params):
-    return jnp.any(core.pair_dist(x) < params.sight, axis=1)
+def half(state, params):
+    return jnp.array([0.5 * state.length, 0.5 * params.width, 0.5 * params.width])
 
 
-def lines(key, params):
-    k_meet, k_reach, k_yaw, k_angle, k_side, k_miss, k_around, k_before = (
-        jax.random.split(key, 8)
-    )
-    toward = jax.random.normal(k_meet, (3,))
-    reach = params.meet_radius * jax.random.uniform(k_reach) ** (1.0 / 3.0)
-    meet = jnp.asarray(params.center) + reach * toward / core.norm(toward)
+def to_tube(x, heading, params):
+    return (x - middle(params)) @ core.yaw(heading)
 
-    angle = jax.random.uniform(k_angle, minval=params.angle_min, maxval=params.angle_max)
-    side = jnp.where(jax.random.bernoulli(k_side), 1.0, -1.0)
-    yaw = jax.random.uniform(k_yaw, maxval=2.0 * jnp.pi) + jnp.array(
-        [0.0, side * jnp.deg2rad(angle)]
-    )
-    direction = jnp.stack([jnp.cos(yaw), jnp.sin(yaw), jnp.zeros(2)], axis=-1)
 
-    closing = direction[0] - direction[1]
-    across = jnp.array([-closing[1], closing[0], 0.0]) / core.norm(closing)
-    around = jax.random.uniform(k_around, maxval=2.0 * jnp.pi)
-    up = jnp.array([0.0, 0.0, 1.0])
-    miss = jax.random.uniform(k_miss, maxval=params.miss) * (
-        jnp.cos(around) * across + jnp.sin(around) * up
-    )
+def to_world(p, heading, params):
+    return middle(params) + p @ core.yaw(heading).T
 
-    before = jax.random.uniform(
-        k_before, minval=params.before_min, maxval=params.before_max
-    )
-    start = meet + 0.5 * jnp.stack([miss, -miss]) - before * direction
-    return start, direction, before + params.after
+
+def sees(state, params):
+    flying = state.alive & ~state.arrived
+    near = core.pair_dist(state.drone.x) < params.sight
+    return near & flying[:, None] & flying[None, :]
 
 
 def get_obs(state, params):
     d = state.drone
+    turn = core.yaw(state.heading)
+    p = to_tube(d.x, state.heading, params)
+    R = turn.T @ d.R
     others, mask = core.others(d, params)
-    point, velocity = moving_point(state, params)
+    _, idx = jax.lax.top_k(-core.pair_dist(d.x), params.n_visible)
+    drones = jnp.concatenate(
+        [
+            p,
+            d.v @ turn,
+            R.reshape(-1, 9),
+            d.omega,
+            to_tube(state.goal, state.heading, params),
+            state.arrived[:, None].astype(p.dtype),
+        ],
+        axis=-1,
+    )
+    clock = params.time_limit - state.steps * params.policy_dt
     return Obs(
-        own=core.own_obs(d, params),
+        own=core.own_obs(d, core.box_dist(p, R, half(state, params))),
         others=others,
-        others_mask=mask * (core.norm(others[..., :3]) < params.sight),
-        target=core.target_obs(d, point, velocity),
-        scene=jnp.concatenate(
-            [
-                core.scene_obs(d),
-                point.reshape(-1),
-                velocity.reshape(-1),
-                jnp.atleast_1d(state.length - state.travelled),
-                sees(d.x, params).astype(point.dtype),
-            ]
-        ),
+        others_mask=mask * jnp.take_along_axis(sees(state, params), idx, axis=1),
+        target=core.target_obs(d, state.goal),
+        scene=jnp.concatenate([drones.reshape(-1), jnp.stack([state.length, clock])]),
     )
 
 
 def reference(state, params):
-    return moving_point(state, params)[0]
+    del params
+    return state.goal
 
 
-def compute_reward(distance, alive, died, params):
-    cfg = params.reward
-    pay = params.policy_dt * jnp.exp(-distance / cfg.scale)
-    return jnp.where(alive, pay, 0.0) - cfg.crash * died
+def scenery(state, params):
+    corners = jnp.array(
+        [[-1.0, -1.0, -1.0], [1.0, -1.0, -1.0], [1.0, 1.0, -1.0], [-1.0, 1.0, -1.0]]
+    )
+    return {
+        "walls": to_world(corners * half(state, params), state.heading, params),
+        "wall_height": jnp.asarray(params.width),
+    }
+
+
+def compute_reward(arrive, died, params):
+    return params.reward.arrive * arrive - params.reward.crash * died
 
 
 def reset(key, params):
     n = params.n_drones
-    k_lines, k_spawn = jax.random.split(key)
-    start, direction, length = lines(k_lines, params)
+    k_heading, k_across, k_spawn = jax.random.split(key, 3)
+    heading = jax.random.uniform(k_heading, (), maxval=2.0 * jnp.pi)
+    length = jnp.asarray(params.length, float)
+    end = 0.5 * length - params.start_gap
+    along = jnp.where(jnp.arange(n) % 2 == 0, -end, end)
+    across = jax.random.uniform(
+        k_across, (n, 2), minval=-0.5 * params.start_box, maxval=0.5 * params.start_box
+    )
+    start = to_world(jnp.concatenate([along[:, None], across], axis=-1), heading, params)
     drone = core.spawn(k_spawn, start, params)
-    drone = drone.replace(v=drone.v + params.cruise * direction)
 
     state = EnvState(
         drone=drone,
         rate_pid=control.pid_init((n, 3)),
-        start=start,
-        direction=direction,
+        heading=heading,
         length=length,
-        travelled=jnp.zeros(()),
+        goal=start[::-1],
         alive=jnp.ones(n, bool),
+        arrived=jnp.zeros(n, bool),
+        arrive_time=jnp.full(n, jnp.nan, float),
+        steps=jnp.int32(0),
         time=jnp.int32(0),
         closest=jnp.min(core.pair_dist(drone.x)),
-        unseen=jnp.zeros(n, jnp.int32),
-        unseen_distance=jnp.zeros(n),
     )
     return get_obs(state, params), state
 
 
 def step(key, state, action, params):
     del key
-    drone, rate_pid, _ = core.fly(state.drone, state.rate_pid, action, params)
+    flying = state.alive & ~state.arrived
+    moved = core.fly(state.drone, state.rate_pid, action, params)[:2]
+    drone, rate_pid = jax.tree.map(
+        lambda a, b: jnp.where(jnp.expand_dims(flying, tuple(range(1, a.ndim))), a, b),
+        moved,
+        (state.drone, state.rate_pid),
+    )
+    p = to_tube(drone.x, state.heading, params)
 
-    travelled = state.travelled + params.cruise * params.policy_dt
-    point, _ = moving_point(state.replace(travelled=travelled), params)
-    distance = core.norm(drone.x - point)
-
-    out = core.out_of_arena(drone, params)
-    contact = jnp.any(core.hits(drone, params), axis=-1)
-    lost = distance > params.max_point_distance
-    died = state.alive & (out | contact | lost)
+    room = half(state, params) - core.body_radius(params)
+    wall = flying & (
+        jnp.any(jnp.abs(p) > room, axis=-1) | ~jnp.all(jnp.isfinite(p), axis=-1)
+    )
+    both = flying[:, None] & flying[None, :]
+    contact = jnp.any(core.hits(drone, params) & both, axis=-1)
+    died = wall | contact
     alive = state.alive & ~died
+    arrive = flying & ~died & (core.norm(drone.x - state.goal) < params.arrive_radius)
+    arrived = state.arrived | arrive
 
-    unseen = ~sees(drone.x, params)
-
+    steps = state.steps + 1
+    seconds = steps * params.policy_dt
     new_state = state.replace(
         drone=drone,
         rate_pid=rate_pid,
-        travelled=travelled,
         alive=alive,
+        arrived=arrived,
+        arrive_time=jnp.where(arrive, seconds, state.arrive_time),
+        steps=steps,
         time=state.time + 1,
-        closest=jnp.minimum(state.closest, jnp.min(core.pair_dist(drone.x))),
-        unseen=state.unseen + unseen,
-        unseen_distance=state.unseen_distance + unseen * distance,
+        closest=jnp.minimum(
+            state.closest, jnp.min(jnp.where(both, core.pair_dist(drone.x), jnp.inf))
+        ),
     )
 
-    reward = compute_reward(distance, state.alive, died, params)
-    finished = travelled >= state.length
-    crashed = ~jnp.all(alive)
+    reward = compute_reward(arrive, died, params)
+    crashed = jnp.any(died)
+    finished = jnp.all(arrived)
+    out_of_time = seconds >= params.time_limit
+    over = crashed | finished | out_of_time
     limit = new_state.time >= params.max_steps
-    truncated = limit & ~finished & ~crashed
-    done = finished | crashed | limit
 
     info = {
         "alive": alive,
         "died_this_step": died,
-        "truncated": truncated,
+        "arrived": arrived,
+        "arrived_this_step": arrive,
+        "truncated": limit & ~over,
         "end": {
-            "success": finished & ~crashed,
-            "contact": jnp.any(died & contact),
-            "out": jnp.any(died & out),
-            "lost": jnp.any(died & lost),
+            "success": finished,
+            "wall": jnp.any(wall),
+            "contact": jnp.any(contact),
+            "timeout": out_of_time & ~finished & ~crashed,
             "closest": new_state.closest,
-            "point_distance_unseen": jnp.where(
-                new_state.unseen > 0,
-                new_state.unseen_distance / jnp.maximum(new_state.unseen, 1),
-                jnp.nan,
-            ),
+            "time_to_arrive": new_state.arrive_time,
+            "length": state.length,
         },
-        "step": {"point_distance": distance},
+        "step": {},
     }
-    return get_obs(new_state, params), new_state, reward, done, info
+    return get_obs(new_state, params), new_state, reward, over | limit, info
+
+
+def eval_params(params):
+    return params.replace(length=params.length_max)
+
+
+def curriculum(params, metrics):
+    settled = abs(metrics["length"] - params.length) < 1e-3
+    if settled and metrics["success"] > params.grow_at and params.length < params.length_max:
+        return params.replace(
+            length=min(params.length + params.length_step, params.length_max)
+        )
+    return None
 
 
 PRESETS = {
@@ -209,4 +236,5 @@ PRESETS = {
     "d5": EnvParams(sight=5.0),
     "d4": EnvParams(sight=4.0),
     "d3": EnvParams(sight=3.0),
+    "d0": EnvParams(sight=0.0),
 }

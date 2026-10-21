@@ -14,11 +14,18 @@ A task module in this package is a set of plain functions:
                                cascade baseline flies to it and the viewer draws
                                it as the marker sphere.
     is_dead                 only if core.is_dead is the wrong rule for the task
-    scenery(state, params)  only for walls the viewer must draw: {"walls": (k, 3),
-                            the corners of a closed outline on the floor in the
-                            world, "wall_height": ()}
+    scenery(state, params)  only for what the viewer must draw: walls,
+                            {"walls": (k, 3), the corners of a closed outline on
+                            the floor in the world, "wall_height": ()}, or lines,
+                            {"lines": (n, 2, 3), the start and the end of each
+                            drone's line}
     eval_params(params)     only if eval flies other params than training
                             -> params
+    curriculum(params, metrics)
+                            only if training changes the params as it goes.
+                            The trainer calls it after every update with that
+                            update's metrics -> the next params, or None to
+                            keep these
 
 `info` must carry `alive`, `died_this_step`, `truncated`, and two metric dicts:
 
@@ -26,6 +33,10 @@ A task module in this package is a set of plain functions:
           A NaN means this episode has no value for it, and it is left out of the
           average instead of counted as a zero.
     step  averaged over the steps — a gap, a per-step collision rate.
+
+A task where a drone leaves the episode at its goal also gives `arrived` and
+`arrived_this_step`. The trainer stops training an arrived drone, and the drone stays
+`alive`, so it is not a death.
 
 A metric with a drone axis is reported once per role, named `<role>_<metric>`; a
 task with one role keeps the bare name. A metric without one is a scene fact and

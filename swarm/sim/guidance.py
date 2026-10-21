@@ -1,5 +1,6 @@
 """Hand-written opponents for eval: FRPN, APF and flown paths. Each one gives a drone
-a world acceleration. Where the values come from: research/notes/baselines.md."""
+a world acceleration. Where the values come from:
+research/notes/task_chase_baselines.md."""
 
 import jax
 import jax.numpy as jnp

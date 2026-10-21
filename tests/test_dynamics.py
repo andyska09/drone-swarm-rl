@@ -1,5 +1,5 @@
-"""M1 gate. The plant must reproduce the C++ reference trajectories, and the
-analytic cases must hold. Regenerate the references with tools/mrs_golden/build.sh."""
+"""The plant must reproduce the C++ reference trajectories, and the analytic cases
+must hold. Regenerate the references with tools/mrs_golden/build.sh."""
 
 import subprocess
 import sys

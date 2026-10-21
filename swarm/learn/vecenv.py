@@ -88,13 +88,15 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
         jax.random.split(k_step, n), vec.env, action, params
     )
     done = done.astype(reward.dtype)
-    alive = info["alive"].astype(reward.dtype)
+    nobody = jnp.zeros_like(info["alive"])
+    flying = (info["alive"] & ~info.get("arrived", nobody)).astype(reward.dtype)
+    stopped = info["died_this_step"] | info.get("arrived_this_step", nobody)
 
     info = dict(info)
     info["done"] = done
-    info["mask"] = alive + info["died_this_step"].astype(reward.dtype)
-    info["cont"] = alive * (1.0 - done[:, None])
-    info["bootstrap"] = alive * info["truncated"][:, None].astype(reward.dtype)
+    info["mask"] = flying + stopped.astype(reward.dtype)
+    info["cont"] = flying * (1.0 - done[:, None])
+    info["bootstrap"] = flying * info["truncated"][:, None].astype(reward.dtype)
     info["ep_return"] = vec.ep_return + reward
     info["ep_length"] = vec.ep_length + 1
 

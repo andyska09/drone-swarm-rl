@@ -168,6 +168,23 @@ function tube(e) {
   return g;
 }
 
+// The lines of episode e: each drone's line to follow, dashed in the drone's color.
+function path(e, palette) {
+  const g = new THREE.Group(), l = traj.lines.data;
+  for (let i = 0; i < traj.lines.shape[1]; i++) {
+    const p = at(traj.lines, [e, i, 0, 0]);
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(l[p], l[p + 1], l[p + 2]),
+        new THREE.Vector3(l[p + 3], l[p + 4], l[p + 5])]),
+      new THREE.LineDashedMaterial(
+        { color: palette[i % palette.length], dashSize: 0.3, gapSize: 0.2 }));
+    line.computeLineDistances();  // without it the dashes draw as one solid line
+    g.add(line);
+  }
+  return g;
+}
+
 // ---- orbit, written here so the viewer needs one script tag ----
 
 let target = new THREE.Vector3(0, 0, 3), theta = -1.0, phi = 1.15, radius = 12;
@@ -212,7 +229,7 @@ renderer.domElement.addEventListener("wheel", e => {
 // ---- trajectory ----
 
 let traj = null, header = {}, drones = [], goals = [], shadows = [], arrows = [];
-let trails = [], tubes = [], playing = false;
+let trails = [], tubes = [], paths = [], playing = false;
 const id = name => document.getElementById(name);
 const bar = { episode: id("episode"), time: id("time"), read: id("read"), play: id("play") };
 
@@ -246,6 +263,8 @@ function build() {
   // One tube per episode, because each episode turns the tube to its own heading.
   tubes = traj.walls ? [...Array(traj.walls.shape[0]).keys()].map(tube) : [];
   for (const t of tubes) world.add(t);
+  paths = traj.lines ? [...Array(traj.lines.shape[0]).keys()].map(e => path(e, palette)) : [];
+  for (const p of paths) world.add(p);
 
   for (let i = 0; i < n; i++) {
     const color = palette[i % palette.length];
@@ -319,6 +338,7 @@ function show() {
   const x = traj.x.data, R = traj.R.data, g = traj.goal.data, v = traj.v.data;
   const live = traj.live ? traj.live.data[at(traj.live, [e, t])] : 1;
   tubes.forEach((g, k) => { g.visible = k === e; });
+  paths.forEach((g, k) => { g.visible = k === e; });
 
   let far = 0, fastest = 0;
   for (let i = 0; i < n; i++) {

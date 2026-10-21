@@ -115,7 +115,7 @@ def net_collision(drone, params):
 def get_obs(state, params):
     others, mask = core.others(state.drone, params)
     return Obs(
-        own=core.own_obs(state.drone, params),
+        own=core.own_obs(state.drone, core.wall_dist(state.drone, params)),
         others=others,
         others_mask=mask,
         # Nobody here flies at a fixed point: a pursuer chases a drone and the evader runs from one, and both sit in `others`.

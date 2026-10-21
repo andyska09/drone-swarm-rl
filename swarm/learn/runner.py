@@ -161,6 +161,11 @@ def train(cfg, root="runs", use_wandb=False):
             )
         if (i + 1) % cfg.checkpoint_every == 0 or i + 1 == cfg.num_updates:
             save(path, i + 1, carry)
+        if hasattr(env, "curriculum"):
+            harder = env.curriculum(env_params, row)
+            if harder is not None:
+                env_params = harder
+                update = ppo.make(cfg, env, env_params)[1]
 
     if tracker is not None:
         tracker.finish()

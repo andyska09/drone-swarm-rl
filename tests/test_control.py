@@ -1,5 +1,5 @@
-"""M2 gate. The closed rate loop must reproduce the C++ reference, and the mixer
-must agree with MRS's normalized allocation."""
+"""The closed rate loop must reproduce the C++ reference, and the mixer must agree
+with MRS's normalized allocation."""
 
 import sys
 from pathlib import Path
