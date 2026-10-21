@@ -110,5 +110,5 @@ It sets the target to the drone's current position. Error goes to zero, the
 cascade commands nothing, the drone hovers. The whole safety behaviour is
 "no orders → stay put".
 
-For our project **we set it** — a test script in M2, `reset_env` in M3, and
-eventually the policy itself publishing to the attitude-rate level.
+For our project **we set it**: a test sets it directly, the `cascade` seat sets a
+position from the task's `reference`, and a policy commands the attitude-rate level.

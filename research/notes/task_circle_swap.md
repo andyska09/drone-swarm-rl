@@ -1,118 +1,97 @@
-# Task circle swap — the setting
+# Task circle swap — the spec
 
-N drones on a circle, each flies to the point opposite its own start. Everyone
-crosses the middle, so nobody arrives without avoiding the others. Implemented in
-`swarm/envs/circle_swap.py`.
+N drones sit on a circle. Each drone flies to the point opposite its start. Every drone
+crosses the middle, so no drone arrives without avoiding the others. The code is
+[circle_swap.py](../../swarm/envs/circle_swap.py). The runs and the history of the design
+are in [experiments/circle_swap_log.md](experiments/circle_swap_log.md).
+
+## Presets
+
+| preset | drones | `n_neighbors` | start spacing |
+|---|---|---|---|
+| `pair` | 2, head-on | 6, so K = 1 | 6 m |
+| `circle8` | 8 | 7, so K = 7 | 2.30 m |
+
+The start spacing is `2r·sin(π/N)`, with `radius` r = 3 m. Every flight to the opposite
+point is 6 m long.
 
 ## Timing
 
-Sim at 200 Hz (`sim_dt = 0.005`), policy at 100 Hz (`steps_per_action = 2`).
-`max_steps = 700` → a 7 s episode; A→B keeps 500, this one leaves room for the
-detour around a neighbour.
+Physics at 200 Hz, policy at 100 Hz. `max_steps` = 700, a 7 s episode. The 7 s leave
+room for a detour around a neighbour.
 
-## Action — CTBR
+## Action
 
-Unchanged from A→B: `a ∈ [-1,1]⁴`, throttle plus body-rate references, only the
-rate rung of the cascade underneath.
+CTBR, as in every task.
 
 ## Observation
 
-- `own` (16) and `target` (6) — unchanged from A→B.
-- `neighbors` (N−1, 6): for each other drone `j`, `Rᵢᵀ(xⱼ - xᵢ)` and
-  `Rᵢᵀ(vⱼ - vᵢ)`, sorted nearest first (`lax.top_k`). Every drone sees every
-  other one, so the input width is tied to the swarm size — a policy trained at
-  N = 8 cannot fly N = 32 without retraining. Sorting puts the drone that can
-  kill you in slot 0 and makes the policy blind to drone identity.
-- No same-side flag: one team here, so the column would be a constant. Task 5
-  defines its own width.
-- `neighbor_mask` is all ones, always. See Termination.
+| block | width | content |
+|---|---|---|
+| `own` | 20 | `core.own_obs`: body-frame velocity, `R`, `ω`, height, and the distances to the arena walls |
+| `others` | K × 7 | the K nearest drones, nearest first: body-frame offset, body-frame velocity, and the role flag, always 1 here |
+| `others_mask` | K | all ones: K = N − 1 fills every seat, and the episode ends at the first death |
+| `target` | 6 | `core.target_obs` for the goal: `Rᵀ(g − x)` and `Rᵀ(−v)` |
+| `scene` | 21N | the critic's input: `core.scene_obs` and every drone's goal. The goal drives the reward, so the critic needs it |
+
+`K = min(n_neighbors, N − 1)`. In both presets, every drone sees every other drone.
 
 ## Reset
 
-Drone `i` at angle `2πi/N` on a circle of radius 3 m around `center = (0,0,3)`,
-all at the same height, exactly on the ring — no position noise. Its goal is the
-point opposite. Everything else as in A→B: velocity ±0.5 m/s, random tilt up to
-0.2 rad, `ω = 0`, motors at hover RPM.
+- Drone i starts at the angle `2πi/N` on a circle of radius 3 m around `center` =
+  (0, 0, 8). All drones start at the same height, exactly on the circle. The goal of a
+  drone is the point opposite its start.
+- `core.spawn` adds a velocity of up to 0.5 m/s on each axis and a tilt of up to 0.2 rad.
+  `ω` is 0, and the motors run at hover rpm.
+- **The starting heading is random**, uniform over the full circle, for each drone.
+  `target` is in the body frame. With one fixed heading, each drone gets its own fixed
+  goal bearing, and the shared network learns N separate tasks. The policy also sees the
+  same `R` in every episode, so it can rely on the absolute heading instead of the goal
+  bearing. A random heading stops both.
 
-**The starting heading is random**, uniform over the full circle, per drone.
+## Episode
 
-The first `circle8` run started every drone pointing along world x. `target` is in
-the body frame, so each drone then had its own fixed goal bearing and one shared
-network was learning N sub-tasks with one geometry each: end error ran from 0.156 m
-(goal straight backward) to 1.240 m (goal sideways), 8× across drones on identical
-physics.
+| event | ends the episode | how |
+|---|---|---|
+| a drone leaves the 32 × 32 × 16 m arena box, or goes below z = 0 | yes | `crash` for that drone, terminal for all |
+| a drone flips over, `R[2,2] < 0` | yes | `crash` for that drone, terminal for all |
+| two drones touch, 0.80 m between centres | yes | `crash` for both, terminal for all |
+| the position of a drone becomes non-finite | yes | `crash` for that drone, terminal for all |
+| `max_steps` = 700 | yes | truncation |
 
-Pointing every drone at the centre would also make the N tasks identical, but it
-hides a worse problem. `own` carries all nine entries of `R`, and with a fixed
-heading the policy saw `R ≈ I` in every episode it ever trained on. Re-evaluating
-that policy with the drones turned to face the centre collapsed it — episodes ended
-at step 75 with colliding pairs, 4.35 m of the 6 m leg still to go. It had keyed on
-the absolute orientation, not on the goal bearing. A random yaw is the only reset
-that makes that impossible.
-
-Start spacing is `2r·sin(π/N)`: 6 m at N = 2, 2.30 m at N = 8. The crossing is
-6 m, the same leg as the A→B `default` preset, which a trained policy flies to
-0.208 m.
-
-## Collisions
-
-The hitbox is a ball of radius `arm_length + prop_radius` = 0.40 m, so two drones
-touch at 0.80 m. That is the MRS rule
-(`multirotor_simulator.cpp:342`, `crit_dist = arm+prop+arm+prop`), and MRS ships
-`collisions: {enabled: true, crash: true}` — contact kills, the elastic rebounce
-is the off-by-default branch. There is no contact force in our plant; the
-distance test is the whole model.
-
-## Termination
-
-Any death ends the episode for every drone. Death is contact with another drone,
-ground contact (`z < 0`), leaving the 10 m arena, flipping (`R₂₂ < 0`), or a
-non-finite state. `max_steps` is truncation.
-
-Shared fate is Gavin & Bronz 2026's rule for inter-pursuer collisions, and it is
-what keeps the observation honest: no drone ever sees a dead drone, so the
-neighbour table is always full and no masked row needs an invented value. The
-alternative — a drone dies, the rest fly on — forces a fill value for the empty
-row, and zero there reads as "a drone at my exact position", the collision state.
-Huang et al. 2024 dodge the same problem from the other side: their collisions
-are elastic bounces, so nobody ever leaves.
+This is `core.is_dead`. Any death ends the episode for every drone. Contact at 0.80 m is
+the MRS rule (`multirotor_simulator.cpp:342`, `crit_dist = arm+prop+arm+prop`). MRS ships
+`collisions: {enabled: true, crash: true}`, so contact kills there too. The plant has no
+contact force. The distance test is the whole contact model.
 
 ## Reward
 
 ```
-r = -policy_dt · (1.0·‖g - x‖ + 0.1·‖ω‖ + 10.0·Σⱼ max(1 - dᵢⱼ/1.5, 0) - 1.0·R₃₃) - 25.0·N · died
+r = −policy_dt · (1.0·‖g − x‖ + 0.1·‖ω‖ + 10.0·Σⱼ max(1 − dᵢⱼ/1.5, 0) − 1.0·R[2,2])   while alive
+    − 25.0·N, once, when the drone dies
 ```
 
-`crash` is **25.0 per drone in the scene** — 50 at N = 2, 200 at N = 8 — not A→B's
-flat 10.0. Shaping accrues 700 times per episode: 6 m of error costs 42 over a full
-episode, and at N = 8 four neighbours held at 1.0 m add another 37. At 10.0 a drone
-that cannot reach its goal buys its way out by dying, and the first `pair` run did
-exactly that in 32 of 32 eval episodes. The penalty has to stay above the bill a
-living drone can run up, and that bill grows with the size of the crowd. Gavin &
-Bronz 2026 keep the same order: `λ_fail = 30.0` against `λ_dist = 0.001`.
+| `RewardConfig` | value | what |
+|---|---|---|
+| `distance` | 1.0 | per metre from the goal |
+| `spin` | 0.1 | per rad/s of `ω` |
+| `close` | 10.0 | near-miss cost, for each neighbour closer than `close_dist` = 1.5 m |
+| `orient` | 1.0 | pay for pointing up, `R[2,2]` |
+| `crash` | 25.0 | per drone in the scene: 50 at N = 2, 200 at N = 8 |
 
-The distance and spin terms are A→B's, untouched. The near-miss term is Huang et
-al. 2024's shape and weight — `quads_collision_smooth_max_penalty = 10.0` against
-`pos = 1.0` — summed over every neighbour, not just the nearest. 10.0 is both the
-code default and the value in `runs/quad_multi_mix_baseline.py`, their 8-drone room
-with no obstacles; the 4.0 in their obstacle run is for a different scene.
-
-`R₃₃` is Huang's `α_orient·R_i,33` at their weight of 1.0: pay for pointing up.
-It was added after the first `pair` run, where the best checkpoint flipped drone 1
-in 32 of 32 eval episodes — a flip only ever cost the one-off `-10.0`, and by then
-the episode was over anyway. Being a *positive* term it is also a small income for
-staying alive, which raises the distance at which suicide beats flying from 2.5 m
-to 3.5 m at step 307. It does not close that exit; only a bigger `crash` or a real
-per-step survival reward does.
-
-`close_dist = 1.5 m` is 1.9 hitbox widths and sits below the 2.30 m start spacing
-at N = 8, so the term is silent at reset and warns about 0.35 s before contact at
-a 2 m/s closing speed. Both drones in a collision pay the `-10.0`, because both
-are inside 0.80 m.
-
-## Presets
-
-- `pair` — N = 2, head-on across 6 m.
-- `circle8` — N = 8, 2.30 m apart at the start.
-
-N = 4 is skipped on purpose: 2 first to get the reward right cheaply, then 8.
+- `distance` and `spin` have the ratio of Huang et al. 2024: 0.1 against 1.0.
+- `close` has the shape and the weight of Huang et al. 2024:
+  `quads_collision_smooth_max_penalty = 10.0` against `pos = 1.0`. 10.0 is both their
+  code default and the value in `runs/quad_multi_mix_baseline.py`, their 8-drone room
+  with no obstacles. Their obstacle run uses 4.0, for a different scene. We sum the term
+  over every neighbour, not only the nearest.
+- `close_dist` = 1.5 m is 1.9 hitbox widths. It is below the 2.30 m start spacing at
+  N = 8, so the term is 0 at reset. At a closing speed of 2 m/s, it starts to cost about
+  0.35 s before contact.
+- `orient` is Huang's `α_orient·R_i,33` at their weight of 1.0. It is positive, so it is
+  also a small pay for staying alive.
+- `crash` grows with N. The costs add up over 700 steps. A drone that stays 6 m from its
+  goal pays 42 in a full episode, and at N = 8 four neighbours held at 1.0 m add 93 more.
+  If a crash costs less than that, a drone that cannot reach its goal gains by dying.
+  That cost grows with the number of drones, so `crash` grows too. Gavin & Bronz 2026
+  keep the same order: `λ_fail` = 30.0 against `λ_dist` = 0.001.

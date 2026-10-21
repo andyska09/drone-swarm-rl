@@ -5,8 +5,8 @@ only inside a range `d`, through several sensor types, and nothing is sent by ra
 must dodge at the last moment, then go back to the line. Encounters are random, so a blind
 rule such as "always fly a bit to the right" fails.
 
-The main review is [lit_review.md](lit_review.md). The head-on case with full sight
-already exists as the `pair` preset in [task_circle_swap.md](task_circle_swap.md).
+The main review is [pursuit_evasion.md](pursuit_evasion.md). The head-on case with full
+sight already exists as the `pair` preset in [task_circle_swap.md](../task_circle_swap.md).
 
 Each entry says what the paper does, then why it matters here. Lines marked **our
 arithmetic** or **our reading** are ours, not the paper's. "Title only" means only the
@@ -505,18 +505,3 @@ which Det-Fly and Schilling 2021 show is what makes real camera detection hard.
   Batra 2021, MACBF).
 - Onboard radar on small drones is new. Mandaokar 2026 call theirs the first such system
   for fast dodging.
-
-## 13. Open questions for the grilling
-
-1. Sensor shape: a forward cone, all around, or one of each?
-2. Which sensors, and what does each give: bearing, range, speed, full 3D?
-3. What `d` per sensor: near the section-1 numbers, or well above them?
-4. Who is the other drone: the same policy, a scripted drone that never dodges, or a mix?
-5. Are dodges up and down allowed?
-6. What is random, and over what range: sideways and vertical offset, approach angle,
-   speeds, meeting time, sensor noise, misses, false alarms, sensor dropout, course
-   changes of the other drone?
-7. Memory: a frame stack, a recurrent policy, or a tracker in front of the policy?
-8. A teacher-student setup, or RL directly on the sensor input?
-9. Which metrics: collisions, smallest gap, distance from the line, time lost, success?
-10. Which baseline sits in the other seat?

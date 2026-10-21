@@ -1,4 +1,4 @@
-# AMSPBH — pool training for chase
+# Task chase — training with pools
 
 How `chase` trains both sides against pools of frozen opponents. The method is AMSPBH
 from [Sánchez Roncero 2026](../papers/2506.02849v3.md): §III-C for the training and the
@@ -7,9 +7,11 @@ we follow Němeček's code,
 `research/code_sources/rl_tracking_eagle-cleaned-up-logic/examples/deep_eagle/examples/train_pipeline.py`.
 
 The env, the observation, the reward and the eval seats are in
-[task_chase.md](task_chase.md). This note replaces the duel's swap
-([experiments/chase_duel_log.md](experiments/chase_duel_log.md)). The seed opponents are
-in [baselines.md](baselines.md).
+[task_chase.md](task_chase.md). The seed opponents are in
+[task_chase_baselines.md](task_chase_baselines.md). The PPO settings that every task
+shares, the adaptive lr among them, are in [choices.md](choices.md), Learner. The runs
+and the history of this design are in
+[experiments/chase_pools_log.md](experiments/chase_pools_log.md).
 
 ## The run
 
@@ -18,14 +20,13 @@ python run/train.py --task chase --preset default --seed 0 \
     --set gamma=0.99 --set generations=13 --steps 1.4e9
 ```
 
-`generations` is a `TrainConfig` field. At 0, the default, every task trains as before,
-and in `chase` both sides learn at once. Above 0, `chase` trains with pools. Any other
+`generations` is a `TrainConfig` field. At 0, the default, no task uses pools, and in
+`chase` both sides learn at once. Above 0, `chase` trains with pools. Any other
 task raises an error.
 
 `--steps` is the whole run. It splits evenly into `2 × (generations + 1)` phases of
 `num_updates // phases` updates. The few updates left over are not run. The run above has
-28 phases of 190 updates, 49.8M steps each. At the duel's 36k steps/s it takes about 11 h,
-plus the Hedge passes.
+28 phases of 190 updates, 49.8M steps each.
 
 ## Generations
 
@@ -100,53 +101,10 @@ so its weight is 1.
 - The learner's critic sees the action the opponent really flies, also at the states it
   bootstraps from.
 
-## PPO
-
-| | value | from |
-|---|---|---|
-| lr | 2e-4 at the start, then adaptive | the paper |
-| adaptive lr | target KL 0.016. KL > 0.032: lr ÷ 1.5. 0 < KL < 0.008: lr × 1.5. The lr stays in [1e-5, 1e-2] | the paper's target, rsl_rl's rule |
-| entropy coefficient | 0.001 | the paper |
-| action std | one learned number per action, 1.0 at the start; the action is clipped to [−1, 1] | the paper is silent; the default of rsl_rl, rl_games and skrl, the PPO libraries of Isaac Lab |
-
-- After the forward pass of each minibatch, read the learner's mean `approx_kl`. It is a
-  sample estimate of KL(old ‖ new), the KL that rsl_rl computes in closed form.
-- The rule then sets the lr, and the step of that same minibatch uses it, as in rsl_rl.
-- Each role has its own lr in its own TrainState, so a frozen role keeps its lr.
-- `adaptive_lr=false` keeps the lr at `lr` for the whole run, as Němeček's fixed 3e-4.
-  `anneal_lr` is gone.
-
-Everything else stays ours: `[256, 256]`, tanh, 4 epochs × 32 minibatches, `vf_coef`
-0.5, 4096 envs, rollout 64, clip 0.2, GAE 0.95, grad clip 0.5, reward normalization, raw
-obs, and `gamma` 0.99 for chase.
-The reward, the observation, the CTDE critic, the 100 Hz policy, the arena, the net, the
-spawn, no domain randomization, and the final evals are ours too.
-
-## After a failure
-
-This changes the value target only. The reward does not change.
-
-| the episode ends with | the drone that failed | every other drone |
-|---|---|---|
-| a catch | — | no bootstrap |
-| a failure: `crash`, `OOB` or `collPP` | no bootstrap | bootstraps |
-| the step limit | — | bootstraps |
-
-A failure used to be terminal for every drone. So the pursuer gained when the evader
-failed, because it stopped paying the clock. At γ = 0.99 that is worth about 4, against a
-catch of 10. The paper also bootstraps past an out-of-bounds (§III-B).
-
-`chase.step` sets `info["truncated"]` whenever an episode ends without a catch, and
-`vecenv` bootstraps `alive × truncated`, so only the survivors bootstrap. The `timeout`
-outcome stays on the step limit.
-
-A NaN bootstrap value is dropped. A diverged opponent puts NaN into the survivor's
-observation.
-
 ## Where we differ from the paper
 
 Every difference from Roncero, and from Němeček, is in one table:
-[task_chase.md](task_chase.md), Against Roncero and Němeček.
+[literature/comparisons.md](literature/comparisons.md), Chase.
 
 ## The run folder
 
@@ -156,7 +114,7 @@ Every difference from Roncero, and from Němeček, is in one table:
 | `hedge.csv` | one row per generation, side and pool member: the win rate and the weight |
 | `pool/<role>_<generation>.pkl` | one policy per side per generation. Loads as a `--seat` source |
 | `latest.pkl` | the training state at the end of the last finished phase |
-| `checkpoints/` | numbered policy snapshots, as before |
+| `checkpoints/` | numbered policy snapshots, as in every run |
 
 `python run/train.py --resume runs/<run>` restarts the unfinished phase from its start,
 with the same pool.
@@ -172,7 +130,6 @@ Fig. 3.
 |---|---|
 | `swarm/learn/pool.py` | the generations, the phases, Hedge, the pool files, resume, and the paper's constants |
 | `swarm/learn/seats.py` | who flies a seat: a network, the cascade, FRPN, APF or a path. Eval and training share it |
-| `swarm/learn/ppo.py` | the adaptive lr, the opponent's rows in the rollout, the learner-only loss |
+| `swarm/learn/ppo.py` | the opponent's rows in the rollout, the learner-only loss |
 | `swarm/learn/vecenv.py` | a seed's start on reset, the learner-only reward scale |
-| `swarm/envs/chase.py` | `truncated` after a failure |
 | `run/matrix.py` | the win-rate matrix |

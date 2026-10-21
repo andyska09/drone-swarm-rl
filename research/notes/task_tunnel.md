@@ -2,14 +2,15 @@
 
 Two drones fly opposite ways along a bent square tube. Each follows its own line and
 must pass the other. The bends hide each drone from the other until late, so the
-dodge happens at the last moment. Built in [tunnel.py](../../swarm/envs/tunnel.py).
+dodge happens at the last moment. Built in [tunnel.py](../../swarm/envs/tunnel.py). The
+runs are in [experiments/tunnel_log.md](experiments/tunnel_log.md).
 
 **What the task is for.** The experiment variable is what a drone senses about the
 other drone. The first design is the exact relative position and velocity. Later
 designs change only that input, and each design is scored on the same tunnel. In a
 multi-drone pursuit game, what a drone sees of the others matters, and this task
 prepares that question. The literature is in
-[lit_review_tunnel.md](lit_review_tunnel.md).
+[literature/avoidance.md](literature/avoidance.md).
 
 ## The tunnel
 
@@ -247,4 +248,3 @@ draws those walls instead of the arena box.
 | the critic gets one `scene` for both drones, so it predicts their mean value | as in every task |
 | a line follower in some training episodes | only if the robustness test fails |
 | tests | none yet |
-| the first CPU run, `d_inf`, 3e7 steps, 1024 envs, starts in the legs only | flies the legs at 4.8 m/s and hits a wall at the first bend in 96% of the episodes, so it never reaches a meeting yet |

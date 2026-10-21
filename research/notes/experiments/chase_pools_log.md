@@ -1,15 +1,47 @@
-# Task 4 — pool runs, run log
+# Chase — pool runs, run log
 
-What each pool run was and what it scored. The task is in
-[task_chase.md](../task_chase.md), and the training in [AMSPBH.md](../AMSPBH.md).
+What each pool run was and what it scored, and why the setup changed. The task is in
+[task_chase.md](../task_chase.md), the training in
+[task_chase_training.md](../task_chase_training.md), and the hand-written opponents in
+[task_chase_baselines.md](../task_chase_baselines.md).
+
+## Design decisions
+
+- **Pools replace the duel's swap** ([chase_duel_log.md](chase_duel_log.md)).
+- **After a failure, the survivors bootstrap.** A failure used to be terminal for every
+  drone. So the pursuer gained when the evader failed, because it stopped paying the
+  clock. Now only a catch is terminal ([task_chase.md](../task_chase.md#termination)).
+- **The adaptive lr replaced `anneal_lr`.**
+- **One learned std per action, with a clip.** It replaced Gavin's per-state std with a
+  `tanh` squash after the pool run `chase_default_s0_20261011-103639_797201`. There the
+  pursuer's roll/pitch std fell from 0.43/0.33 to 0.06/0.16, and from generation 6 no
+  pursuer beat a new evader. A new std head on `pursuer_13` lifted its win rate against
+  `evader_07` from 0.20 to 0.95 in 50 updates.
+- **`ent_coef` is 0.001, not Gavin's 0.01.** Of fourteen `chase` runs, the two with
+  `ent_coef = 0.01` are the only two with a broken std: 112 to 60784 under the clip, 371
+  to 942 under the squash. The other twelve all end between 0.02 and 0.51, and the two
+  runs that solve `chase default` (`caught` 0.996 and 1.000) end at 0.08 to 0.13. The
+  squash run at 0.01 ended at `distance` 11.40 m, where an untrained policy starts,
+  against 0.5 to 4.0 m for every trained one. Why: [05-RL.md](../learning/05-RL.md).
+- **The path picks where the evader starts.** The first version put the path around the
+  evader's random spawn. Near a corner no full-size path fits there, so the path shrank:
+  15% of circles ended up below half size. A shrunk path kept its lap time, so it was
+  also slower.
+- **FRPN and APF fly under speed limits.** Without them FRPN reached about 19 m/s.
+  Against a hover evader it then caught 0.59 and left the arena 0.39. This was measured
+  before the path change.
+- **The `small` preset.** The saved policies of
+  `chase_default_s0_20261014-100847_9e4242`, put in a 24 × 24 × 16 m box, caught the
+  newest evader in 0.39 of the episodes, against 0.17 in 32 × 32 m. The evader left the
+  box no more often (0.03), and the pursuer left it twice as often (0.16, against 0.08).
 
 ## Pool training results
 
 Every run here trains both sides against pools of frozen opponents
-([AMSPBH.md](../AMSPBH.md)), with `generations=13` and `gamma=0.99`. So each run has
-14 generations, 0 to 13. `run/matrix.py` flies every pursuer against every evader,
-1024 episodes for each pair. It writes the pursuer's win rate to
-`runs/<run>/matrix.csv`.
+([task_chase_training.md](../task_chase_training.md)), with `generations=13` and
+`gamma=0.99`. So each run has 14 generations, 0 to 13. `run/matrix.py` flies every
+pursuer against every evader, 1024 episodes for each pair. It writes the pursuer's win
+rate to `runs/<run>/matrix.csv`.
 
 - The **lower triangle** is pursuer g against evaders 0 to g.
 - The **older evaders** are evaders 0 to g − 1. Pursuer g trains against all of them.
@@ -48,8 +80,7 @@ pursuer cannot see which evader of the pool it flies against.
 
 ### Against the papers
 
-How the three setups differ: [task_chase.md](../task_chase.md), Against Roncero and
-Němeček.
+How the three setups differ: [comparisons.md](../literature/comparisons.md), Chase.
 
 | | ours | [Roncero v3](../../papers/2506.02849v3.md) | [Němeček](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) |
 |---|---|---|---|
@@ -73,6 +104,42 @@ The mix of the generation-3 pursuer, ours under Hedge and Němeček's under p_ol
 | evader 1 | 23 % | 15 % |
 | evader 2 | 37 % | 15 % |
 | evader 3 | not in the pool | 25 % |
+
+## Baselines against each other
+
+`runs/chase_baselines/` (gitignored) holds every hand-written pursuer against every
+hand-written evader: 1024 episodes each, `EVAL_SEED = 1_000_000`, made after the path
+change. It was made at commit `06eac95`, in the `default` preset, when `hover`, `circle`
+and `figure8` were still sources of their own. `guidance.py` has changed only a name since
+then. `scratch/baseline_evals.py` rebuilds it in about a minute, but it still names the
+three shapes as sources, so it needs an update before it runs again. Rebuild it after
+any change to `guidance.py`.
+
+| pursuer | evader | caught | crash P | OOB P | timeout | time to catch |
+|---|---|---|---|---|---|---|
+| frpn | hover | 0.768 | 0.007 | 0.225 | 0.001 | 2.64 s |
+| frpn | circle | 0.855 | 0.013 | 0.114 | 0.018 | 3.51 s |
+| frpn | figure8 | 0.677 | 0.015 | 0.175 | 0.134 | 4.03 s |
+| frpn | apf | 0.794 | 0 | 0.062 | 0.144 | 5.23 s |
+| frpn | cascade | 0.762 | 0.017 | 0.216 | 0.006 | 3.16 s |
+| cascade | hover | 1.000 | 0 | 0 | 0 | 3.91 s |
+| cascade | circle | 0.100 | 0 | 0 | 0.900 | 2.95 s |
+| cascade | figure8 | 0.306 | 0 | 0 | 0.694 | 5.45 s |
+| cascade | apf | 0.421 | 0 | 0 | 0.579 | 4.94 s |
+| cascade | cascade | 0.997 | 0 | 0 | 0.003 | 4.83 s |
+
+No evader crashed or left the arena, and no `fail_both` happened, so the table leaves out
+those columns.
+
+- **FRPN catches 68–86% of every evader.** It loses by leaving the arena (6–23%), and
+  against the figure-eight and APF also by timeout (13–14%). FRPN knows nothing about
+  walls, and our walls end the episode. In Němeček's env only the ground ends it for the
+  pursuer (`environment.cpp:242`).
+- **The figure-eight is the hardest evader for FRPN to catch** (68%). Against APF, FRPN
+  takes the longest: 5.2 s on average.
+- **The cascade pursuer catches a target that stands still or moves slowly** (hover 100%,
+  cascade evader 99.7%). It fails against a moving path (circle 10%), because it chases
+  from behind.
 
 ## Open
 

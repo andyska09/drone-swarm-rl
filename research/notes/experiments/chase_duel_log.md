@@ -1,8 +1,8 @@
-# Task 4 — duel, run log
+# Chase — duel, run log
 
 What each duel run was and what it scored. The task is in
 [task_chase.md](../task_chase.md). These runs trained with the swap, which pool
-training ([AMSPBH.md](../AMSPBH.md)) replaced. The swap, its score `ρ` and what the
+training ([task_chase_training.md](../task_chase_training.md)) replaced. The swap, its score `ρ` and what the
 first run showed are at the end of this file, as these runs used them.
 
 All six: `chase`, preset `duel`, `gamma=0.99`, `seed=0`, 4e8 steps, 1525 updates.
@@ -243,7 +243,7 @@ down as the full 10 s ([Nv1](../../papers/2607.05939v1.md) §V-A,
 
 | setup | source | time | evader crash | ρP |
 |---|---|---|---|---|
-| task 3, our pursuer against the scripted evader | ours | 1.34 s | — | **0.87** |
+| our pursuer against a scripted evader on a fixed path | ours | 1.34 s | — | **0.87** |
 | 1v1, 8 × 8 × 5 arena, DRL vs DRL | 1v1 Table III | 3.78 s | 4.1% | **0.66** |
 | 3v1, evader boxed in 12 × 12 × 6, PFSP-CTBR vs PFSP | Nv1 Table II | 3.71 s | 0.3% | **0.63** |
 | 1v1, 40 × 40 × 14 arena, DRL vs DRL | 1v1 Table III | 6.62 s | 1.5% | **0.35** |

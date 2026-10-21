@@ -61,8 +61,8 @@ for approval before you touch another file. The only exception: I tell you to ru
 ## What this repository is
 
 A research workspace for multi-robot / swarm RL. Our own code lives in `swarm/`;
-`research/` holds notes, papers, and two vendored reference codebases we learn
-from but do not edit.
+`research/` holds notes, papers, and the reference codebases we learn from but do
+not edit.
 
 **The deliverable is a JAX multirotor simulator** fast enough to train swarm
 policies on thousands of parallel environments — written from scratch. What
@@ -70,18 +70,9 @@ it is for: **decentralized swarm interception** — N drones catching one agile
 evader, each seeing only itself, its neighbours and the target, with no
 communication between drones.
 
-Two tasks run today: `circle_swap` (N drones on a circle swap to the opposite side
-without touching) and `chase` (pursuers catch one evader with a net; its `default`
-preset is the duel, one against one).
-
 The work cycle for a task: write it in `swarm/envs/`, fly it with the cascade to
 prove it is possible at all, train a policy with `run/train.py`, score both in the
 same seat with `run/eval.py`, then watch it in `run/replay.py`.
-
-The task ladder, the platform backlog, what is done, and every pass/fail gate
-live in [research/notes/goals.local.md](research/notes/goals.local.md)
-(gitignored, so a fresh clone does not have it). **Read it before planning work.**
-Do not copy it here — this file goes stale, that one does not.
 
 Physics and control-stack reference: [ctu-mrs/mrs_multirotor_simulator](https://github.com/ctu-mrs/mrs_multirotor_simulator)
 — `multirotor_model.hpp` (state + ODE) and `uav_system.hpp` (the six-controller
@@ -112,10 +103,9 @@ bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 python3 tools/metacentrum/submit.py --walltime 1:00:00 -- --task chase --preset default --set generations=13 --steps 1.4e9  # on MetaCentrum: tools/metacentrum/metacentrum.md. 1 h is enough for a 1.4e9 pool run: always give --walltime 1:00:00
 ```
 
-Presets: `circle_swap` has `pair` and `circle8`; `chase` has `default`, `open`, `small` and `nemecek`. `train.py`
-stops unless it gets both `--task` and `--preset`. A preset picks env
-values only — hyperparameters live in `learn/config.py` and are overridden with
-`--set`.
+Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets both
+`--task` and `--preset`. A preset picks env values only — hyperparameters live in
+`learn/config.py` and are overridden with `--set`.
 
 - `sim/dynamics.py` — `Params`/`State` as `flax.struct.dataclass`,
   `step(state, throttle, params, dt)` with `throttle ∈ [0,1]⁴`. RK4 over the 18
@@ -127,7 +117,7 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - `sim/guidance.py` — the hand-written opponents for chase: FRPN, APF and the flown
   paths. Each one gives a world acceleration, and `learn/seats.py` turns it into a
   CTBR action.
-- `envs/` — one file per task (`circle_swap.py`, `chase.py`), each with
+- `envs/` — one file per task, each with
   `reset`, `step`, `get_obs`, `reference`, `compute_reward`, `RewardConfig`,
   `EnvParams` and `PRESETS`. Plain functions, no gymnax; auto-reset belongs to the
   trainer. `__init__.py` holds the shared `Obs` layout, `flat`, `take`,
@@ -156,15 +146,15 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
   with a one-off crash penalty. `circle_swap` adds a proximity cost and an upright
   term. **`chase` keeps three words apart and never mixes them**: `fail` is leaving
-  the box through the ground, a wall or the ceiling (in the `open` preset only the
+  the box through the ground, a wall or the ceiling (in a preset without walls only the
   ground, and the evader pays `outside` per second instead), `collPP` is a pursuer hitting a
   pursuer (both end the episode), and `collPE` is a pursuer hitting the evader, which
   costs per step and does not end it. `collPP` and `collPE` are Gavin's names, used
   for the `RewardConfig` field, the function and the `info` key alike. The outcomes
   split a `fail` into `crash` (the ground, or a broken state) and `OOB` (a wall or
   the ceiling). **This reward parks the drone 0.2-0.6 m short of the goal** — the open
-  problem, with the fixes other papers use, is at the end of
-  [research/notes/archive/task_a_to_b.md](research/notes/archive/task_a_to_b.md).
+  problem, with the fixes other papers use, is in
+  [research/notes/literature/reward_terms.md](research/notes/literature/reward_terms.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `learn/ppo.py` turns each distinct name in it into its own set of weights.
@@ -179,7 +169,8 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - **Every role is its own learner.** One `TrainState` per role, so gradient
   clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
   mix two sides of a game. `cfg.generations` above 0 trains chase with pools, one side
-  at a time — the design is in [research/notes/AMSPBH.md](research/notes/AMSPBH.md).
+  at a time — the design is in
+  [research/notes/task_chase_training.md](research/notes/task_chase_training.md).
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
@@ -196,8 +187,8 @@ values only — hyperparameters live in `learn/config.py` and are overridden wit
 - Every design decision for the simulator and for what all tasks share, every
   deviation, and every "revisit later" lives in
   [research/notes/choices.md](research/notes/choices.md). A task's own settings live
-  in its task note, and pool training in `AMSPBH.md`. **Read it before changing the
-  physics, and update it when a decision changes.**
+  in its task note, and pool training in `task_chase_training.md`. **Read it before
+  changing the physics, and update it when a decision changes.**
 - `conftest.py` turns on `jax_enable_x64` because the C++
 is double precision.
 - One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
@@ -220,18 +211,16 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 
 ## research/ and the reference code
 
-- `notes/` — working notes, Czech is fine. `goals.local.md` (GITIGNORED) holds
-  the task ladder and the gates. `choices.md` holds the shared design decisions.
-  `task_<name>.md` is one note per task. `archive/` holds the notes about removed
-  code; `archive/task_a_to_b.md` ends with the open reward question, with the reward
-  and observation terms every reference paper uses. `comparisons.md` puts our
-  observation and reward beside the reference works. `lit_review.md` sorts the
-  papers by milestone, and `lit_review_tunnel.md` is the reading list for the tunnel
-  task. `learning/` are explainers, `experiments/` holds one run log per training
-  setup.
+- `notes/` — working notes, Czech is fine. `choices.md` holds the shared design
+  decisions. `task_<name>.md` is the spec of one task, and `chase` also has
+  `task_chase_training.md` and `task_chase_baselines.md`. `experiments/` holds the run
+  logs and the history of the decisions. `literature/` holds the literature reviews
+  and `comparisons.md`, which puts our setup beside the reference works. `learning/`
+  holds explainers of the theory, and `archive/` the notes about removed code.
 - `code_sources/` (GITIGNORED) — reference code, **not ours**:
   `mrs_multirotor_simulator/` (the C++ we reimplement), `PPO_example/` (the
-  supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone).
+  supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone),
+  `rl_tracking_eagle-cleaned-up-logic/` (Němeček's pursuit-evasion code).
 - **Papers: grep the transcript, don't open the PDF.** Every PDF has a
   `pdftotext -layout` transcript as a sibling `.md`; open the PDF only for
   figures. [bibliography_index.md](research/papers/bibliography_index.md) is the

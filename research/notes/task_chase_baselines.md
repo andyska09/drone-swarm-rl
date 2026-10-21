@@ -1,4 +1,4 @@
-# Baselines — the hand-written opponents for chase
+# Task chase — the hand-written opponents
 
 Fixed opponents for eval. A learned pursuer or evader from a run flies against them:
 
@@ -7,10 +7,12 @@ python run/eval.py runs/<run> --seat evader apf      # the run's pursuer against
 python run/eval.py runs/<run> --seat pursuer frpn    # the run's evader against FRPN
 ```
 
-FRPN and `paths` also start the two training pools ([AMSPBH.md](AMSPBH.md)). APF and the
-cascade never enter training. The code is in [guidance.py](../../swarm/sim/guidance.py)
-(the laws and the paths) and in `frpn_policy`, `apf_policy` and `paths_policy` in
-[seats.py](../../swarm/learn/seats.py).
+FRPN and `paths` also start the two training pools
+([task_chase_training.md](task_chase_training.md)). APF and the cascade never enter
+training. The code is in [guidance.py](../../swarm/sim/guidance.py) (the laws and the
+paths) and in `frpn_policy`, `apf_policy` and `paths_policy` in
+[seats.py](../../swarm/learn/seats.py). What they score against each other, and the
+history of their design: [experiments/chase_pools_log.md](experiments/chase_pools_log.md).
 
 ## The lineup
 
@@ -20,21 +22,15 @@ pursuer, an APF evader and three path evaders. FRPN and APF use Němeček's code
 publish all of his. Němeček flew our drone: the X500, with the same mass, `kf`, `km` and
 RPM range.
 
-| `--seat` source | role | what flies |
-|---|---|---|
-| `cascade` | any | the MRS cascade, all six rungs, to `reference` |
-| `frpn` | pursuer | FRPN, Pliska's guidance law |
-| `apf` | evader | APF, pushed away from the pursuers and the walls |
-| `paths` | evader | one of three shapes, drawn for each episode with equal chance |
-
-The three shapes of `paths`:
+The `--seat` sources and their roles are in [task_chase.md](task_chase.md), Seats and
+evals. The three shapes of `paths`, drawn for each episode with equal chance:
 
 - `hover` holds one point.
 - `circle` flies a circle, stretched into a mild ellipse.
 - `figure8` flies a figure-eight.
 
-`SOURCES` in `seats.py` holds the table. A source in the wrong role raises an error. The
-three shapes are not sources of their own.
+`SOURCES` in `seats.py` lists the sources. A source in the wrong role raises an error.
+The three shapes are not sources of their own.
 
 ## How a baseline flies
 
@@ -75,9 +71,7 @@ onto the evader. As an evader it flies to random waypoints.
 - **It aims its net centre at the evader**, not its body: `dp = chase.reference − x`.
 - **Roncero's FRPN is different.** Its output is a velocity command, clipped to the top
   speed, with `G = 5.0` and `W = 0.20`. A cascaded PID flies it.
-- **Without the limits it leaves the arena.** It reaches about 19 m/s. Against a hover
-  evader it then caught 0.59 and left the arena 0.39. This was measured before the path
-  change below.
+- **Without the limits it leaves the arena.** It reaches about 19 m/s.
 
 ## APF
 
@@ -140,9 +134,8 @@ figure-eight it is 7.7 m/s² (median), and 20.0 m/s² at most. The drone gives a
 ### Why the path picks the start
 
 The env spawns the evader at a random spot. Near a corner, no full-size path through that
-spot fits. The first version shrank such paths: 15% of circles ended up below half size.
-A shrunk path kept its lap time, so it was also slower. So now the path picks where the
-evader starts, not the spawn.
+spot fits, and a shrunk path keeps its lap time, so it is also slower. So the path picks
+where the evader starts, not the spawn.
 
 Němeček does the same. His evader starts at row 0 of its trajectory file
 (`target_uav.cpp:57`).
@@ -162,46 +155,7 @@ From Němeček we take only one thing: the path decides where the evader starts.
 - Roncero's code is not public. `KTH-RPL/AMSPB_PEG`, the repo that his paper page links,
   gave 404 on 2026-10-10.
 
-## Outcomes
-
-Every episode ends with exactly one of seven outcomes. They and the other chase metrics
-are in [task_chase.md](task_chase.md), Metrics.
-
-## Results
-
-`runs/chase_baselines/` (gitignored) holds every hand-written pursuer against every
-hand-written evader: 1024 episodes each, `EVAL_SEED = 1_000_000`, made after the path
-change. It was made at commit `06eac95`, in the `default` preset, when `hover`, `circle`
-and `figure8` were still sources of their own. `guidance.py` has changed only a name since
-then. `scratch/baseline_evals.py` rebuilds it in about a minute, but it still names the
-three shapes as sources, so it needs an update before it runs again. Rebuild it after
-any change to `guidance.py`.
-
-| pursuer | evader | caught | crash P | OOB P | timeout | time to catch |
-|---|---|---|---|---|---|---|
-| frpn | hover | 0.768 | 0.007 | 0.225 | 0.001 | 2.64 s |
-| frpn | circle | 0.855 | 0.013 | 0.114 | 0.018 | 3.51 s |
-| frpn | figure8 | 0.677 | 0.015 | 0.175 | 0.134 | 4.03 s |
-| frpn | apf | 0.794 | 0 | 0.062 | 0.144 | 5.23 s |
-| frpn | cascade | 0.762 | 0.017 | 0.216 | 0.006 | 3.16 s |
-| cascade | hover | 1.000 | 0 | 0 | 0 | 3.91 s |
-| cascade | circle | 0.100 | 0 | 0 | 0.900 | 2.95 s |
-| cascade | figure8 | 0.306 | 0 | 0 | 0.694 | 5.45 s |
-| cascade | apf | 0.421 | 0 | 0 | 0.579 | 4.94 s |
-| cascade | cascade | 0.997 | 0 | 0 | 0.003 | 4.83 s |
-
-No evader crashed or left the arena, and no `fail_both` happened, so the table leaves out
-those columns.
-
-- **FRPN catches 68–86% of every evader.** It loses by leaving the arena (6–23%), and
-  against the figure-eight and APF also by timeout (13–14%). FRPN knows nothing about
-  walls, and our walls end the episode. In Němeček's env only the ground ends it for the
-  pursuer (`environment.cpp:242`).
-- **The figure-eight is the hardest evader for FRPN to catch** (68%). Against APF, FRPN
-  takes the longest: 5.2 s on average.
-- **The cascade pursuer catches a target that stands still or moves slowly** (hover 100%,
-  cascade evader 99.7%). It fails against a moving path (circle 10%), because it chases
-  from behind.
+## Tests
 
 `tests/test_eval.py` checks three things. The seven outcomes sum to 1 (FRPN against APF,
 64 episodes). FRPN catches the `paths` evader in more than 60% of 64 episodes. The

@@ -4,7 +4,8 @@ Decisions for the simulator and for what every task shares: the env contract, th
 learner, eval and replay. Also every place we differ from the MRS C++ reference
 (`research/code_sources/mrs_multirotor_simulator`). One line of reasoning each. A
 task's own settings live in its `task_<name>.md`, and pool training lives in
-[AMSPBH.md](AMSPBH.md). Update this file when a decision changes.
+[task_chase_training.md](task_chase_training.md). The runs behind a decision are in
+`experiments/`. Update this file when a decision changes.
 
 ## The one deviation from the C++
 
@@ -242,44 +243,31 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
   `init_std = 1.0`. The log-prob and the entropy are the plain Gaussian's, in closed
   form. The rollout keeps the draw before the clip, because the log-prob needs it.
   AMSPBH does not state its std. This form is the default of rsl_rl, rl_games and
-  skrl, the PPO libraries of Isaac Lab, and of Němeček's SB3. It replaced Gavin's
-  per-state std with a `tanh` squash after the pool run
-  `chase_default_s0_20261011-103639_797201`: the pursuer's roll/pitch std fell from
-  0.43/0.33 to 0.06/0.16, and from generation 6 no pursuer beat a new evader. A new
-  std head on `pursuer_13` lifted its win rate against `evader_07` from 0.20 to 0.95
-  in 50 updates. A per-state std can shrink just where precision pays, near the
-  evader, and that is where the pursuer must find its next move.
-- **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** Fourteen `chase` runs,
-  and the two with `ent_coef = 0.01` are the only two with a broken std: 112 to
-  60784 under the clip, 371 to 942 under the squash. The other twelve all end
-  between 0.02 and 0.51, and the two runs that solve `chase default` (`caught`
-  0.996 and 1.000) end at 0.08 to 0.13. PPO shrinks the std by itself once
-  precision pays — that is `E[A(u²−1)] < 0` — and the bonus fights exactly that.
-  At 0.001 the pull on the mean in the next point is ten times weaker, so it
-  crosses the policy's own pull near `s = 150`, not `s = 15`.
-- **Why the bonus breaks each design, which is not the same reason.** Write `H` for
-  the entropy, `m` for the mean, `s` for the std, `u = (z−m)/s`. Under the clip,
-  `∂H/∂log s = +1`, a constant that never decays, so noise pays for ever and
-  `∂H/∂m = 0` leaves the mean free to grow with it — the old runs kept `m/s ≈ 1`
-  and still flew. Under the squash, `∂H/∂log s ≈ 1 − 1.6s` flips sign above
-  `s ≈ 0.63`, which is the fix, but a second term appears: `∂H/∂m ≈ −2·sign(m)`,
-  a constant pull of the mean to zero, worth `0.02` at `ent_coef = 0.01` against
-  the policy's own `≈ ρ/s`. They cross near `s = 15`. Past that the entropy term
-  owns the mean, `m/s → 0`, and because the rate loop averages the command the
-  drone flies `E[tanh z] ≈ 0.8·m/s ≈ 0`. That run ended at `distance` 11.40 m,
-  where an untrained policy starts, against 0.5 to 4.0 m for every trained one.
-- **`gamma` defaults to 0.998**, a 5 s horizon at `policy_dt = 0.01 s`. Chase sets
-  0.99 ([task_chase.md](task_chase.md), Training). Why 0.998:
-  [archive/task_a_to_b.md](archive/task_a_to_b.md).
-- The lr, the adaptive lr and its rule come from AMSPBH: [AMSPBH.md](AMSPBH.md), PPO.
+  skrl, the PPO libraries of Isaac Lab, and of Němeček's SB3. A per-state std can
+  shrink just where precision pays, near the evader, and that is where the pursuer
+  must find its next move. The runs behind it:
+  [experiments/chase_pools_log.md](experiments/chase_pools_log.md).
+- **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** PPO
+  shrinks the std by itself once precision pays, and the bonus fights exactly that. At
+  0.01 the std breaks. The math: [learning/05-RL.md](learning/05-RL.md). The runs:
+  [experiments/chase_pools_log.md](experiments/chase_pools_log.md).
+- **`gamma` defaults to 0.998**, a 5 s horizon at `policy_dt = 0.01 s`. A 2 s horizon
+  (0.995) was too short for a 6.9 m flight that takes 3 to 4 s. Chase sets 0.99
+  ([task_chase.md](task_chase.md), Training).
+- **The lr starts at 2e-4 and then follows the KL**, AMSPBH's lr and target with
+  rsl_rl's rule. After the forward pass of each minibatch, the learner's mean
+  `approx_kl` sets the lr, and the step of that same minibatch uses it, as in rsl_rl.
+  `approx_kl` is a sample estimate of KL(old ‖ new), the KL that rsl_rl computes in
+  closed form. The target is 0.016. KL > 0.032: lr ÷ 1.5. 0 < KL < 0.008: lr × 1.5. The
+  lr stays in [1e-5, 1e-2]. Each role has its own lr in its own TrainState, so a
+  frozen role keeps its lr. `adaptive_lr=false` keeps the lr at `lr` for the whole run.
 
 ## Evaluation and replay
 
 - **One number per metric, and the task picks which.** `info` carries two dicts:
   `end` is read at the step the episode ended, `step` is averaged over the steps.
-  Reporting both flavours of every key, as evaluation used to, gives two columns
-  where only one is meaningful and no name saying which — `rho_mean` was a
-  per-episode score divided by episode length. A NaN in `end` means the episode
+  Reporting both flavours of every key gives two columns where only one is
+  meaningful, and no name says which. A NaN in `end` means the episode
   has no value for that metric, and it is dropped from the average instead of
   counted as a zero. Task-specific pass thresholds belong in tests and notes.
 - **Every metric with a drone axis is reported per role**, as `pursuer_return`;
@@ -324,4 +312,5 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
   is not just the rewrite: a quaternion model cannot be cross-checked against the
   C++ at all.
 - Euler instead of RK4, if RK4 turns out to be more than ~5% of step time.
-- Attitude rate normalization, in future move it to newtons so it drone body doesnt matter.
+- Collective thrust in newtons instead of the normalized throttle in the CTBR action,
+  so the airframe does not matter.

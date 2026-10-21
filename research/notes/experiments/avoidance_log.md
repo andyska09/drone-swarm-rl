@@ -5,17 +5,10 @@ The runs of the avoidance task, their results, and why the spec changed. The spe
 
 ## Why the task exists, 2026-10-20
 
-The task replaces the tunnel ([task_tunnel.md](../task_tunnel.md)). We trained three
-tunnel runs: `d_inf`, 1e9 steps, seeds 0–2 (`7c1d6b`, `e0b72d`, `c027a4`).
-
-- Training stopped improving after about 4e8 steps. It reached 35% success, 56% wall
-  and 9% contact.
-- In eval from the far ends of the legs, success was 0–0.5% and wall 93–100%. The drones
-  sped up to 4.5–6 m/s and hit the first bend.
-- In seed 1, 61% of the wall deaths came less than 1.5 m from a bend.
-
-So the score mixed two skills: flying the tube and dodging. In open space there are no
-walls, and only the sight range sets the warning time.
+The task replaces the tunnel ([task_tunnel.md](../task_tunnel.md)). The tunnel runs hit
+the walls, mostly at the first bend, before any meeting ([tunnel_log.md](tunnel_log.md)).
+So the tunnel score mixed two skills: flying the tube and dodging. In open space there
+are no walls, and only the sight range sets the warning time.
 
 ## Design decisions, 2026-10-20
 
@@ -67,5 +60,42 @@ walls, and only the sight range sets the warning time.
 - We checked the rule. Two line followers are never lost, and they still touch in 78.8%
   of the episodes.
 
-Next: train `d_inf` with the rule, 1e9 steps, seeds 0–2. If the spread blows up again,
-try `--set ent_coef=0`.
+## Runs with the 2 m rule, 2026-10-20
+
+`d_inf`, 1e9 steps, commit `a6907c4`, seeds 0–1. Eval: 1024 episodes, mean actions.
+"Best" is the update with the highest training success.
+
+| run | seed | checkpoint | success | contact | lost | distance to the moving point | against the line follower: success | contact |
+|---|---|---|---|---|---|---|---|---|
+| `70245b` | 0 | 1000, best | 98.9% | 1.1% | 0% | 0.66 m | 72.8% | 27.2% |
+| `70245b` | 0 | last | 98.7% | 0.9% | 0.4% | 0.81 m | 74.6% | 25.4% |
+| `0248af` | 1 | 1800, best | 85.6% | 5.1% | 9.3% | 1.08 m | 93.0% | 6.3% |
+| `0248af` | 1 | last | 67.8% | 4.2% | 28.0% | 0.74 m | 58.3% | 26.0% |
+
+- **The rule worked.** The drones now stay near their moving points: 0.7–1.1 m on
+  average, against 3.3–4.5 m before. Training success rose to 97% in both seeds. Seed 0
+  got there by update 600, seed 1 by update 1600.
+- **The drones learned a habit, not a dodge.** Near the meeting, both drones swerve
+  0.6–0.9 m to their own left. They do it in every kind of meeting, also when the lines
+  miss by 0.8–1 m and no dodge is needed. In self-play this works, because both drones
+  swerve the same way.
+- **The line follower test catches the habit.** Seed 0 at update 1000, against the line
+  follower:
+
+  | the follower's line | contact |
+  |---|---|
+  | on the left | 56% |
+  | on the right | 1.9% |
+  | no dodge needed | 33% |
+
+  The swerve moves the drone into a follower that would have missed it.
+- Seed 1 also drops 1.3 m below its moving point near the meeting, and it stays low
+  after it. So it passes under the follower, and its follower test at update 1800 is
+  better: 6.3% contact. This is a second habit, not a dodge.
+- **The spread blew up again.** The entropy rose from 5.6 to 21–26. Training success
+  fell from 97% to 70% in seed 0 and to 84% in seed 1. At the end, the mean rate actions
+  sat at the clip in 97–100% of the steps. This time the lr stayed at 1e-3 to 4e-3, under
+  its cap. So the cap is not the cause.
+
+Next: not decided. The options are a line follower in some training episodes, against
+the habit, and `--set ent_coef=0`, against the spread.

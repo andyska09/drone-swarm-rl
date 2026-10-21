@@ -8,7 +8,8 @@ in [experiments/avoidance_log.md](experiments/avoidance_log.md).
 **What the task is for.** The task tests what a drone must sense about the other drone.
 The first design gives the exact position and velocity of the other drone, but only
 inside a sight range `d`. Later designs change only this input. We score each design on
-the same encounters. The literature is in [lit_review_tunnel.md](lit_review_tunnel.md).
+the same encounters. The literature is in
+[literature/avoidance.md](literature/avoidance.md).
 
 ## The encounter
 
@@ -54,7 +55,7 @@ value in the range is equally likely.
   sight.
 
 The sight that a head-on dodge needs, at 3 m/s each and a sideways push of 10 m/s²
-([lit_review_tunnel.md](lit_review_tunnel.md), section 1):
+([literature/avoidance.md](literature/avoidance.md), section 1):
 
 | who dodges | sight needed |
 |---|---|

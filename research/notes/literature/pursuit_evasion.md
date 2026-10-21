@@ -2,7 +2,7 @@
 
 Three layers, narrowing. Each entry: what it actually does, and why it matters
 here. Papers we hold PDFs for are also in
-[bibliography_index.md](../papers/bibliography_index.md).
+[bibliography_index.md](../../papers/bibliography_index.md).
 
 ---
 
@@ -57,7 +57,7 @@ here. Papers we hold PDFs for are also in
   for Agile Quadrotor Flight*** — [arXiv:2202.10796](https://arxiv.org/abs/2202.10796)
   Head-to-head on identical observations: linear velocity vs **CTBR** vs
   single-rotor thrusts. CTBR wins on the sim-to-real tradeoff. **This is why
-  M3's action space is collective thrust + body rates** — it justifies inserting
+  our action is collective thrust + body rates** — it justifies inserting
   the policy at the rate controller rather than at the motors.
 - **SimpleFlight 2024, *What Matters in Learning a Zero-Shot Sim-to-Real RL
   Policy for Quadrotor Control?*** — [arXiv:2412.11764](https://arxiv.org/abs/2412.11764)
@@ -158,9 +158,9 @@ last ~2 years, small and directly relevant).
 - **Yu et al. 2021, *The Surprising Effectiveness of PPO in Cooperative
   Multi-Agent Games* (MAPPO)** — [arXiv:2103.01955](https://arxiv.org/abs/2103.01955)
   Shared-parameter PPO with a centralised critic beats off-policy MARL on the
-  standard benchmarks with almost no tuning. Practical consequence: **the PPO in
-  `PPO_example` is already 90% of a MARL algorithm** — vmap over agents, feed
-  the critic global state.
+  standard benchmarks with almost no tuning. Practical consequence: **plain PPO is
+  already 90% of a MARL algorithm** — vmap over agents, feed the critic global
+  state.
 - **Baker et al. 2019, *Emergent Tool Use From Multi-Agent Autocurricula*** —
   [arXiv:1909.07528](https://arxiv.org/abs/1909.07528)
   Hide-and-seek. Six rounds of strategy/counter-strategy emerge from
@@ -170,7 +170,7 @@ last ~2 years, small and directly relevant).
   Using End-to-end DRL*** — [arXiv:2309.13285](https://arxiv.org/abs/2309.13285),
   PDF in `research/papers/`
   The paper behind `quad-swarm-rl`. **Attention over the K nearest neighbours**
-  — the mechanism M6 points at — plus SDF obstacles and collision-episode
+  — the neighbour encoder we want — plus SDF obstacles and collision-episode
   replay. Also the source of the cost-style reward shaping we copy.
 
 ### 3.2 Cooperative capture
@@ -195,7 +195,7 @@ last ~2 years, small and directly relevant).
   MARL 2026** — [arXiv:2607.05939](https://arxiv.org/abs/2607.05939)
   Team of pursuers vs learned evader, MAPPO + **Prioritized Fictitious
   Self-Play**, CTBR. The multi-agent sequel to arXiv:2603.16279 and the most
-  complete statement of the end target: our M5/M6 plus a learned opponent.
+  complete statement of our end goal: many pursuers against a learned evader.
 - **Decentralized Consensus Inference-based Hierarchical RL for
   Multi-Constrained UAV Pursuit-Evasion 2025** —
   [arXiv:2506.18126](https://arxiv.org/abs/2506.18126)
@@ -258,11 +258,11 @@ shaping its shape:
 
 ## 6. Reading order for this repo
 
-| milestone | read |
+| topic | read |
 |---|---|
-| M3 obs/action/reward | 2202.10796, 2412.11764 |
-| M3/M4 training setup | `PPO_example`, 2311.13081, 2504.15129 |
-| M5 vmap over agents | 2103.01955, Crazyflow (2606.01478) |
-| M6 attention encoder | 2309.13285, TERL 2503.12395 |
+| observation, action, reward | 2202.10796, 2412.11764 |
+| training setup | `PPO_example`, 2311.13081, 2504.15129 |
+| many drones in one env | 2103.01955, Crazyflow (2606.01478) |
+| attention encoder | 2309.13285, TERL 2503.12395 |
 | PE task design | 2506.02849, 2603.16279, 2405.13542 |
 | multi-agent PE | 2607.05939, 2409.15866, 2312.12255 |
