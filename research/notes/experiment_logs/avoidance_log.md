@@ -174,11 +174,83 @@ These reasons moved here from the spec.
 - The straight-flying test drone is there to find a half dodge. The cascade in both seats
   is not this test (see the redesign above).
 
+## Debug runs, 2026-10-21 to 2026-10-25
+
+15 runs on MetaCentrum, `--set ent_coef=0`, 1e9 steps (3814 updates of 4096 envs × 64
+steps), 11–23 min each. `d_inf` s0 ran on `514dc38`, the rest on `c080ac8`. `swarm/` and
+`run/` are the same in both. Eval: 1024 episodes, mean actions, the 20 m tube, the latest
+checkpoint. For the s1 runs of `d6` to `d0`, the eval success comes from the probe
+`scratch/avoidance_habits.py`, which flies the same 1024 episodes. "Training success" is
+the mean of the last 300 updates.
+
+| preset | seed | run | tube reached 20 m after update | training success | eval success | habit |
+|---|---|---|---|---|---|---|
+| `d_inf` | 0 | `87c03a` | 768 | 91.9% | 93.1% | wait |
+| `d_inf` | 1 | `ad2036` | never, 10 m from update 319 | 0% | 0% | hover |
+| `d_inf` | 2 | `13b825` | never, 10 m from update 162 | 0% | 0% | hover |
+| `d_inf` | 3 | `785eb3` | 1112 | 94.7% | 95.5% | wait |
+| `d6` | 0 | `bac8fc` | 765 | 98.7% | 99.3% | lanes, right |
+| `d6` | 1 | `96c3a1` | 460 | 98.5% | 98.9% | lanes, left |
+| `d5` | 0 | `c74fd1` | never, 10 m from update 286 | 0% | 0% | hover |
+| `d5` | 1 | `4d2151` | 1000 | 98.6% | 97.5% | lanes, left |
+| `d4` | 0 | `eab9e9` | 480 | 99.2% | 99.3% | lanes, left |
+| `d4` | 1 | `fd3d1a` | 287 | 99.0% | 98.7% | lanes, right |
+| `d3` | 0 | `7b7078` | 792 | 97.9% | 98.7% | lanes, left |
+| `d3` | 1 | `134884` | 617 | 98.0% | 99.0% | lanes, left |
+| `d0` | 0 | `874a5c` | 631 | 84.2% | 85.0% | lanes, right. In 51% of the episodes, one drone also holds back |
+| `d0` | 1 | `56c2bb` | 530 | 94.2% | 93.7% | lanes, left |
+
+"Lanes, left" means that each drone keeps to its own left side of the tube.
+
+- **No run learned a dodge.** The policy learned three habits: lanes, wait and hover.
+- **Lanes, 9 runs.** Each run uses the same side in 99–100% of its episodes: 6 runs keep
+  left, 3 keep right. In 8 of these runs, both drones fly at about 7–12 m/s and pass at
+  the same time, near the middle of the tube (median $\lvert \tilde x \rvert$ 0.3–0.9 m at
+  the closest approach, median arrival gap 0.04–0.16 s). At the closest approach, they
+  are 1.2–1.35 m apart across the tube. `d0` s0 passes at median
+  $\lvert \tilde x \rvert$ 5.6 m, with a median arrival gap of 0.84 s.
+- **The blind drones succeed in 85% and 94% of the episodes.** Lanes need no sight. So the
+  success rate barely depends on `d`, and the task does not measure the sensor now.
+- **Wait, `d_inf` s0 and s3.** In all successful episodes, the two arrivals are more than
+  0.8 s apart (median 1.55 s and 1.46 s). One drone hovers (median speed 0.72 and
+  0.89 m/s) until the other drone arrives. The first drone always passes over the waiting
+  drone, at the waiting drone's end of the tube (median $\lvert \tilde x \rvert$ 8.3 and
+  8.1 m). Which drone waits is random: drone 0 goes first in 50% and 51% of the episodes.
+  The drone that starts lower goes first in 63%.
+- **The wait pays because sight and contact skip an arrived drone.** The second drone then
+  flies an empty tube. 1.6 s of waiting costs only the discount, about 27% of the +1.
+- **Hover, 3 runs.** All three got stuck right after the tube grew from 5 m to 10 m. At
+  10 m, 87–100% of the episodes ended at a wall. About 100–300 updates later, both drones
+  hovered until 10 s (99.5% timeouts in the last 300 updates). A timeout pays 0 and a death −1, and a
+  drone that never arrives never gets the +1. The entropy kept falling (`d5` s0: 2.2 to
+  −9.6). In the 20 m eval of `d5` s0, the drones creep toward each other at 1–1.7 m/s and
+  stop 5–17 m apart. In the 8 replay episodes, they mostly end at the ceiling.
+- **The world heading does not split the drones.** The lane side and the waiting drone
+  show no link to the tube heading. In some lane runs, the sign of the height offset at the
+  closest approach shows a weak link: drone 0 is higher in 44% of the episodes with a
+  heading below π and in 59% above π (`d0` s1). This offset is small (median 0.2–0.3 m),
+  and the 1.2–1.35 m across the tube keeps the drones apart.
+- Guess: only `d_inf` learns the wait because the two drones must agree which one goes
+  first, so each must see the other at the start. Only `d_inf` sees 18 m.
+- Guess: sight matters little at these speeds. The drones close in at 18–20 m/s, so 3 m
+  of sight gives about 0.15 s of warning, and 6 m about 0.3 s.
+- `d_inf` s0: the entropy fell from 5.5 to −4.1, with no blow-up. The lr fell from its cap
+  of 1e-2 to 1e-3. `explained_var` fell below 0 after about update 1500 (−0.13 at the
+  end). Not checked: `explained_var` also counts the steps after a drone arrived, which
+  the critic does not train on.
+- The first `d_inf` s1 job (2026-10-21) hung in the JAX GPU check on `alfrid1` (L40) for
+  the full 1 h walltime and made no run folder. `job.sh` now stops that check after 5 min
+  (`c080ac8`).
+
+Next: the user decides the fixes (see Open).
+
 ## Open
 
 | question | state |
 |---|---|
-| Other-Play: a left-right mirror for drone B, against a convention such as "always left" | not built. Add it only if the debug runs show a convention |
-| a rule tied to the world heading can split the drones without the sensor | accepted risk, not checked yet. See the reasons above |
+| Other-Play: a left-right mirror for drone B, against a convention such as "always left" | a convention showed up: lanes in 9 of 15 debug runs. Not built. The user decides |
+| a rule tied to the world heading can split the drones without the sensor | checked in the debug runs: the lanes and the wait do not use it. A weak link in the small height offset of some lane runs |
+| the wait in `d_inf` | candidate: when the first drone arrives, the other drone must be past the middle of the tube, or the episode ends and it gets nothing. Not built. The mirror does not stop the wait. An arrival window needs a value that changes with the tube length |
+| the hover after the tube grows to 10 m, in 3 of 15 runs | candidate: a timeout pays −1, the same as a death. Not built |
 | a test drone that flies straight to its goal and never dodges, to find a half dodge | later |
 | tests | none yet |
