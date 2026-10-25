@@ -10,7 +10,8 @@ conda activate "$PBS_O_HOME/.conda/envs/drone-swarm"
 echo "=== $PBS_JOBID  $(hostname -f)  $(date) ==="
 echo "ARGS: $ARGS"
 nvidia-smi -L
-python -c "import jax; print(jax.devices())"
+# A node with a stuck GPU hangs here until the walltime ends.
+timeout 300 python -c "import jax; print(jax.devices())"
 
 # Unquoted on purpose: each word is one train.py argument.
 python run/train.py $ARGS
