@@ -134,7 +134,8 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   add more pursuers with no other change.
 - **Every task uses the same observation shape**: `Obs(own, others, others_mask,
   target, scene)`. `own` is body-frame velocity, `R`, `omega`, height, and the
-  distance to the arena wall ahead, behind, left and right. `others` holds
+  distance to the arena wall (in `avoidance`, the tube wall) ahead, behind, left and
+  right. `others` holds
   the K nearest drones, whatever their role — body-frame offset, body-frame
   velocity, and a 0/1 flag saying whether that drone shares my role, so a teammate
   and an opponent are told apart by a number, not by sitting in different blocks.
@@ -144,8 +145,9 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   changes the vector width. `scene` is the critic's input: the whole game. Add a
   task, not a new obs format.
 - The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
-  with a one-off crash penalty. `circle_swap` adds a proximity cost and an upright
-  term. **`chase` keeps three words apart and never mixes them**: `fail` is leaving
+  with a one-off crash penalty. `avoidance` is the exception: +1 when a drone arrives,
+  −1 for a crash, 0 at every other step. `circle_swap` adds a proximity cost and an
+  upright term. **`chase` keeps three words apart and never mixes them**: `fail` is leaving
   the box through the ground, a wall or the ceiling (in a preset without walls only the
   ground, and the evader pays `outside` per second instead), `collPP` is a pursuer hitting a
   pursuer (both end the episode), and `collPE` is a pursuer hitting the evader, which

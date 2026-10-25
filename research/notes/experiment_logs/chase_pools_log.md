@@ -39,14 +39,27 @@ What each pool run was and what it scored, and why the setup changed. The task i
 
 Every run here trains both sides against pools of frozen opponents
 ([task_chase_training.md](../task_chase_training.md)), with `generations=13` and
-`gamma=0.99`. So each run has 14 generations, 0 to 13. `run/matrix.py` flies every
-pursuer against every evader, 1024 episodes for each pair. It writes the pursuer's win
-rate to `runs/<run>/matrix.csv`.
+`gamma=0.99`. So each run has 14 generations, 0 to 13.
 
-- The **lower triangle** is pursuer g against evaders 0 to g.
-- The **older evaders** are evaders 0 to g − 1. Pursuer g trains against all of them.
-- The **diagonal** is pursuer g against evader g. Pursuer g never meets this evader in training.
-- The **last pair** is `pursuer_13` against `evader_13`.
+`run/matrix.py` flies every pursuer against every evader and writes
+`runs/<run>/matrix.csv`. Each cell is one pair. It holds the share of 1024 episodes that
+the pursuer wins. Both sides fly their mean action, on the fixed eval seeds.
+[task_chase_training.md](../task_chase_training.md#hedge) says what counts as a win.
+
+The last four columns of the table leave out the seeds `frpn` and `paths`, APF and the
+cascade. Each column is the plain mean of these cells, for pursuer g against evader e,
+with g and e from 0 to 13:
+
+| column | cells | count |
+|---|---|---|
+| lower triangle | e ≤ g. That is the older evaders plus the diagonal | 105 |
+| older evaders | e < g. Pursuer g trains against all of them | 91 |
+| diagonal | e = g. Pursuer g never meets this evader in training | 14 |
+| last pair | g = e = 13. One cell, not a mean | 1 |
+
+Every cell counts once. So in the lower triangle, `pursuer_13` with its 14 cells weighs
+14 times as much as `pursuer_00` with 1. In this section, a range such as 0.88–0.98 is
+the lowest and the highest value of a set, not a mean.
 
 | run | preset | std reset | `ent_coef` | lr | steps per phase | lower triangle | older evaders | diagonal | last pair |
 |---|---|---|---|---|---|---|---|---|---|
@@ -69,9 +82,9 @@ box, and `small` is 24 × 24 × 16 m. `open` is `default` with open walls, as in
 - **The std reset matters.** Without it, the pursuer's std falls from 0.59 to 0.03, and the pursuer stops learning after generation 7 (`937cda`).
 - **A fixed lr of 3e-4 learns too slowly at the start** (`cc7173`). The adaptive rule picks about 5e-3 in generation 0.
 - **Two seeds show the size of luck.** `b9225b` and `411ea3` differ by 0.04 on the lower triangle and by 0.12 on the diagonal. So a smaller gap between two one-seed runs can be luck.
-- **The last evaders win.** In the three `nemecek` runs with the std reset, `pursuer_13` beats evaders 0 to 9 in 88–98 % of the episodes. It beats `evader_13` in only 23–51 %. These evaders win mostly by timeout, not by crashes.
-- **One pursuer can beat the last evader, but then it forgets the others.** Trained against `evader_13` alone for 52M steps, `pursuer_13` of `411ea3` goes from 0.43 to 0.91 against it. Against `evader_05` to `evader_07`, it falls from 0.93–0.96 to 0.41–0.56.
-- **Longer phases do not help.** With 100M steps per phase (`9a36ce`), the triangle numbers stay in the range of the two seeds, and the last pair falls to 0.23. In the last phase, Hedge gave `evader_12` a weight of 0.24. But the pursuer's win against it went only from 0.38 to 0.41.
+- **The last evaders win.** In the three `nemecek` runs with the std reset, `pursuer_13` wins 0.88–0.98 against evaders 0 to 9 (30 cells, 10 in each run). Against `evader_13` it wins only 0.23–0.51 (the last pair of each run). These evaders win mostly by timeout, not by crashes.
+- **One pursuer can beat the last evader, but then it forgets the others.** Trained against `evader_13` alone for 52M steps, `pursuer_13` of `411ea3` goes from 0.43 to 0.91 against it. Against `evader_05` to `evader_07` (3 cells), it falls from 0.93–0.96 to 0.41–0.56.
+- **Longer phases do not help.** With 100M steps per phase (`9a36ce`), the lower triangle, the older evaders and the diagonal stay between the two seeds, and the last pair falls to 0.23. In the last phase, Hedge gave `evader_12` a weight of 0.24. But the pursuer's win rate against it went only from 0.38 (Hedge, 600 episodes before the phase) to 0.41 (the matrix cell after it).
 
 Roncero names this limit in his §V. Feed-forward MLPs limit "memory and capacity in
 the partially observable mixture setting", and "recurrent architectures may improve
@@ -87,10 +100,11 @@ How the three setups differ: [comparisons.md](../literature/comparisons.md), Cha
 | older evaders, generations 0 to 7 | 0.93–0.98 | a heatmap, no numbers | 0.97 |
 | against the hand-written opponents | 0.94–0.95 | 0.93 | — |
 
+- Ours is the lowest and the highest of the two seeds, `b9225b` and `411ea3`. Roncero runs 3 seeds.
+- The first row is the older-evaders mean cut to generations 0 to 7, so 28 cells.
+- The second row is the mean of three win rates of the last generation: `pursuer_13` against `paths`, `pursuer_13` against APF, and `evader_13` against FRPN. Each is the win rate of the trained side. Roncero's 0.93 is from his Fig. 5. He does not say which pairs his mean uses.
 - Němeček's diagonal does not compare with ours, because his pursuer g trains against evader g. So the fair number is the older evaders.
 - A catch means something different in each setup. So the win rates compare only roughly.
-- Our hand-written number is the mean of three pairs: the pursuer against `paths` and against APF, and the evader against FRPN. Roncero's 0.93 is from his Fig. 5. He does not say which pairs his mean uses.
-- Roncero runs 3 seeds. We ran 2 seeds of one setup.
 
 ### The opponent mix
 

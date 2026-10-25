@@ -174,7 +174,9 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
 - **Observation fields.** Every task fills the same
   `Obs(own, others, others_mask, target, scene)`. `own` holds the drone's velocity
   `Rᵀv`, all nine entries of its rotation matrix `R`, its angular velocity `ω`, its
-  height, and four distances to the arena walls along rays level with the floor.
+  height, and four distances to the walls along rays level with the floor.
+  `core.own_obs` takes these distances from the task: the arena box
+  (`core.wall_dist`), or the task's own box, as the avoidance tube (`core.box_dist`).
   `others` holds the K nearest drones, `(K, 7)`: body-frame offset, body-frame
   velocity, and a flag that says whether that drone shares my role. `others_mask`
   marks the filled seats, and `flat` zeroes the empty ones, so the vector width
@@ -211,6 +213,12 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
   no failed drone has to stay frozen while others fly on. `evaluate.py` freezes
   the whole scene at episode end to keep later scan steps from changing metrics
   or replay.
+- **Arrival.** In `avoidance`, a drone that reaches its goal leaves the episode, and
+  the other drone flies on. The arrived drone stays frozen where it arrived, and the
+  other drone can neither see it nor touch it. The task gives `arrived` and
+  `arrived_this_step` in `info`. `vecenv` trains a drone while it is `alive` and has
+  not arrived. So an arrival ends that drone's training steps with zero future value,
+  as a failure does, but the drone stays `alive`, and `death_rate` does not count it.
 - **Episode endings.** The time limit, `max_steps` in each task, is a
   truncation: training stops the rollout but still uses the estimated future
   value `V(s_T)` for surviving drones. A failed drone has zero future value.
@@ -235,6 +243,15 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
   together, and then most updates finish no episode and report nothing. Later
   resets are not staggered, so no episode after the first is cut short. This is
   the one place where the trainer uses a field of the env state by name (`time`).
+  A task whose time limit is a failure counts it with its own step counter, as
+  `avoidance` does with `steps`, and keeps `max_steps` above it.
+- **Curriculum.** A task can change its params during training: it gives
+  `curriculum(params, metrics)`. `runner.train` calls it after every update with that
+  update's metrics. When it returns new params, the runner builds the update again
+  with `ppo.make`, because the params are constants inside the compiled update. One
+  rebuild compiled in about 2 s on the Mac (CPU). The other way, passing the params
+  into the update as data, makes every float param of every task an input instead of
+  a constant, and changes `ppo.py`.
 
 ## Learner
 
