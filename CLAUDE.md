@@ -30,10 +30,31 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - Keep it simple. Simple means logic that is easy to follow, not few lines. Think first,
   then write the code.
 - Keep diffs small. I want to read a change and know what it does.
-- A task note, `research/notes/task_<name>.md`, holds only the current spec of the task.
-  Keep it clear and short, and write it in the
-  [simple-english](.claude/output-styles/simple-english.md) style. The history of the
-  decisions and the run results go to `research/notes/experiments/<name>_log.md`.
+- A task spec, `research/notes/tasks/task_<name>.md`, says what the task is now: the
+  model, not the code. `research/notes/tasks/defaults.md` holds what every task shares,
+  and it is the template. Write a spec by these rules:
+  - Describe the task at the level of a paper's method section. Name no function, field,
+    file or array.
+  - Say what the task does. Do not say what it does not do, and do not set "X is"
+    against "Y is not".
+  - Write `Setup` and `Events` in plain words, with a table of values. Keep the symbols,
+    formulas and tables of every other section.
+  - Describe only what is built now. No reasons, no history, no plans, no open questions.
+  - List only what differs from `defaults.md`, in its sections and in its order. A
+    section with no change holds one word: `Default.`
+  - `Events` says when an event happens and how the episode ends. `Reward` says who
+    pays for it. Neither repeats the other.
+  - Use tables, formulas and short lists. Use a paragraph only for the purpose at the top.
+  - Give each value once, with its unit.
+  - One word, one meaning. `defaults.md` holds the words and the shared symbols.
+  - Write it in the [simple-english](.claude/output-styles/simple-english.md) style.
+  - Write formulas in LaTeX: `$...$` inline, and a `$$` line before and after a block.
+    Do not put `|` in math, because it breaks a table row. Write `\lVert x \rVert` and
+    `\lvert x \rvert`.
+  - Check each line against the code when you write or change a spec.
+- The reasons, the history of the decisions, the run results and the open questions go
+  to `research/notes/experiment_logs/<name>_log.md`. Comparisons with papers go to
+  `research/notes/literature/comparisons.md`.
 - Everything stays under the repo root, `handoff.md` included. Scripts, probes and build
   artifacts go in `scratch/` (gitignored), never in `/tmp` or a session scratchpad.
 - Unpublished papers under `research/papers/` stay local, and `CLAUDE.local.md` names
@@ -123,7 +144,7 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   trainer. `__init__.py` holds the shared `Obs` layout, `flat`, `take`,
   `make(task, preset)` and **the env contract every task file must meet** — read it
   before writing a task. Every task carries a drone axis, `N = 1` included, and each
-  has a note beside it in `research/notes/task_<name>.md`.
+  has a spec beside it in `research/notes/tasks/task_<name>.md`.
 - **`envs/core.py` holds everything the tasks share**: `Common` (the `EnvParams`
   fields every task has, which each task's `EnvParams` inherits), `fly` (the rate
   loop and the plant for one policy step), `own_obs`/`target_obs`/`others`,
@@ -172,7 +193,7 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
   mix two sides of a game. `cfg.generations` above 0 trains chase with pools, one side
   at a time — the design is in
-  [research/notes/task_chase_training.md](research/notes/task_chase_training.md).
+  [research/notes/tasks/task_chase.md](research/notes/tasks/task_chase.md), Training.
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
@@ -188,9 +209,10 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   `.item()`, no value-dependent shapes — `test_vmap_matches_python_loop` enforces it.
 - Every design decision for the simulator and for what all tasks share, every
   deviation, and every "revisit later" lives in
-  [research/notes/choices.md](research/notes/choices.md). A task's own settings live
-  in its task note, and pool training in `task_chase_training.md`. **Read it before
-  changing the physics, and update it when a decision changes.**
+  [research/notes/design_choices.md](research/notes/design_choices.md). The shared
+  model is in `research/notes/tasks/defaults.md`, and a task's own model, pool training
+  included, is in its task spec. **Read it before changing the physics, and update it
+  when a decision changes.**
 - `conftest.py` turns on `jax_enable_x64` because the C++
 is double precision.
 - One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
@@ -213,9 +235,9 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 
 ## research/ and the reference code
 
-- `notes/` — working notes, Czech is fine. `choices.md` holds the shared design
-  decisions. `task_<name>.md` is the spec of one task, and `chase` also has
-  `task_chase_training.md` and `task_chase_baselines.md`. `experiments/` holds the run
+- `notes/` — working notes, Czech is fine. `design_choices.md` holds the shared design
+  decisions and their reasons. `tasks/` holds the task specs: `defaults.md` for what
+  every task shares, and `task_<name>.md` for one task. `experiment_logs/` holds the run
   logs and the history of the decisions. `literature/` holds the literature reviews
   and `comparisons.md`, which puts our setup beside the reference works. `learning/`
   holds explainers of the theory, and `archive/` the notes about removed code.
@@ -314,4 +336,4 @@ Key training flags to recognise: `--quads_mode` (scenario), `--quads_obs_repr`,
   script that prints fine in a terminal returns nothing here.
 - **There is no `CONTEXT.md` and no `CONTEXT-MAP.md`.** A skill that asks for one
   will not find it. The ubiquitous language lives in this file and in
-  `research/notes/task_<name>.md`.
+  `research/notes/tasks/`.

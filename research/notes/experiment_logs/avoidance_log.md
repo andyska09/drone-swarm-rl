@@ -1,11 +1,11 @@
 # Task avoidance — run log
 
 The runs of the avoidance task, their results, and why the spec changed. The spec is in
-[task_avoidance.md](../task_avoidance.md).
+[task_avoidance.md](../tasks/task_avoidance.md).
 
 ## Why the task exists, 2026-10-20
 
-The task replaces the tunnel ([task_tunnel.md](../task_tunnel.md)). The tunnel runs hit
+The task replaces the tunnel ([task_tunnel.md](../tasks/task_tunnel.md)). The tunnel runs hit
 the walls, mostly at the first bend, before any meeting ([tunnel_log.md](tunnel_log.md)).
 So the tunnel score mixed two skills: flying the tube and dodging. In open space there
 are no walls, and only the sight range sets the warning time.
@@ -103,7 +103,7 @@ the habit, and `--set ent_coef=0`, against the spread.
 ## Redesign, 2026-10-21
 
 The task is now a closed square tube. The spec is in
-[task_avoidance.md](../task_avoidance.md). Everything above is about the old design.
+[task_avoidance.md](../tasks/task_avoidance.md). Everything above is about the old design.
 
 Why:
 
@@ -153,3 +153,32 @@ curriculum: the tube grew 5 → 10 → 15 → 20 m, and it waited while episodes
 tube still ended.
 
 Next: short debug runs on MetaCentrum.
+
+## Reasons for the spec, 2026-10-25
+
+These reasons moved here from the spec.
+
+- The literature behind the sight range `d` is in
+  [literature/avoidance.md](../literature/avoidance.md). Sight has no field of view, no
+  blocking and no memory.
+- The two straight paths are the same line: an exact head-on. The random start state
+  breaks the tie.
+- The speed is free. With `gamma` = 0.998, each second of delay multiplies the value of
+  the +1 by 0.82. So the drone still has a reason to be fast.
+- Runs set `ent_coef=0` against the blow-up of the action spread.
+- The tube has no random starts along its length.
+- The world-heading risk: `R` tells each drone its world heading, and the two drones
+  always fly in opposite world directions. So a rule like "the drone that flies toward +x
+  goes up" can split them without the sensor. Check it in the debug runs: compare the
+  height offset at the meeting with the flight direction.
+- The straight-flying test drone is there to find a half dodge. The cascade in both seats
+  is not this test (see the redesign above).
+
+## Open
+
+| question | state |
+|---|---|
+| Other-Play: a left-right mirror for drone B, against a convention such as "always left" | not built. Add it only if the debug runs show a convention |
+| a rule tied to the world heading can split the drones without the sensor | accepted risk, not checked yet. See the reasons above |
+| a test drone that flies straight to its goal and never dodges, to find a half dodge | later |
+| tests | none yet |

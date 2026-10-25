@@ -1,16 +1,14 @@
 # Chase — pool runs, run log
 
-What each pool run was and what it scored, and why the setup changed. The task is in
-[task_chase.md](../task_chase.md), the training in
-[task_chase_training.md](../task_chase_training.md), and the hand-written opponents in
-[task_chase_baselines.md](../task_chase_baselines.md).
+What each pool run was and what it scored, and why the setup changed. The task, its pool
+training and the hand-written opponents are in [task_chase.md](../tasks/task_chase.md).
 
 ## Design decisions
 
 - **Pools replace the duel's swap** ([chase_duel_log.md](chase_duel_log.md)).
 - **After a failure, the survivors bootstrap.** A failure used to be terminal for every
   drone. So the pursuer gained when the evader failed, because it stopped paying the
-  clock. Now only a catch is terminal ([task_chase.md](../task_chase.md#termination)).
+  clock. Now only a catch is terminal ([task_chase.md](../tasks/task_chase.md#episode-end)).
 - **The adaptive lr replaced `anneal_lr`.**
 - **One learned std per action, with a clip.** It replaced Gavin's per-state std with a
   `tanh` squash after the pool run `chase_default_s0_20261011-103639_797201`. There the
@@ -38,13 +36,13 @@ What each pool run was and what it scored, and why the setup changed. The task i
 ## Pool training results
 
 Every run here trains both sides against pools of frozen opponents
-([task_chase_training.md](../task_chase_training.md)), with `generations=13` and
+([task_chase.md](../tasks/task_chase.md#pools)), with `generations=13` and
 `gamma=0.99`. So each run has 14 generations, 0 to 13.
 
 `run/matrix.py` flies every pursuer against every evader and writes
 `runs/<run>/matrix.csv`. Each cell is one pair. It holds the share of 1024 episodes that
 the pursuer wins. Both sides fly their mean action, on the fixed eval seeds.
-[task_chase_training.md](../task_chase_training.md#hedge) says what counts as a win.
+[task_chase.md](../tasks/task_chase.md#the-opponent-mix) says what counts as a win.
 
 The last four columns of the table leave out the seeds `frpn` and `paths`, APF and the
 cascade. Each column is the plain mean of these cells, for pursuer g against evader e,
@@ -74,7 +72,7 @@ the lowest and the highest value of a set, not a mean.
 
 Every run is seed 0 unless the row says otherwise. `default` is the 32 × 32 × 16 m
 box, and `small` is 24 × 24 × 16 m. `open` is `default` with open walls, as in
-[Termination](../task_chase.md#termination). `nemecek` is `open` in a 20 × 20 × 10 m box.
+[Episode end](../tasks/task_chase.md#episode-end). `nemecek` is `open` in a 20 × 20 × 10 m box.
 
 ### What the runs show
 
@@ -154,6 +152,159 @@ those columns.
 - **The cascade pursuer catches a target that stands still or moves slowly** (hover 100%,
   cascade evader 99.7%). It fails against a moving path (circle 10%), because it chases
   from behind.
+
+## Reasons for the spec, 2026-10-25
+
+These reasons, sources and measurements moved here from the spec and from the two old
+notes on pool training and on the hand-written opponents.
+
+### The task
+
+- **`open` has Němeček's arena rules.** Only the ground, or a non-finite state, ends an
+  episode. The pursuer has no walls and no ceiling. The evader flies on outside the box
+  and pays `outside`.
+- **`nemecek` is `open` in Němeček's box**, 20 × 20 × 10 m with the floor at 0, the box of
+  his main runs (thesis, Fig. 8.10, and `arena_size_ = 10.0` in his `environment.h`). His
+  12 m/s speed cap and his 12 s episodes are not in it.
+- **`outside` = 57 is Němeček's ratio.** His evader pays 0.1 per step outside the box
+  against a survival pay of 0.007 per step. That is 14.3 times, and 14.3 × our `step` of
+  4.0 is 57.
+- **The observation differs from Gavin in three places.** `ω` is in it, because our rate
+  loop sits under the policy. The walls are 4 rays, because four rays are exact for a
+  box. We do not normalize.
+- **The net has no thickness.** The drone is a ball of radius `arm_length + prop_radius`
+  = 0.40 m, and a ball touches a plane when its centre is within one radius of it. That is
+  the whole of `abs(p_x) <= body_radius`. It is the drone's size, not a fudge factor, and
+  there is no `capture_dist` field. At 15 m/s the evader moves 0.15 m per policy step,
+  well inside 0.40 m, so it cannot skip through between two steps.
+- **No pursuer catches itself.** A net hangs 0.9 m below its own drone, which is off its
+  own square, so no special case is needed.
+- **A capture beats a death on the same step**, because the square reaches into the
+  0.8 m hitbox.
+- **`collPE` stays soft** because the pursuer must reach the evader to catch it. A rule
+  that ends the episode there teaches it to stand off. Gavin's words: the soft penalty
+  allows "gradual learning of collision avoidance while maintaining focus on the primary
+  task of catching with the net".
+- **The weights are Gavin's, per second.** Every per-step weight is Gavin's divided by
+  `policy_dt`, so that the code's `× policy_dt` puts it back. Same reward as Gavin, and
+  `policy_dt` still makes the weights independent of the control rate.
+- **Only a catch is terminal.** Neither side gains when the other fails, which is Gavin's
+  rule: "neither the evader nor the pursuers receive a reward when the opponent reaches a
+  failure state". Without the bootstrap, the pursuer gains when the evader fails, because
+  it stops paying the clock. At γ = 0.99 that is worth about 4, against a catch of 10.
+  Roncero also bootstraps past an out-of-bounds (§III-B). A NaN bootstrap value is
+  dropped, because a diverged opponent puts NaN into the survivor's observation.
+- **A flipped drone keeps flying.** Gavin ends an episode on out of bounds and on
+  inter-pursuer contact, and says nothing about attitude, so a pursuer flipped upside down
+  at altitude keeps flying.
+- **The pursuer's reference point** is the net drop above the evader. Flying its body
+  there would hold the evader above the square and never catch.
+- **`gamma` = 0.99** is Gavin's value at the same 100 Hz: a 1 s horizon. The default stays
+  at 0.998, a 5 s horizon, because `circle_swap` was trained at 0.998.
+
+### Pool training
+
+- **The method is AMSPBH** from [Sánchez Roncero 2026](../../papers/2506.02849v3.md):
+  §III-C for the training and the Hedge sampler (eq. 12), §IV-A for the settings. We keep
+  to the paper. Where it is silent, we follow Němeček's code,
+  `research/code_sources/rl_tracking_eagle-cleaned-up-logic/examples/deep_eagle/examples/train_pipeline.py`.
+- **Each phase continues the learner's TrainState.** The paper calls this full-agent
+  loading.
+- **The std reset is ours.** The std shrinks within a phase, and the learner must explore
+  again against the new pool. `reset_std=false` turns it off.
+- **The seeds stay in the pools in every generation**, as in the paper: Fig. 6 and
+  §IV-C, "heuristic opponents (FRPN, trajectories) retain non-trivial weight even in later
+  generations". Fig. 2's `Π0P = {πP0}` reads otherwise, but the results do not.
+- **Each member gets at least 3 blocks** with `γh = 0.7` and at most 14 members.
+- **A frozen network flies its mean action.** Němeček does the same
+  (`deterministic=True`, `train_pipeline.py:228`).
+- **The run with `--steps 1.4e9` and `generations=13`** has 28 phases of 190 updates,
+  49.8M steps each. The few updates left over are not run.
+
+The files of a pool run:
+
+| file | what it holds |
+|---|---|
+| `metrics.csv` | one row per update. Adds `generation`, `training` (the side that learns) and an `lr` per role. The frozen side's learner stats stay empty: losses, entropy, KL, clip fraction, explained variance |
+| `hedge.csv` | one row per generation, side and pool member: the win rate and the weight |
+| `pool/<role>_<generation>.pkl` | one policy per side per generation. Loads as a `--seat` source |
+| `latest.pkl` | the training state at the end of the last finished phase |
+| `checkpoints/` | numbered policy snapshots, as in every run |
+
+`python run/train.py --resume runs/<run>` restarts the unfinished phase from its start,
+with the same pool.
+
+### Baselines
+
+- **The lineup is Roncero v3's** ([2506.02849v3](../../papers/2506.02849v3.md) §IV-B): an
+  FRPN pursuer, an APF evader and three path evaders. FRPN and APF use Němeček's code and
+  values ([thesis](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md)). Roncero
+  does not publish all of his. Němeček flew our drone: the X500, with the same mass, `kf`,
+  `km` and RPM range.
+- **A baseline keeps its heading**, and `control.py` is not changed, because it must
+  match the C++ goldens.
+- **Němeček's limits sit in the law, not in the physics.** His simulator cuts every
+  drone's speed to 12 m/s after each step (`mrs_uav.cpp:89-98`). We cannot do that,
+  because the network flies the same physics.
+- **The cascade is the easy opponent.** It keeps MRS's defaults.
+- **FRPN values:** Němeček, Table 8.1. He tuned them under 12 m/s and 20 m/s² (§8.1), so
+  the speed limit applies both. Roncero's FRPN is different: its output is a velocity
+  command, clipped to the top speed, with G = 5.0 and W = 0.20, and a cascaded PID flies
+  it. Without the limits our FRPN leaves the arena: it reaches about 19 m/s.
+- **APF values:** Němeček's eval set (`APF_PARAMS` in `eval_rl_pur.py`, Table 8.6). All six
+  faces closer than `r_w` push, as in his code. His thesis text says that only the nearest
+  face on each axis pushes. APF adds up the push of every pursuer, so it works for N v 1.
+  Roncero's APF is different: `k_P = k_W = 1.0`, `α_P = 3`, `α_W = 2`, and a velocity
+  controller tracks the force. APF never hit a wall, and its top speed was about 9.7 m/s.
+  The limits change almost nothing for it.
+
+The paths beside Roncero's:
+
+| | Roncero v3 | ours |
+|---|---|---|
+| arena | 4 × 5 × 2 m | 32 × 32 × 16 m |
+| circle radius | 0.6–1.0 m | 4.8–8.0 m (× 8) |
+| figure-eight radius | 0.45–0.9 m | 3.6–7.2 m (× 8) |
+| speed | 1.0–2.0 m/s | 2.83–5.66 m/s (× √8) |
+| ellipse | "randomized elliptical deformation" | each axis × 0.85–1.0, from Roncero v2 |
+| height | 0.5–1.9 m | random, 2 m clear of the floor and the ceiling |
+| start point | "random phase" | random |
+| direction | not given | random, half of them clockwise |
+| hover | holds its start point | holds a random point |
+
+- The sizes scale by 8 and the speeds by √8. That keeps each shape's turn acceleration,
+  `v²/r`. The figure-eight is Gerono's: `(A sin θ, B/2 sin 2θ)`.
+- The point turns at a steady rate, like Roncero v2's angular velocity, so the speed along
+  the path changes. Over the 1024 eval paths, a circle changes a little, because the
+  ellipse is mild: 2.67–6.06 m/s. A figure-eight is fastest where its loops cross:
+  1.79–8.00 m/s. The peak acceleration of a circle is 3.1 m/s² (median), and 7.2 m/s² at
+  most. For a figure-eight it is 7.7 m/s² (median), and 20.0 m/s² at most. The drone
+  gives about 31 m/s² sideways, so it can fly all of them.
+- **The path picks the start.** The env spawns the evader at a random spot. Near a corner,
+  no full-size path through that spot fits, and a shrunk path keeps its lap time, so it
+  is also slower. Němeček does the same: his evader starts at row 0 of its trajectory file
+  (`target_uav.cpp:57`).
+- **Němeček's trajectories.** He does not make shapes. He loads 200 recorded trajectories
+  from CSV files, in two profiles of 100 each (thesis §3.1, Table 3.1). At each step the
+  evader's state is set to the next row, so it is replayed, not flown
+  (`environment.cpp:184-198`). In this mode the evader cannot leave the arena
+  (`environment.cpp:217`). We fly Roncero's shapes instead. From Němeček we take only one
+  thing: the path decides where the evader starts.
+- **Not copied.** Roncero v2 also turns each path to a random heading and tilts it by up
+  to 0.05π. v3 does not say this, so we do not do it. Roncero's code is not public.
+  `KTH-RPL/AMSPB_PEG`, the repo that his paper page links, gave 404 on 2026-10-10.
+
+Sources:
+
+- Roncero v3: [2506.02849v3](../../papers/2506.02849v3.md) §IV-A, §IV-B. Roncero v2, for
+  the path numbers: <https://arxiv.org/html/2506.02849v2>, §V-B.
+- Němeček: [thesis](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) §3.1, §3.2,
+  §8.1, Tables 8.1 and 8.6.
+- Němeček's code, under
+  `research/code_sources/rl_tracking_eagle-cleaned-up-logic/examples/deep_eagle/`:
+  `examples/agents.py` (`OriginalFRPN`, `AdvancedAPFEvader`), `examples/eval_rl_pur.py`
+  (`APF_PARAMS`), `src/agent/mrs_uav.cpp`, `src/agent/target_uav.cpp`,
+  `src/env/environment.cpp`.
 
 ## Open
 

@@ -2,10 +2,10 @@
 
 Decisions for the simulator and for what every task shares: the env contract, the
 learner, eval and replay. Also every place we differ from the MRS C++ reference
-(`research/code_sources/mrs_multirotor_simulator`). One line of reasoning each. A
-task's own settings live in its `task_<name>.md`, and pool training lives in
-[task_chase_training.md](task_chase_training.md). The runs behind a decision are in
-`experiments/`. Update this file when a decision changes.
+(`research/code_sources/mrs_multirotor_simulator`). One line of reasoning each. The
+shared model itself is in [tasks/defaults.md](tasks/defaults.md), and a task's own model,
+pool training included, is in its `tasks/task_<name>.md`. The runs behind a decision are
+in `experiment_logs/`. Update this file when a decision changes.
 
 ## The one deviation from the C++
 
@@ -155,6 +155,8 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
 
 ## Environment
 
+The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the reasons.
+
 - **One file per task.** Each task lives in `swarm/envs/<task>.py` with `reset`,
   `step`, `get_obs`, `reference` and a `PRESETS` dict. `swarm/envs/__init__.py`
   holds the contract every task file meets, the shared `Obs`, and
@@ -163,27 +165,18 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
   episode resets, so we do not need gymnax's auto-reset base class. Single-drone
   and swarm tasks use the same interface, with a drone dimension on observations,
   actions and rewards.
-- **Update rates.** Physics, the rate controller and the mixer run at 200 Hz
-  (`sim_dt = 0.005`). The policy runs at 100 Hz, so each action is held for two
-  simulation steps (`steps_per_action = 2`). We chose 200 Hz to better resolve
+- **Update rates.** We chose 200 Hz physics to better resolve
   the motor's 0.03 s response time: six simulation steps per time constant,
   compared with three at 100 Hz. The rate controller is slower, with an
   approximate time constant of 0.25 s at `kp = 4.0`, so either rate is sufficient
   for it. The extra physics step costs roughly 1% by operation count: about
   1,000 floating-point operations for RK4 versus 70,000 for a policy evaluation.
 - **Observation fields.** Every task fills the same
-  `Obs(own, others, others_mask, target, scene)`. `own` holds the drone's velocity
-  `Rᵀv`, all nine entries of its rotation matrix `R`, its angular velocity `ω`, its
-  height, and four distances to the walls along rays level with the floor.
-  `core.own_obs` takes these distances from the task: the arena box
-  (`core.wall_dist`), or the task's own box, as the avoidance tube (`core.box_dist`).
-  `others` holds the K nearest drones, `(K, 7)`: body-frame offset, body-frame
-  velocity, and a flag that says whether that drone shares my role. `others_mask`
-  marks the filled seats, and `flat` zeroes the empty ones, so the vector width
-  never changes. `target` holds the position error `Rᵀ(goal − x)` and the velocity
-  error `Rᵀ(v_goal − v)`, and a task with no goal gives it width 0. `scene` is the
-  critic's input: every drone's exact state. Keeping the other drones in their own
-  field lets an attention network read them directly.
+  `Obs(own, others, others_mask, target, scene)`. `core.own_obs` takes the wall
+  distances from the task: the arena box (`core.wall_dist`), or the task's own box, as
+  the avoidance tube (`core.box_dist`). `flat` zeroes the empty seats, so the vector
+  width never changes. Keeping the other drones in their own field lets an attention
+  network read them directly.
 - **Rotation representation.** Observations include all nine entries of `R`.
   This choice follows SimpleFlight's reported result of roughly 64% worse
   performance with quaternions.
@@ -196,19 +189,17 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
   measured `ω` at every simulation step and compensates for motor lag. We rely
   on that feedback instead of giving `rpm` to the policy. `quad-swarm-rl` and
   SimpleFlight also omit it.
-- **Actions.** Each action contains four values in `[−1,1]`: one throttle and
-  three requested angular velocities. Throttle maps to `[0,1]`; roll and pitch
-  rates map to ±4 rad/s, and yaw to ±2 rad/s. A new policy outputs values near
-  zero, which gives a throttle near 0.5, close to the hover value of 0.4654.
-  `quad-swarm-rl` allows ±31.4 rad/s for more acrobatic flight.
+- **Actions.** A new policy outputs values near zero, which gives a throttle near
+  0.5, close to the hover value of 0.4654. `quad-swarm-rl` allows ±31.4 rad/s for
+  more acrobatic flight, where we allow ±4 rad/s in roll and pitch.
 - **One centre.** `center` is the middle of the arena box, and each task spawns
   its drones and draws its goals around it.
-- **Drone failure.** `core.is_dead` is the default rule: a drone fails if it
-  leaves the arena box, goes below z = 0, flips over (`R[2,2] < 0`), touches
-  another drone, or has a NaN or infinite position. Flipping over also causes
-  problems for `acceleration_controller`, which can return NaN when inverted. A
-  task with other rules writes its own `is_dead`. After failure, `alive` stays
-  false, and the drone receives no further rewards or penalties.
+- **Drone failure.** The default rule kills a drone that flips over, because
+  `acceleration_controller` can return NaN when the drone is inverted. A task with
+  other rules writes its own `is_dead`. Contact at 0.80 m between centres is the MRS
+  rule (`multirotor_simulator.cpp:342`, `crit_dist = arm+prop+arm+prop`), and MRS
+  ships `collisions: {enabled: true, crash: true}`, so contact kills there too. The
+  plant has no contact force, so the distance test is the whole contact model.
 - **State after failure.** Every task ends the episode when any drone fails, so
   no failed drone has to stay frozen while others fly on. `evaluate.py` freezes
   the whole scene at episode end to keep later scan steps from changing metrics
@@ -263,14 +254,14 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
   skrl, the PPO libraries of Isaac Lab, and of Němeček's SB3. A per-state std can
   shrink just where precision pays, near the evader, and that is where the pursuer
   must find its next move. The runs behind it:
-  [experiments/chase_pools_log.md](experiments/chase_pools_log.md).
+  [experiment_logs/chase_pools_log.md](experiment_logs/chase_pools_log.md).
 - **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** PPO
   shrinks the std by itself once precision pays, and the bonus fights exactly that. At
   0.01 the std breaks. The math: [learning/05-RL.md](learning/05-RL.md). The runs:
-  [experiments/chase_pools_log.md](experiments/chase_pools_log.md).
+  [experiment_logs/chase_pools_log.md](experiment_logs/chase_pools_log.md).
 - **`gamma` defaults to 0.998**, a 5 s horizon at `policy_dt = 0.01 s`. A 2 s horizon
   (0.995) was too short for a 6.9 m flight that takes 3 to 4 s. Chase sets 0.99
-  ([task_chase.md](task_chase.md), Training).
+  ([tasks/task_chase.md](tasks/task_chase.md), Training).
 - **The lr starts at 2e-4 and then follows the KL**, AMSPBH's lr and target with
   rsl_rl's rule. After the forward pass of each minibatch, the learner's mean
   `approx_kl` sets the lr, and the step of that same minibatch uses it, as in rsl_rl.
@@ -331,3 +322,5 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
 - Euler instead of RK4, if RK4 turns out to be more than ~5% of step time.
 - Collective thrust in newtons instead of the normalized throttle in the CTBR action,
   so the airframe does not matter.
+- One death rule for all tasks. `core.is_dead` kills a drone that flips over, and
+  `chase`, `avoidance` and `tunnel` let it fly on.

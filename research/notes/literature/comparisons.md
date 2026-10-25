@@ -74,7 +74,7 @@ two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 | wall buffer | `outside = 57`, evader only, outside the box, in `open` and `nemecek` | — | — | `λbnd = 1.0`, evader only | `λbnd`, evader only | — | `κb = 0.1` per step outside the box, evader only |
 | discount | 0.99 | 0.998 | not published | 0.99 | 0.99 | not stated | 0.99 |
 
-The full chase reward, with every sign, is in [task_chase.md](../task_chase.md),
+The full chase reward, with every sign, is in [task_chase.md](../tasks/task_chase.md),
 Reward. The full reward-term survey, including Hwangbo, Molchanov, Eschmann,
 SimpleFlight and Swift, is in [reward_terms.md](reward_terms.md).
 
@@ -83,7 +83,7 @@ SimpleFlight and Swift, is in [reward_terms.md](reward_terms.md).
 The whole `chase` setup beside [Roncero v3](../../papers/2506.02849v3.md) and
 [Němeček's thesis](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) with his
 code. What the runs scored against theirs:
-[chase_pools_log.md](../experiments/chase_pools_log.md).
+[chase_pools_log.md](../experiment_logs/chase_pools_log.md).
 
 | | ours | Roncero v3 | Němeček |
 |---|---|---|---|
@@ -125,3 +125,86 @@ code. What the runs scored against theirs:
 
 The other PPO settings are ours, not the paper's: rollout 64, GAE 0.95, grad clip 0.5,
 reward normalization and raw observations.
+
+## Chase beside Gavin & Bronz 2026
+
+Every Gavin value here is from [Gavin & Bronz 2026 Nv1](../../papers/2607.05939v1.md),
+unless marked 1v1 ([Gavin et al. 2026](../../papers/2603.16279v1.md)). These tables moved
+here from the chase spec on 2026-10-25.
+
+| | ours | Gavin |
+|---|---|---|
+| arena | the preset's box | box 32 × 32 × 16 m |
+| episode | 10 s = 1000 steps | 10 s = 1000 steps |
+| `sim_dt` | 0.005 (200 Hz) | not published |
+| `steps_per_action` | 2 → policy at 100 Hz | 100 Hz |
+| action | CTBR, `a ∈ [-1,1]⁴` | CTBR |
+| `max_rate_rp` / `max_rate_yaw` | 4.0 / 2.0 rad/s | not published |
+| drone | x500, 2.0 kg, 0.80 m across the propeller tips | not published |
+| drones | from `roles`, default `("pursuer", "evader")` | pursuers + evader |
+| start | uniform random in the box, 2 m clear of every face | both uniform random |
+| start heading | random, full circle | not published |
+| start motion | up to 0.5 m/s on each axis, tilt up to 0.2 rad | not published |
+| contact | `collision_dist = 0.8 m` between centres | the same |
+
+Gavin's value network gets the same input as our critic, without `ω`, and normalized.
+
+The net:
+
+| | ours | Gavin |
+|---|---|---|
+| shape | square standing in the body yz plane, face along body x | rigid circular disc, aligned with the body frame |
+| `net_side` | 1.0 m | `R`, no number published |
+| `net_offset`, the rope | 0.4 m | "mounted below each pursuer" |
+| hangs from / to | 0.4 m / 1.4 m below the drone | no number |
+| `c_net`, the middle | 0.9 m below the drone | "the centre of the catching net" |
+| thickness | **zero** — it is a plane | "a capture distance", no number |
+
+The net on another pursuer counting as `collPP` is ours. Gavin's is body to body only.
+
+Gavin Nv1, the pursuer. Each `r` below is a positive quantity, and the signs are in the
+sum:
+
+```
+rP = + rcatch                           λcatch  = 10.0   one-off
+     - rdist   = λdist·‖p_e - c_net‖    λdist   = 0.001
+     - rstep   = λstep                  λstep   = 0.04   the evader's survival pay
+     - rcollPP = λcollPP·1(hit pursuer) λcollPP = 10.0   ends the episode
+     - rcollPE = λcollPE·1(hit evader)  λcollPE = 0.1    soft, does not end
+     - rfail   = λfail·1(crash or out)  λfail   = 30.0   one-off
+     - rcmd    = λcmd·‖aω‖              λcmd    = 2e-4
+```
+
+Our per-step weights are Gavin's divided by `policy_dt`:
+
+| `RewardConfig` | ours | × `policy_dt` | Gavin |
+|---|---|---|---|
+| `distance` | 0.1 | 0.001 | `λdist` |
+| `step` | 4.0 | 0.04 | `λstep` |
+| `cmd` | 0.02 | 0.0002 | `λcmd` |
+| `collPE` | 10.0 | 0.1 | `λcollPE` |
+| `outside` | 0.0, and 57.0 in `open` and `nemecek` | 0.57 | none |
+| `catch` | 10.0 | not multiplied | `λcatch = 10.0` |
+| `collPP` | 10.0 | not multiplied | `λcollPP = 10.0` |
+| `fail` | 30.0 | not multiplied | `λfail = 30.0` |
+
+| term | ours | Gavin pursuer |
+|---|---|---|
+| distance | to `c_net`, the middle of the square | to `c_net` |
+| body rate | `cmd · ‖ω_cmd‖`, **commanded** | the same |
+| upright | none | none |
+| velocity | none | none |
+| action difference | none | none |
+| `collPE` | 0.1 per step, both sides, soft | the same |
+| `collPP` | 10.0, ends it, **net counts too** | 10.0, ends it, bodies only |
+| the evader near the bounds | none. In `open` and `nemecek`, `outside` beyond the box | `λbnd`, evader only, near the bounds |
+
+The episode ends:
+
+| event | ours | Gavin |
+|---|---|---|
+| a net catches the evader | ends it, terminal | `λcatch` |
+| `fail` | ends it, the survivors bootstrap | `λfail` |
+| `collPP` | ends it, the survivors bootstrap | `λcollPP`, bodies only |
+| `collPE` | does not end it | the same |
+| the step limit, 1000 | ends it | the same |

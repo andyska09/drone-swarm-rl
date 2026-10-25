@@ -1,8 +1,8 @@
 # Chase — duel, run log
 
 What each duel run was and what it scored. The task is in
-[task_chase.md](../task_chase.md). These runs trained with the swap, which pool
-training ([task_chase_training.md](../task_chase_training.md)) replaced. The swap, its score `ρ` and what the
+[task_chase.md](../tasks/task_chase.md). These runs trained with the swap, which pool
+training ([task_chase.md](../tasks/task_chase.md#pools)) replaced. The swap, its score `ρ` and what the
 first run showed are at the end of this file, as these runs used them.
 
 All six: `chase`, preset `duel`, `gamma=0.99`, `seed=0`, 4e8 steps, 1525 updates.
