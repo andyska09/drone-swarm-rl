@@ -14,6 +14,12 @@ A task module in this package is a set of plain functions:
                                cascade baseline flies to it and the viewer draws
                                it as the marker sphere.
     is_dead                 only if core.is_dead is the wrong rule for the task
+    action_signs(state, params)
+                            only if a drone sees the world in a mirror
+                            -> (n, NUM_ACTIONS) of +1 and -1. step multiplies
+                               the action by it, so a baseline that reads the
+                               state, not the obs, multiplies its action by it
+                               first
     scenery(state, params)  only for what the viewer must draw: walls,
                             {"walls": (k, 3), the corners of a closed outline on
                             the floor in the world, "wall_height": ()}, or lines,

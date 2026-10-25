@@ -51,7 +51,10 @@ def cascade_policy(env, env_params, rows):
             return core.command_to_action(throttle, rate_ref, env_params), pid
 
         drone = jax.tree.map(lambda a: a[rows], state.drone)
-        return jax.vmap(one)(drone, env.reference(state, env_params)[rows], pids)
+        action, pids = jax.vmap(one)(drone, env.reference(state, env_params)[rows], pids)
+        if hasattr(env, "action_signs"):
+            action = action * env.action_signs(state, env_params)[rows]
+        return action, pids
 
     return act, lambda state: (state, _per_row(control.cascade_init(), len(rows)))
 

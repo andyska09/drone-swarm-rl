@@ -47,6 +47,8 @@ class EnvState:
     heading: jnp.ndarray
     length: jnp.ndarray
     goal: jnp.ndarray
+    mirror: jnp.ndarray
+    turn: jnp.ndarray
     alive: jnp.ndarray
     arrived: jnp.ndarray
     arrive_time: jnp.ndarray
@@ -79,28 +81,48 @@ def sees(state, params):
 
 def get_obs(state, params):
     d = state.drone
-    turn = core.yaw(state.heading)
+    tube = core.yaw(state.heading)
     p = to_tube(d.x, state.heading, params)
-    R = turn.T @ d.R
+    R = tube.T @ d.R
     others, mask = core.others(d, params)
     _, idx = jax.lax.top_k(-core.pair_dist(d.x), params.n_visible)
     drones = jnp.concatenate(
         [
             p,
-            d.v @ turn,
+            d.v @ tube,
             R.reshape(-1, 9),
             d.omega,
             to_tube(state.goal, state.heading, params),
             state.arrived[:, None].astype(p.dtype),
+            state.mirror[:, None].astype(p.dtype),
+            jnp.cos(state.turn)[:, None],
+            jnp.sin(state.turn)[:, None],
         ],
         axis=-1,
     )
     clock = params.time_limit - state.steps * params.policy_dt
+
+    # Each drone sees the world through F = yaw(turn) S, where S mirrors y if `mirror`.
+    # Its body y axis flips with the mirror, so its R stays a rotation.
+    flip = jnp.where(state.mirror[:, None], jnp.array([1.0, -1.0, 1.0]), 1.0)
+    F = jax.vmap(core.yaw)(state.turn) * flip[:, None, :]
+    on = lambda v: jnp.einsum("nij,nj->ni", F, v)
+    seen = d.replace(
+        x=on(d.x),
+        v=on(d.v),
+        R=F @ d.R * flip[:, None, :],
+        # A rate is a pseudo-vector, so the mirror flips roll and yaw, not pitch.
+        omega=flip[:, 1:2] * flip * d.omega,
+    )
+    walls = core.box_dist(
+        p * flip, flip[:, :, None] * R * flip[:, None, :], half(state, params)
+    )
+    flip_other = jnp.concatenate([flip, flip, jnp.ones_like(flip[:, :1])], axis=-1)
     return Obs(
-        own=core.own_obs(d, core.box_dist(p, R, half(state, params))),
-        others=others,
+        own=core.own_obs(seen, walls),
+        others=others * flip_other[:, None, :],
         others_mask=mask * jnp.take_along_axis(sees(state, params), idx, axis=1),
-        target=core.target_obs(d, state.goal),
+        target=core.target_obs(seen, on(state.goal)),
         scene=jnp.concatenate([drones.reshape(-1), jnp.stack([state.length, clock])]),
     )
 
@@ -124,9 +146,17 @@ def compute_reward(arrive, died, params):
     return params.reward.arrive * arrive - params.reward.crash * died
 
 
+def action_signs(state, params):
+    """A drone that sees the world in a mirror flies mirrored roll and yaw rates."""
+
+    del params
+    s = jnp.where(state.mirror, -1.0, 1.0)
+    return jnp.stack([jnp.ones_like(s), s, jnp.ones_like(s), s], axis=-1)
+
+
 def reset(key, params):
     n = params.n_drones
-    k_heading, k_across, k_spawn = jax.random.split(key, 3)
+    k_heading, k_across, k_spawn, k_mirror, k_turn = jax.random.split(key, 5)
     heading = jax.random.uniform(k_heading, (), maxval=2.0 * jnp.pi)
     length = jnp.asarray(params.length, float)
     end = 0.5 * length - params.start_gap
@@ -136,6 +166,7 @@ def reset(key, params):
     )
     start = to_world(jnp.concatenate([along[:, None], across], axis=-1), heading, params)
     drone = core.spawn(k_spawn, start, params)
+    mapped = jnp.arange(n) % 2 == 1
 
     state = EnvState(
         drone=drone,
@@ -143,6 +174,8 @@ def reset(key, params):
         heading=heading,
         length=length,
         goal=start[::-1],
+        mirror=mapped & jax.random.bernoulli(k_mirror, shape=(n,)),
+        turn=jnp.where(mapped, jax.random.uniform(k_turn, (n,), maxval=2.0 * jnp.pi), 0.0),
         alive=jnp.ones(n, bool),
         arrived=jnp.zeros(n, bool),
         arrive_time=jnp.full(n, jnp.nan, float),
@@ -156,7 +189,8 @@ def reset(key, params):
 def step(key, state, action, params):
     del key
     flying = state.alive & ~state.arrived
-    moved = core.fly(state.drone, state.rate_pid, action, params)[:2]
+    signed = action * action_signs(state, params)
+    moved = core.fly(state.drone, state.rate_pid, signed, params)[:2]
     drone, rate_pid = jax.tree.map(
         lambda a, b: jnp.where(jnp.expand_dims(flying, tuple(range(1, a.ndim))), a, b),
         moved,

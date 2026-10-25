@@ -244,12 +244,43 @@ the mean of the last 300 updates.
 
 Next: the user decides the fixes (see Open).
 
+## Other-Play, 2026-10-25
+
+Built against the lanes. Not run yet. Drone 1 sees and acts through a random map of the
+world, $F = R_z(\alpha)\, S^m$: a turn by $\alpha \sim U[0, 2\pi)$, after a mirror of the
+world $y$ axis in half of the episodes. The spec has the formulas. The user chose the turn
+with the mirror, the action signs for the cascade, and the first runs: `d0` and `d_inf`,
+seeds 0 and 1.
+
+| decision | why |
+|---|---|
+| the mirror | "keep left" puts both drones on the same side when one of them plays in the mirror. So lanes pass in about half of the episodes at most |
+| the turn | the world heading is a coin that the mirror keeps. "If I fly toward world $+x$, I go up" splits the drones in every episode, because they fly in opposite directions, and $y \to -y$ keeps the $x$ part of a heading. With the turn, drone 1's heading says nothing about drone 0's |
+| the mirror flips the world $y$ axis, not the tube's | it needs no tube heading. Every mirror in a vertical plane swaps left and right, so each one breaks the lanes |
+| only drone 1 gets a map | the game looks the same through any map of the whole world, so only drone 1's map relative to drone 0's counts |
+| the map is an exact symmetry | the X500, the rate loop, the mixer and the re-orthonormalization are their own mirror images (motors 1↔3 and 2↔4), and the tube heading is uniform. `scratch/avoidance_mirror_check.py`: drone 1's obs through its map equals its plain obs in the mapped world (gap 1e-14), and the mapped world stays the image of the true world, step after step (1e-12) |
+| eval uses the map | the same game as training. Without it, a lanes policy scores about 100% in eval and hides what we test |
+| the critic gets $m$, $\cos\alpha$ and $\sin\alpha$ of each drone | the critic sees the whole game, and drone 1's moves depend on its map |
+| the cascade multiplies its action by the env's action signs | it reads the true state, not the obs, so the sign change of drone 1's roll and yaw rates broke it. Now its path is the same with and without the map (gap 0). The cascade in both seats, 1024 eval episodes: 4.3% success, the same in the mirrored and the plain episodes |
+
+- A trap: eval records drone 1's action as its seat sent it, through the map. In a
+  mirrored episode, the roll and yaw rates in `trajectory.npz` have the opposite sign of
+  what the drone flies.
+- Guess: Other-Play stops shared rules, but not a drone's own coin. A blind drone can fly
+  to the tube corner nearest its random start point. Two drones pick the same corner in
+  1 of 4 episodes, so a blind drone can still pass in about 75% of the episodes or more.
+- Guess: a dodge by sight still works through the map. "Move away from the other drone"
+  is its own mirror image.
+- Local check on `9ca5f98` plus these changes: `pytest tests/` passes (53), and a 3-update
+  `d0` run trains and evals.
+
 ## Open
 
 | question | state |
 |---|---|
-| Other-Play: a left-right mirror for drone B, against a convention such as "always left" | a convention showed up: lanes in 9 of 15 debug runs. Not built. The user decides |
-| a rule tied to the world heading can split the drones without the sensor | checked in the debug runs: the lanes and the wait do not use it. A weak link in the small height offset of some lane runs |
+| Other-Play against a convention such as "always left" | built: the mirror and the turn for drone 1 (see Other-Play above). Not run. Next: `d0` and `d_inf`, seeds 0 and 1 |
+| a rule tied to the world heading can split the drones without the sensor | checked in the debug runs: the lanes and the wait do not use it. A weak link in the small height offset of some lane runs. The turn of Other-Play now hides drone 1's world heading |
+| a blind drone can use its own random start as a coin | guess: about 75% success or more for `d0`, even with Other-Play. Check in the runs |
 | the wait in `d_inf` | candidate: when the first drone arrives, the other drone must be past the middle of the tube, or the episode ends and it gets nothing. Not built. The mirror does not stop the wait. An arrival window needs a value that changes with the tube length |
 | the hover after the tube grows to 10 m, in 3 of 15 runs | candidate: a timeout pays −1, the same as a death. Not built |
 | a test drone that flies straight to its goal and never dodges, to find a half dodge | later |

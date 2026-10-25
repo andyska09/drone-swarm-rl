@@ -12,6 +12,8 @@ Log: [avoidance_log.md](../experiment_logs/avoidance_log.md)
 - The world is a closed tube with a square cross-section. It stands on the ground, and
   each episode turns it to a random yaw.
 - Each drone $i$ flies to its goal $g_i$, the start point of the other drone.
+- Drone 1 sees and acts through a random map of the world: a turn and, in some episodes,
+  a mirror (Other-Play).
 
 | what | value |
 |---|---|
@@ -28,23 +30,41 @@ tube, and $z$ points up.
   at $+x$: $\tilde p_{i,x} = \mp (\ell/2 - 1\ \text{m})$.
 - Across the tube, each start is uniform in the middle 1.6 m × 1.6 m:
   $\tilde p_{i,y},\ \tilde p_{i,z} \sim U[-0.8, 0.8]$ m.
+- Each drone $i$ gets a map of the world, $F_i = R_z(\alpha_i)\, S^{m_i}$. The mirror
+  $S = \operatorname{diag}(1, -1, 1)$ flips the world $y$ axis.
 - The rest follows the default.
+
+| drone | turn $\alpha_i$ | mirror $m_i$ |
+|---|---|---|
+| 0 | 0 | 0 |
+| 1 | $U[0, 2\pi)$ | 1 in half of the episodes, else 0 |
 
 ## Drone
 
-Default.
+When $m_i = 1$, the roll-rate and yaw-rate commands of the policy change sign for drone
+$i$: $\omega^{\text{cmd}}_i = (-4 a_2,\ 4 a_3,\ -2 a_4)$ rad/s.
 
 ## Observation
 
 Drone $i$ sees drone $j$ when both drones fly and $d_{ij} < d$. An unseen drone gets
 mask 0 and a row of zeros.
 
+Drone $i$ sees the world through $F_i$, and its body $y$ axis flips when $m_i = 1$. With
+$B_i = S^{m_i}$, the map changes its actor input:
+
+| default | through the map |
+|---|---|
+| each body-frame vector | $B_i$ times the vector |
+| $\operatorname{vec}(R_i)$ | $\operatorname{vec}(F_i R_i B_i)$ |
+| $\omega_i$ | $(-1)^{m_i} B_i\, \omega_i$ |
+| the left and the right wall distance | swapped when $m_i = 1$ |
+
 | input | content | size |
 |---|---|---|
 | actor, own | the default, with $w_i$ measured to the tube walls | 20 |
 | actor, others and mask | the default, with the sight rule above | 8 |
 | actor, goal | $R_i^\top (g_i - p_i)$, $-R_i^\top v_i$ | 6 |
-| critic | for each drone: $\tilde p_j$, $\tilde v_j$, $\operatorname{vec}(\tilde R_j)$, $\omega_j$, $\tilde g_j$ and $[\text{drone } j \text{ arrived}]$. Then $\ell$, and the time left, $10\ \text{s} - t$ | 46 |
+| critic | for each drone: $\tilde p_j$, $\tilde v_j$, $\operatorname{vec}(\tilde R_j)$, $\omega_j$, $\tilde g_j$, $[\text{drone } j \text{ arrived}]$, $m_j$, $\cos\alpha_j$ and $\sin\alpha_j$. Then $\ell$, and the time left, $10\ \text{s} - t$ | 52 |
 
 ## Events
 
@@ -98,4 +118,5 @@ $$
 ## Evaluation
 
 - Eval flies the 20 m tube.
-- The cascade flies drone $i$ to $g_i$.
+- The cascade flies drone $i$ to $g_i$. It reads the true state, and its commands reach
+  the drone as it sends them.
