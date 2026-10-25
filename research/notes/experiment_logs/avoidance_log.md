@@ -273,6 +273,11 @@ seeds 0 and 1.
   is its own mirror image.
 - Local check on `9ca5f98` plus these changes: `pytest tests/` passes (53), and a 3-update
   `d0` run trains and evals.
+- The first submit, 2026-10-25 at 22:04, ran without the map: the cluster had not pulled,
+  so the runs record `c080ac8`, and their critic input is 46 wide, not 52. The run names
+  have the same hashes as the debug runs, because the hash covers the config and the env
+  values, not the code. The two `d0` repeats, training success: s0 98.6% (the debug run:
+  84.2%), s1 92.0% (94.2%). So the same seed does not give the same run on the GPU.
 
 ## Open
 
