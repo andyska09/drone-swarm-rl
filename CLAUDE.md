@@ -340,6 +340,13 @@ Key training flags to recognise: `--quads_mode` (scenario), `--quads_obs_repr`,
 - **`conda run` swallows stdout.** If you need to read the output, use
   `conda run --no-capture-output -n drone-swarm python ...`. Without the flag a
   script that prints fine in a terminal returns nothing here.
-- **There is no `CONTEXT.md` and no `CONTEXT-MAP.md`.** A skill that asks for one
-  will not find it. The ubiquitous language lives in this file and in
-  `research/notes/tasks/`.
+
+## Agent skills
+
+### Issue tracker
+
+None: the task specs in `research/notes/tasks/` take the place of issues. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `research/notes/tasks/defaults.md` is the glossary, and `research/notes/design_choices.md` holds the ADRs. See `docs/agents/domain.md`.
