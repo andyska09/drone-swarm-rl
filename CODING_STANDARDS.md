@@ -4,8 +4,7 @@ The rules for code and tests in this repo. `/code-review` checks a diff against 
 
 ## Code style
 
-- Blunt, minimal code. No base classes, protocols or registries. One file per concern,
-  readable top to bottom.
+- Blunt, minimal code. Ideally one file readable top to bottom. KISS and DRY.
 - Comments: as few as possible. Write one only where the code cannot say it itself: a
   constraint, a non-obvious reason, a trap. Never restate what the line does. One clear
   sentence beats three. No banner blocks, no section dividers.
