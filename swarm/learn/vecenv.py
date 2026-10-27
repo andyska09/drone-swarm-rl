@@ -1,4 +1,4 @@
-"""Batch scenes, reset finished episodes, and normalize rewards."""
+"""Batch scenes, end episodes at their step limit, reset them, and normalize rewards."""
 
 import flax.struct
 import jax
@@ -20,6 +20,8 @@ class VecState:
     ret: jnp.ndarray
     ep_return: jnp.ndarray
     ep_length: jnp.ndarray
+    limit: jnp.ndarray  # the step that ends each episode on time
+    flying: jnp.ndarray  # each drone's flag before the step
     seat: any = None  # the carry of a seat that flies some rows, per scene
 
 
@@ -51,10 +53,8 @@ def reset(key, env, params, cfg, start=None):
         jax.random.split(k, cfg.num_envs), params
     )
 
-    # Shorten the first episodes to spread timeouts across updates.
-    env_state = env_state.replace(
-        time=jax.random.randint(k_time, (cfg.num_envs,), 0, params.max_steps)
-    )
+    # Shorten the first episodes to spread the time limits across updates.
+    limit = params.max_steps - jax.random.randint(k_time, (cfg.num_envs,), 0, params.max_steps)
     seat = None
     if start is not None:
         env_state, seat = start(env_state)
@@ -67,11 +67,14 @@ def reset(key, env, params, cfg, start=None):
         rew_norm=Normalizer(
             jnp.zeros(params.n_drones),
             jnp.ones(params.n_drones),
-            jnp.full(params.n_drones, 1e-4),
+            # A typed count, so a run resumed from latest.pkl compiles the same program.
+            jnp.full(params.n_drones, 1e-4, dtype=float),
         ),
         ret=jnp.zeros((cfg.num_envs, params.n_drones)),
         ep_return=jnp.zeros((cfg.num_envs, params.n_drones)),
         ep_length=jnp.zeros(cfg.num_envs, jnp.int32),
+        limit=limit.astype(jnp.int32),
+        flying=jnp.ones((cfg.num_envs, params.n_drones), bool),
         seat=seat,
     )
     return obs, vec
@@ -84,21 +87,24 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
     key, k_step, k_reset = jax.random.split(vec.key, 3)
     n = cfg.num_envs
 
-    obs, env_state, reward, done, info = jax.vmap(env.step, in_axes=(0, 0, 0, None))(
+    obs, env_state, reward, ended, info = jax.vmap(env.step, in_axes=(0, 0, 0, None))(
         jax.random.split(k_step, n), vec.env, action, params
     )
-    done = done.astype(reward.dtype)
-    nobody = jnp.zeros_like(info["alive"])
-    flying = (info["alive"] & ~info.get("arrived", nobody)).astype(reward.dtype)
-    stopped = info["died_this_step"] | info.get("arrived_this_step", nobody)
+    ep_length = vec.ep_length + 1
+    # An end by the task at the same step wins over the time limit.
+    time_limit = (ep_length >= vec.limit) & ~ended
+    flying = info["flying"]
+    bootstrap = flying & (time_limit[:, None] | (ended[:, None] & info["bootstrap"]))
+    done = (ended | time_limit).astype(reward.dtype)
 
     info = dict(info)
+    info["end"] = {**info["end"], "time_limit": time_limit}
     info["done"] = done
-    info["mask"] = flying + stopped.astype(reward.dtype)
+    info["mask"] = vec.flying.astype(reward.dtype)
     info["cont"] = flying * (1.0 - done[:, None])
-    info["bootstrap"] = flying * info["truncated"][:, None].astype(reward.dtype)
+    info["bootstrap"] = bootstrap.astype(reward.dtype)
     info["ep_return"] = vec.ep_return + reward
-    info["ep_length"] = vec.ep_length + 1
+    info["ep_length"] = ep_length
 
     fresh_obs, fresh_state = jax.vmap(env.reset, in_axes=(0, None))(
         jax.random.split(k_reset, n), params
@@ -128,6 +134,8 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
         ret=ret * (1.0 - done)[:, None],
         ep_return=info["ep_return"] * (1.0 - done)[:, None],
         ep_length=info["ep_length"] * (1 - done.astype(jnp.int32)),
+        limit=jnp.where(done > 0, params.max_steps, vec.limit).astype(jnp.int32),
+        flying=flying | (done[:, None] > 0),
         seat=seat,
     )
     return next_obs, vec, reward, done, info

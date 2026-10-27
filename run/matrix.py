@@ -13,8 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
-from swarm import envs
-from swarm.learn import evaluate, pool, seats
+from swarm.learn import evaluate, pool, rundir
 
 # The test-only baselines, played after each pool's seed.
 BASELINES = {"pursuer": ["cascade"], "evader": ["apf", "cascade"]}
@@ -77,21 +76,21 @@ def main():
     args = p.parse_args()
 
     run = pathlib.Path(args.run)
-    cfg = evaluate.load_config(run)
-    env, env_params = envs.make(cfg.task, cfg.preset)
+    cfg = rundir.load_config(run)
+    env, env_params = evaluate.eval_env(run)
     pursuers, evaders = lineup(run, cfg, "pursuer"), lineup(run, cfg, "evader")
     nets = {
         (side, name): pool.load_member(run, side, name)
         for side, names in (("pursuer", pursuers), ("evader", evaders))
         for name in names
-        if name not in seats.SOURCES
+        if name not in env.PILOTS
     }
 
     matches = {}
 
     def win_rate(pursuer, evader):
         sources = {
-            side: name if name in seats.SOURCES else None
+            side: name if name in env.PILOTS else None
             for side, name in (("pursuer", pursuer), ("evader", evader))
         }
         named = tuple(sorted(sources.items()))

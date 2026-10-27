@@ -7,6 +7,7 @@ from swarm.envs import Obs, core
 from swarm.sim import control, dynamics
 
 NUM_ACTIONS = 4
+PROGRESS = ("ep_length", "death_rate")
 
 
 @flax.struct.dataclass
@@ -35,19 +36,23 @@ class EnvState:
     goal: jnp.ndarray
     rate_pid: control.PIDState
     alive: jnp.ndarray
-    time: jnp.ndarray
     closest: jnp.ndarray
 
 
 def get_obs(state, params):
-    others, mask = core.others(state.drone, params)
+    d = state.drone
+    rows = jnp.concatenate(
+        [
+            core.own_obs(d, core.wall_dist(d, params)),
+            core.others(d, params, True, core.same_role(params.roles)),
+            core.target_obs(d, state.goal),
+        ],
+        axis=-1,
+    )
     return Obs(
-        own=core.own_obs(state.drone, core.wall_dist(state.drone, params)),
-        others=others,
-        others_mask=mask,
-        target=core.target_obs(state.drone, state.goal),
+        actor=core.by_role(rows, params.roles),
         # The goal drives the reward, so the critic cannot score a state without it.
-        scene=jnp.concatenate([core.scene_obs(state.drone), state.goal.reshape(-1)]),
+        critic=jnp.concatenate([core.scene_obs(d), state.goal.reshape(-1)]),
     )
 
 
@@ -86,7 +91,6 @@ def reset(key, params):
         goal=center - ring,
         rate_pid=control.pid_init((n, 3)),
         alive=jnp.ones(n, bool),
-        time=jnp.int32(0),
         closest=jnp.min(core.pair_dist(drone.x)),
     )
     return get_obs(state, params), state
@@ -104,20 +108,19 @@ def step(key, state, action, params):
         goal=state.goal,
         rate_pid=rate_pid,
         alive=alive,
-        time=state.time + 1,
         closest=jnp.minimum(state.closest, jnp.min(core.pair_dist(drone.x))),
     )
 
     reward = compute_reward(new_state, state.alive, died, params)
-    truncated = new_state.time >= params.max_steps
     # Shared fate: one death ends the episode, so nobody ever observes a dead drone.
-    done = truncated | ~jnp.all(alive)
+    done = ~jnp.all(alive)
 
     distance = core.norm(new_state.goal - drone.x)
     info = {
         "alive": alive,
-        "died_this_step": died,
-        "truncated": truncated,
+        "flying": alive,
+        # A death is terminal for the survivors too.
+        "bootstrap": jnp.zeros(params.n_drones, bool),
         "end": {
             "distance": distance,
             "worst_distance": jnp.max(distance),
@@ -126,6 +129,15 @@ def step(key, state, action, params):
         "step": {},
     }
     return get_obs(new_state, params), new_state, reward, done, info
+
+
+def cascade(params, rows):
+    """The cascade flies each drone to its goal."""
+
+    return core.cascade_pilot(params, rows, lambda state: state.goal[rows])
+
+
+PILOTS = {"cascade": cascade}
 
 
 PRESETS = {

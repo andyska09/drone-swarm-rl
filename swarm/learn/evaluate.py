@@ -1,7 +1,6 @@
 """Measure a policy: fixed eval seeds, mean actions, no auto-reset, per-episode only."""
 
 import dataclasses
-import importlib
 import json
 from pathlib import Path
 
@@ -9,45 +8,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from swarm import envs
-from swarm.learn import config, ppo, runner
-from swarm.learn.seats import SOURCES, combine, net_policy, scripted
+from swarm.learn import ppo, rundir
+from swarm.learn.seats import combine, net_policy
 
 # Far from any training seed, so eval never flies an episode training saw.
 EVAL_SEED = 1_000_000
 TRAJECTORIES = 8
-
-
-def load_config(run):
-    spec = json.loads((Path(run) / "config.json").read_text())
-    cfg = config.TrainConfig(**spec["train"])
-    cfg.hidden = tuple(cfg.hidden)
-    return cfg
-
-
-def load_env(run):
-    """The task module and the env the run trained in, rebuilt from its config.json."""
-
-    spec = json.loads((Path(run) / "config.json").read_text())
-    env = importlib.import_module(f"swarm.envs.{spec['train']['task']}")
-    return env, _from_json(env.EnvParams, spec["env"])
-
-
-def _from_json(cls, record):
-    """JSON turned the nested classes into dicts, and the tuples and arrays into lists."""
-
-    kinds = {f.name: f.type for f in dataclasses.fields(cls)}
-    values = {}
-    for name, value in record.items():
-        kind = kinds.get(name)
-        if dataclasses.is_dataclass(kind):
-            value = _from_json(kind, value)
-        elif kind is tuple:
-            value = tuple(value)
-        elif kind is jnp.ndarray:
-            value = jnp.asarray(value)
-        values[name] = value
-    return cls(**values)
 
 
 def checkpoint_name(text):
@@ -59,21 +25,20 @@ def checkpoint_name(text):
 def _saved(run, source, checkpoint):
     path = Path(run) if source == "checkpoint" else Path(source)
     if path.suffix == ".pkl":
-        return runner.load(path.parent, path.name)
-    return runner.load(path, checkpoint_name(checkpoint))
+        return rundir.load(path.parent, path.name)
+    return rundir.load(path, checkpoint_name(checkpoint))
 
 
 def make_policy(cfg, env, env_params, run, checkpoint, seats):
-    """Who flies each role: this run's weights, another run's, or one of SOURCES."""
+    """Who flies each role: this run's weights, another run's, or one of the task's
+    PILOTS."""
 
     slices = ppo.role_slices(env_params.roles)
-    for role, source in seats.items():
+    for role in seats:
         if role not in slices:
             raise ValueError(f"{role!r} has no seat; roles are {sorted(slices)}")
-        if SOURCES.get(source, role) not in (None, role):
-            raise ValueError(f"{source!r} flies the {SOURCES[source]}, not the {role}")
 
-    nets = {r: seats.get(r, "checkpoint") for r in slices if seats.get(r) not in SOURCES}
+    nets = {r: seats.get(r, "checkpoint") for r in slices if seats.get(r) not in env.PILOTS}
     saved = {r: _saved(run, s, checkpoint) for r, s in nets.items()}
     net = net_policy(
         cfg,
@@ -83,11 +48,7 @@ def make_policy(cfg, env, env_params, run, checkpoint, seats):
     )
     step = next((s["update"] for s in saved.values()), None)
 
-    fixed = {
-        r: scripted(env, env_params, s, slices[r])
-        for r, s in seats.items()
-        if s in SOURCES
-    }
+    fixed = {r: env.PILOTS[s](env_params, slices[r]) for r, s in seats.items() if s in env.PILOTS}
     return *combine(net, fixed, slices), step
 
 
@@ -96,19 +57,23 @@ def _hold(done, new, old):
 
 
 def rollout(key, env, env_params, act, start):
-    """One episode to its own end. Per step: drone, reference, action, reward, info, live."""
+    """One episode to its own end or to `max_steps`. Per step: drone, reference, action,
+    reward, info, live."""
 
     _, state = env.reset(key, env_params)
     # A path seat puts its drone on its path, so the obs is built after.
     state, carry = start(state)
     obs = env.get_obs(state, env_params)
 
-    def body(c, _):
+    def body(c, t):
         state, obs, carry, done = c
         action, carry = act(state, obs, carry)
         next_obs, next_state, reward, ended, info = env.step(
             key, state, action, env_params
         )
+        # The time limit ends the episode at the last step, as in training.
+        last = t == env_params.max_steps - 1
+        info = {**info, "end": {**info["end"], "time_limit": last & ~ended}}
         # Nothing resets here, so hold the scene at the step the episode ended.
         state = _hold(done, next_state, state)
         obs = _hold(done, next_obs, obs)
@@ -123,46 +88,43 @@ def rollout(key, env, env_params, act, start):
         )
 
     _, out = jax.lax.scan(
-        body, (state, obs, carry, jnp.bool_(False)), None, length=env_params.max_steps
+        body, (state, obs, carry, jnp.bool_(False)), jnp.arange(env_params.max_steps)
     )
     return out
 
 
-def _mean_defined(values):
-    """Average the episodes that have a value. NaN means none of them did."""
-
-    x = np.asarray(values, float)
-    good = np.isfinite(x)
-    return float(x[good].mean()) if good.any() else float("nan")
-
-
 def summarize(reward, info, live, slices):
-    """One number per metric, reduced the way the task asked for — see the env
-    contract in `swarm/envs/__init__.py`."""
+    """One number per metric of one episode, by the rules of `ppo.episode_metrics`."""
 
     steps = live.sum()
-    at_end = lambda x: jnp.take(x, steps - 1)
-    over_steps = lambda x: jnp.sum(x * live) / steps
-
-    def split(name, x, per_drone):
-        return ppo.by_role(name, x.astype(jnp.float32), slices, per_drone)
-
-    out = {"ep_length": steps.astype(jnp.float32)}
-    out |= split("return", reward.sum(0), True)
-    out |= {k: at_end(v) for k, v in split("death_rate", 1.0 - info["alive"], True).items()}
-    for name, x in info["end"].items():
-        out |= {k: at_end(v) for k, v in split(name, x, x.ndim == 2).items()}
-    for name, x in info["step"].items():
-        out |= {k: over_steps(v) for k, v in split(name, x, x.ndim == 2).items()}
-    return out
+    info = {**info, "ep_return": jnp.cumsum(reward, axis=0), "ep_length": jnp.cumsum(live)}
+    return ppo.episode_metrics(
+        info,
+        lambda x: jnp.take(x, steps - 1, axis=0),
+        lambda x: jnp.sum(x * live) / steps,
+        slices,
+        lead=1,
+    )
 
 
-def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
-    run = Path(run)
-    cfg = load_config(run)
-    env, env_params = envs.make(cfg.task, cfg.preset)
+def eval_env(run, preset=None):
+    """The env that eval flies: the run's recorded env, or another preset of its task,
+    with the task's eval_params on top."""
+
+    env, env_params = rundir.load_env(run)
+    if preset is not None:
+        env_params = env.PRESETS[preset]
     if hasattr(env, "eval_params"):
         env_params = env.eval_params(env_params)
+    return env, env_params
+
+
+def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None, preset=None):
+    run = Path(run)
+    cfg = rundir.load_config(run)
+    env, env_params = eval_env(run, preset)
+    if preset is not None:
+        cfg = dataclasses.replace(cfg, preset=preset)
 
     seats = dict(seats)
     act, start, step = make_policy(cfg, env, env_params, run, checkpoint, seats)
@@ -177,11 +139,12 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
 
     per_episode = jax.jit(jax.vmap(measure))(keys)
 
-    named = "_".join(f"{r}_{Path(s).name}" for r, s in sorted(seats.items()))
+    parts = [f"{r}_{Path(s).name}" for r, s in sorted(seats.items())]
+    named = "_".join(parts + ([f"preset_{preset}"] if preset else []))
     out = run / "evals" / (name or named or checkpoint)
     out.mkdir(parents=True, exist_ok=True)
 
-    summary = {k: _mean_defined(v) for k, v in per_episode.items()}
+    summary = {k: float(ppo.mean_defined(v, 1.0)) for k, v in per_episode.items()}
     (out / "eval.json").write_text(
         json.dumps(
             {
@@ -192,7 +155,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
                 "update": step,
                 "episodes": episodes,
                 "eval_seed": EVAL_SEED,
-                "git": runner.git_state(),
+                "git": rundir.git_state(),
                 "summary": summary,
             },
             indent=2,
@@ -200,11 +163,11 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None):
         )
     )
     np.savez(out / "episodes.npz", **{k: np.asarray(v) for k, v in per_episode.items()})
-    save_replay(out, cfg, env, env_params, act, start, keys[:TRAJECTORIES], seats)
+    save_replay(out, cfg, env, env_params, act, start, keys[:TRAJECTORIES])
     return out, summary
 
 
-def save_replay(out, cfg, env, env_params, act, start, keys, seats):
+def save_replay(out, cfg, env, env_params, act, start, keys):
     """Fly the episodes of `keys` again and write what the viewer reads:
     trajectory.npz and header.json."""
 
@@ -230,20 +193,6 @@ def save_replay(out, cfg, env, env_params, act, start, keys, seats):
             for f in drone.__dataclass_fields__.values()
         },
     )
-    # `reference` is a real goal for a drone the cascade flies, and for a drone whose
-    # obs carries a target. For anyone else it is only the baseline's input.
-    obs0, _ = env.reset(jax.random.PRNGKey(EVAL_SEED), env_params)
-    goal = [
-        bool(obs0.target.shape[-1]) or seats.get(role) == "cascade"
-        for role in env_params.roles
-    ]
-
-    # The net is chase-only.
-    net = {
-        f: getattr(env_params, f)
-        for f in ("net_side", "net_offset")
-        if hasattr(env_params, f)
-    }
     (out / "header.json").write_text(
         json.dumps(
             {
@@ -252,8 +201,6 @@ def save_replay(out, cfg, env, env_params, act, start, keys, seats):
                 "roles": list(env_params.roles),
                 "center": list(env_params.center),
                 "arena": list(env_params.arena),
-                "net": net or None,
-                "goal": goal,
                 "hitbox": 0.5 * env_params.collision_dist,
                 "policy_dt": env_params.policy_dt,
             },

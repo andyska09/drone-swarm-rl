@@ -7,9 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from swarm.sim import control, dynamics
-
-OTHER_FEATURES = 7  # body-frame offset and velocity of one drone, plus a role flag
+from swarm.sim import control, dynamics, guidance
 
 
 @dataclasses.dataclass(frozen=True)
@@ -81,6 +79,56 @@ def command_to_action(throttle, rate_ref, params):
         [jnp.atleast_1d(2.0 * throttle - 1.0), rate_ref / rate_scale(params)]
     )
     return jnp.clip(action, -1.0, 1.0)
+
+
+def per_row(tree, n):
+    """The tree repeated for n drones."""
+
+    return jax.tree.map(lambda x: jnp.broadcast_to(x, (n,) + x.shape), tree)
+
+
+def cascade(drones, points, pids, params):
+    """The action of the full cascade that flies each drone to its point."""
+
+    gains = control.cascade_gains(params.model)
+
+    def one(drone, point, pid):
+        (throttle, rate_ref), pid = control.cascade_outer(
+            drone, point, 0.0, pid, gains, params.model, params.policy_dt
+        )
+        return command_to_action(throttle, rate_ref, params), pid
+
+    return jax.vmap(one)(drones, points, pids)
+
+
+def cascade_pilot(params, rows, goal):
+    """A pilot: the cascade flies each drone of `rows` to its point, `goal(state)`."""
+
+    def act(state, obs, pids):
+        del obs
+        return cascade(jax.tree.map(lambda a: a[rows], state.drone), goal(state), pids, params)
+
+    return act, lambda state: (state, per_row(control.cascade_init(), len(rows)))
+
+
+def accelerate(drones, a, pids, params):
+    """The action that gives each drone its world acceleration `a`, through the
+    cascade's acceleration and attitude levels."""
+
+    model, dt = params.model, params.policy_dt
+    gains = control.attitude_gains(max_rate_yaw=params.max_rate_yaw)
+
+    def one(drone, a, pid):
+        heading = jnp.arctan2(drone.R[1, 0], drone.R[0, 0])
+        orientation, throttle = control.acceleration_controller(
+            drone, guidance.drone_limit(a, model), heading, model
+        )
+        # A negative thrust gives a NaN throttle, so use 0.
+        throttle = jnp.where(jnp.isnan(throttle), 0.0, throttle)
+        rate, pid = control.attitude_controller(drone, orientation, pid, gains, dt)
+        return command_to_action(throttle, rate, params), pid
+
+    return jax.vmap(one)(drones, a, pids)
 
 
 def fly(drone, pid, action, params):
@@ -164,31 +212,45 @@ def pair_dist(x):
     return jnp.where(jnp.eye(x.shape[0], dtype=bool), jnp.inf, d)
 
 
-def _same_role(roles):
+def same_role(roles):
+    """(N, N, 1): 1 where drone j shares the role of drone i."""
+
     r = np.array(roles)
-    return ((r[:, None] == r[None, :]) & ~np.eye(len(roles), dtype=bool)).astype(float)
+    same = (r[:, None] == r[None, :]) & ~np.eye(len(roles), dtype=bool)
+    return same.astype(float)[..., None]
 
 
-def others(drone, params):
-    """The K nearest drones, body frame, and a 0/1 mask for the empty seats.
+def others(drone, params, seen, extra):
+    """(N, K·(6 + e) + K): the K nearest drones that each drone sees, nearest first.
 
-    Every role goes in one block. The last feature says whether that drone shares
-    my role, so a teammate and an opponent are told apart by a number, not by
-    sitting in different blocks. Rows are sorted by distance.
+    Each seat holds the offset and the velocity in the body frame, then the e columns
+    of `extra`, (N, N, e). Then come K 0/1 flags for the filled seats. An empty seat is
+    all zeros. `seen` is (N, N), or True when every drone sees every other.
     """
 
-    near, idx = jax.lax.top_k(-pair_dist(drone.x), params.n_visible)
+    near, idx = jax.lax.top_k(-jnp.where(seen, pair_dist(drone.x), jnp.inf), params.n_visible)
     take = lambda a: jnp.take_along_axis(a, idx[..., None], axis=1)
     rel = lambda a: jnp.einsum("nji,nkj->nki", drone.R, take(a))
-    feat = jnp.concatenate(
+    seats = jnp.concatenate(
         [
             rel(drone.x[None, :, :] - drone.x[:, None, :]),
             rel(drone.v[None, :, :] - drone.v[:, None, :]),
-            jnp.take_along_axis(_same_role(params.roles), idx, axis=1)[..., None],
+            take(extra),
         ],
         axis=-1,
     )
-    return feat, jnp.isfinite(near).astype(feat.dtype)
+    filled = jnp.isfinite(near).astype(seats.dtype)
+    flat = (seats * filled[..., None]).reshape(seats.shape[0], -1)
+    return jnp.concatenate([flat, filled], axis=-1)
+
+
+def by_role(rows, roles):
+    """One matrix per role: the rows of its drones, in drone order."""
+
+    return {
+        role: rows[np.array([i for i, r in enumerate(roles) if r == role])]
+        for role in dict.fromkeys(roles)
+    }
 
 
 def body_radius(params):

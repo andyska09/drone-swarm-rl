@@ -60,8 +60,8 @@ class Actor(nn.Module):
     init_std: float = 1.0
 
     @nn.compact
-    def __call__(self, obs):
-        x = _trunk(envs.flat(obs), self.hidden, self.activation)
+    def __call__(self, x):
+        x = _trunk(x, self.hidden, self.activation)
         mean = nn.Dense(
             self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
         )(x)
@@ -76,8 +76,8 @@ class Critic(nn.Module):
     activation: str = "tanh"
 
     @nn.compact
-    def __call__(self, obs, opp_action):
-        x = _trunk(envs.flat_critic(obs, opp_action), self.hidden, self.activation)
+    def __call__(self, x):
+        x = _trunk(x, self.hidden, self.activation)
         value = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(x)
         return jnp.squeeze(value, -1)
 
@@ -120,6 +120,36 @@ def by_role(name, x, slices, per_drone):
     if not per_drone:
         return {name: x}
     return {column(r, name, slices): x[..., d].mean(-1) for r, d in slices.items()}
+
+
+def mean_defined(x, weight):
+    """The mean of x where weight > 0. A NaN says an entry has no value, so it is
+    dropped, not counted. NaN if no entry is left."""
+
+    weight = weight * jnp.isfinite(x)
+    n = weight.sum()
+    total = jnp.sum(jnp.where(weight > 0, x, 0.0))
+    return jnp.where(n > 0, total / jnp.maximum(n, 1.0), jnp.nan)
+
+
+def episode_metrics(info, at_end, over_steps, slices, lead):
+    """Every metric that training and eval report.
+
+    A metric with `lead` axes, the steps, is a scene fact. One more axis is a drone
+    axis: it splits into one column per role, `<role>_<name>`. `at_end` reads a metric
+    where each episode ends, and `over_steps` averages it over the steps."""
+
+    def split(name, x):
+        return by_role(name, x.astype(float), slices, x.ndim > lead)
+
+    out = {"ep_length": at_end(info["ep_length"])}
+    for name, x in (("return", info["ep_return"]), ("death_rate", 1.0 - info["alive"])):
+        out |= {k: at_end(v) for k, v in split(name, x).items()}
+    for name, x in info["end"].items():
+        out |= {k: at_end(v) for k, v in split(name, x).items()}
+    for name, x in info["step"].items():
+        out |= {k: over_steps(v) for k, v in split(name, x).items()}
+    return out
 
 
 def _mean(x, mask):
@@ -166,15 +196,23 @@ def opp_actions(action, opponents):
     return a.reshape(a.shape[:-2] + (-1,))
 
 
+def critic_input(obs, opp_action, rows):
+    """The scene and the opponents' actions, one copy for each of a role's `rows` drones."""
+
+    x = jnp.concatenate([obs.critic, opp_action], axis=-1)
+    return jnp.broadcast_to(x[..., None, :], x.shape[:-1] + (rows, x.shape[-1]))
+
+
 def make_actor(net, slices):
     """Apply each role's actor and return outputs in drone order."""
 
     def apply(params, obs):
-        lead = obs.own.shape[:-1]
+        n = sum(rows.shape[-2] for rows in obs.actor.values())
+        lead = obs.critic.shape[:-1] + (n,)
         mean = jnp.zeros(lead + (net.num_actions,))
         std = jnp.ones(lead + (net.num_actions,))
         for role, drones in slices.items():
-            m, s = net.apply(params[role]["actor"], envs.take(obs, drones))
+            m, s = net.apply(params[role]["actor"], obs.actor[role])
             mean = mean.at[..., drones, :].set(m)
             std = std.at[..., drones, :].set(s)
         return mean, std
@@ -186,12 +224,11 @@ def make_critic(net, slices, opponents):
     """Apply each role's critic. `action` is every drone's action this step."""
 
     def apply(params, obs, action):
-        value = jnp.zeros(obs.own.shape[:-1])
+        value = jnp.zeros(action.shape[:-1])
         for role, drones in slices.items():
             v = net.apply(
                 params[role]["critic"],
-                envs.take(obs, drones),
-                opp_actions(action, opponents[role]),
+                critic_input(obs, opp_actions(action, opponents[role]), len(drones)),
             )
             value = value.at[..., drones].set(v)
         return value
@@ -239,12 +276,10 @@ def make(cfg, env, env_params, pool_seat=None):
 
         def params(role, drones, k):
             k_a, k_c = jax.random.split(k)
-            scene = envs.take(one_scene, drones)
+            opp = opp_actions(one_action, opponents[role])
             return {
-                "actor": actor_net.init(k_a, scene),
-                "critic": critic_net.init(
-                    k_c, scene, opp_actions(one_action, opponents[role])
-                ),
+                "actor": actor_net.init(k_a, one_scene.actor[role]),
+                "critic": critic_net.init(k_c, critic_input(one_scene, opp, len(drones))),
             }
 
         ts = {
@@ -342,7 +377,6 @@ def make(cfg, env, env_params, pool_seat=None):
                 lambda x: x.reshape((batch_size,) + x.shape[2:])[perm],
                 (traj, adv, targets),
             )
-            # An empty neighbor dimension prevents inferring the batch size with -1.
             minibatches = jax.tree.map(
                 lambda x: x.reshape(
                     (cfg.num_minibatches, cfg.minibatch_size) + x.shape[1:]
@@ -405,31 +439,13 @@ def make(cfg, env, env_params, pool_seat=None):
         (ts, key), stats = lax.scan(epoch, (ts, key), None, length=cfg.update_epochs)
 
         done = info["done"]
-        episodes = done.sum()
-
-        def at_end(x):
-            """x on the step each episode ended, over the episodes that define it.
-            A NaN says this episode has no value, so it is dropped, not counted."""
-
-            x = x.astype(done.dtype)
-            weight = done * jnp.isfinite(x)
-            n = weight.sum()
-            total = jnp.sum(jnp.where(weight > 0, x, 0.0))
-            return jnp.where(n > 0, total / jnp.maximum(n, 1.0), jnp.nan)
-
-        def split(name, x, per_drone):
-            return by_role(name, x.astype(done.dtype), slices, per_drone)
-
-        metrics = {"episodes": episodes, "ep_length": at_end(info["ep_length"])}
-        for name, x in (
-            ("return", info["ep_return"]),
-            ("death_rate", 1.0 - info["alive"]),
-        ):
-            metrics |= {k: at_end(v) for k, v in split(name, x, True).items()}
-        for name, x in info["end"].items():
-            metrics |= {k: at_end(v) for k, v in split(name, x, x.ndim == 3).items()}
-        for name, x in info["step"].items():
-            metrics |= {k: v.mean() for k, v in split(name, x, x.ndim == 3).items()}
+        metrics = {"episodes": done.sum()} | episode_metrics(
+            info,
+            lambda x: mean_defined(x.astype(done.dtype), done),
+            lambda x: x.mean(),
+            slices,
+            lead=2,
+        )
 
         # Per role: the two sides of a game have opposite signs, so one pooled
         # variance rewards a critic that has only learned which role it is.

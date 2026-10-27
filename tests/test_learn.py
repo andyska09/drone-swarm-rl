@@ -41,6 +41,35 @@ def test_metrics_carry_the_env_measurements():
     assert set(metrics) >= {"return", "ep_length", "death_rate", "explained_var", "approx_kl"}
 
 
+def test_metrics_split_by_role_and_leave_out_undefined_episodes():
+    """The rules that training and eval share, on two episodes of two pursuers and an
+    evader: a drone metric splits by role, a scene metric keeps its name, and an
+    episode whose value is NaN is left out of the mean."""
+
+    info = {
+        "ep_length": jnp.array([10, 20]),
+        "ep_return": jnp.array([[1.0, 3.0, -2.0], [5.0, 7.0, -6.0]]),
+        "alive": jnp.ones((2, 3), bool),
+        "end": {
+            "caught": jnp.array([1.0, 0.0]),
+            "offset": jnp.array([[0.5, 0.7, 0.0], [jnp.nan, jnp.nan, 0.0]]),
+        },
+        "step": {},
+    }
+    slices = ppo.role_slices(("pursuer", "pursuer", "evader"))
+    episodes = lambda x: ppo.mean_defined(x, 1.0)
+    metrics = ppo.episode_metrics(info, episodes, lambda x: x.mean(), slices, lead=1)
+
+    assert set(metrics) == {
+        "ep_length", "pursuer_return", "evader_return", "pursuer_death_rate",
+        "evader_death_rate", "caught", "pursuer_offset", "evader_offset",
+    }
+    assert float(metrics["pursuer_return"]) == 4.0 and float(metrics["evader_return"]) == -4.0
+    assert float(metrics["caught"]) == 0.5
+    assert jnp.isclose(metrics["pursuer_offset"], 0.6), "the NaN episode counted"
+    assert float(metrics["evader_offset"]) == 0.0
+
+
 def test_a_frozen_role_does_not_move():
     """The turn passed to the update freezes every role it marks False."""
 

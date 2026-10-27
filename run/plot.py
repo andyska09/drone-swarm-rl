@@ -10,8 +10,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import matplotlib.pyplot as plt
 import numpy as np
 
-from swarm import envs
 from swarm.envs import core
+from swarm.learn import evaluate
 
 AXES = ("x", "y", "z")
 
@@ -20,7 +20,7 @@ def load(path, episode, drone):
     path = pathlib.Path(path)
     traj = np.load(path / "trajectory.npz")
     header = json.loads((path / "header.json").read_text())
-    _, params = envs.make(header["task"], header["preset"])
+    _, params = evaluate.eval_env(path.parents[1])
 
     k = max(int(traj["live"][episode].sum()), 1)
     cut = lambda name: np.asarray(traj[name])[episode, :k, drone]
