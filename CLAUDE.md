@@ -104,7 +104,7 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
-- `sim/guidance.py` — the hand-written opponents for chase: FRPN, APF and the flown
+- `sim/guidance.py` — the guidance laws behind chase's pilots: FRPN, APF and the flown
   paths. Each one gives a world acceleration.
 - `envs/` — one file per task, plain functions, no gymnax; auto-reset belongs to the
   trainer. **The env contract** every task file meets is in the docstrings of
@@ -112,10 +112,10 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   Read it before writing a task. Every task carries a drone axis, `N = 1` included, and
   each has a spec in `research/notes/tasks/task_<name>.md`.
 - **`envs/core.py` holds everything the tasks share**: `Common` (the `EnvParams`
-  fields every task has, which each task's `EnvParams` inherits), `fly` (the rate
-  loop and the plant for one policy step), `own_obs`/`target_obs`/`others`,
-  `spawn`, `hits`, `is_dead`, and the CTBR action conversion. A task file holds only
-  what makes that task different. Do not copy a helper into a task file.
+  fields every task has, which each task's `EnvParams` inherits), and the helpers for
+  the flight of one policy step, the obs, the start, the contact rules and the pilots. Read its function list before
+  you write a helper. A task file holds only what makes that task different. Do not
+  copy a helper into a task file.
 - **No task names a drone by number.** `roles` is static, so a task reads its own
   index arrays from it — see `chase._sides`. That is what lets a longer `roles`
   add more pursuers with no other change.
@@ -124,12 +124,14 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   −1 for a crash, 0 at every other step. `circle_swap` adds a proximity cost and an
   upright term. **`chase` keeps three words apart and never mixes them**: `fail` is leaving
   the box through the ground, a wall or the ceiling (in a preset without walls only the
-  ground, and the evader pays `outside` per second instead), `collPP` is a pursuer hitting a
-  pursuer (both end the episode), and `collPE` is a pursuer hitting the evader, which
-  costs per step and does not end it. `collPP` and `collPE` are Gavin's names, used
+  ground, and the evader pays `outside` per second instead), `coll_pp` is a pursuer hitting a
+  pursuer (both end the episode), and `coll_pe` is a pursuer hitting the evader, which
+  costs per step and does not end it. **A name with a role in it is `<event>_<role>`**,
+  with `p` for a pursuer and `e` for the evader (`coll_pp`, `crash_p`, `OOB_e`), used
   for the `RewardConfig` field, the function and the `info` key alike. The outcomes
   split a `fail` into `crash` (the ground, or a broken state) and `OOB` (a wall or
-  the ceiling). **This reward parks the drone 0.2-0.6 m short of the goal** — the open
+  the ceiling). Only the outcome `fail_pe` joins two words: on one step a pursuer fails
+  or hits a pursuer, and the evader fails. **This reward parks the drone 0.2-0.6 m short of the goal** — the open
   problem, with the fixes other papers use, is in
   [research/notes/literature/reward_terms.md](research/notes/literature/reward_terms.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is

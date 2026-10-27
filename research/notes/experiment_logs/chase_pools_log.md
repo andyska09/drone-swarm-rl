@@ -218,8 +218,8 @@ notes on pool training and on the hand-written opponents.
 - **Each member gets at least 3 blocks** with `γh = 0.7` and at most 14 members.
 - **A frozen network flies its mean action.** Němeček does the same
   (`deterministic=True`, `train_pipeline.py:228`).
-- **The run with `--steps 1.4e9` and `generations=13`** has 28 phases of 190 updates,
-  49.8M steps each. The few updates left over are not run.
+- **The run with `--steps 1.4e9` and `generations=13`** has 14 phases of 190 updates,
+  49.8M steps per side each. The few updates left over are not run.
 
 The files of a pool run:
 
@@ -228,11 +228,11 @@ The files of a pool run:
 | `metrics.csv` | one row per update. Adds `generation`, `training` (the side that learns) and an `lr` per role. The frozen side's learner stats stay empty: losses, entropy, KL, clip fraction, explained variance |
 | `hedge.csv` | one row per generation, side and pool member: the win rate and the weight |
 | `pool/<role>_<generation>.pkl` | one policy per side per generation. Loads as a `--seat` source |
-| `latest.pkl` | the training state at the end of the last finished phase |
+| `latest.pkl` | the training state at the last checkpoint |
 | `checkpoints/` | numbered policy snapshots, as in every run |
 
-`python run/train.py --resume runs/<run>` restarts the unfinished phase from its start,
-with the same pool.
+`python run/train.py --resume runs/<run>` continues from the last checkpoint, with the
+same pool.
 
 ### Baselines
 
@@ -305,6 +305,21 @@ Sources:
   `examples/agents.py` (`OriginalFRPN`, `AdvancedAPFEvader`), `examples/eval_rl_pur.py`
   (`APF_PARAMS`), `src/agent/mrs_uav.cpp`, `src/agent/target_uav.cpp`,
   `src/env/environment.cpp`.
+
+## Reasons for the spec, 2026-10-27
+
+- **Both sides learn at once.** Each side trains only against the other side's pool up
+  to generation k − 1, so neither side needs the other's new weights. The phases go from
+  28 to 14, and each side still gets 49.8M steps per phase. The runs before 2026-10-27
+  used the old schedule: the sides learned in turn, the evader first.
+- **One outcome for any N**, in the order caught, fail_both, pursuer failure, evader
+  failure, time_limit. A pursuer failure is a crash, an OOB or a collPP, so a collPP is
+  an evader win.
+- **The start rule is our own: 2 m apart.** A drone touches a net only within 1.54 m of
+  the pursuer's centre: the farthest touching centre is at (0.40, 0.5, 1.4) m in the net
+  frame. 2 m is above both that and the 0.8 m contact distance, so no catch and no
+  collision can happen at step 0. The paths evader is placed first, so its path keeps
+  its full size, and then the pursuers are drawn again.
 
 ## Open
 

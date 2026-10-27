@@ -18,7 +18,7 @@ it changes. `Default.` in a task spec means that the section here holds.
 | truncation | an end by the clock. The critic estimates the future value |
 | future value | what the learner adds for the time after the end: 0, or the critic's estimate |
 | preset | a named set of task values |
-| baseline | a hand-written controller that flies a role in eval |
+| pilot | a hand-written controller that can fly any role in place of its network |
 | $[X]$ | 1 when $X$ is true, else 0 |
 
 ## Symbols
@@ -140,7 +140,8 @@ for all of them.
 - **Death:** drone $i$ dies when it leaves the box ($p_i \notin B$, the floor included),
   turns upside down ($R_{i,33} < 0$), or touches another drone.
 - **End:** the episode ends at the first death, which is terminal for every drone, or
-  after $T$ steps, which is a truncation for every flying drone.
+  after $T$ steps, which is a truncation for every flying drone. If the task ends the
+  episode at step $T$, the task's end holds.
 - In every task, a NaN or infinite position kills the drone. The task counts it as its
   crash or wall event.
 
@@ -157,6 +158,7 @@ for all of them.
 | `ep_length` | the number of steps in the episode |
 | `return` | the sum of the rewards of a drone, mean over the drones of a role |
 | `death_rate` | the share of the drones of a role that are dead at the end |
+| `time_limit` | 1 if the episode ended by truncation after $T$ steps, else 0 |
 
 - With more than one role, a per-drone metric gets the role as a prefix, for example
   `pursuer_return`.
@@ -189,20 +191,22 @@ learning rate, reward scale and advantage scale.
 - At a truncation, each flying drone adds $\gamma V$ of the final state to its last
   reward. A NaN or infinite $V$ counts as 0.
 - The loss uses the steps where a drone flies, and the step where it dies or arrives.
-- The first episode of each environment starts with its clock at a random step in
-  $[0, T)$. So it can end early, by truncation.
+- The first episode of each environment has a random step limit in $[1, T]$. Its time
+  still starts at 0.
 
 ## Evaluation
 
 - 1024 episodes, on the fixed seed 1,000,000, far from the training seeds.
 - A network flies its mean action.
 - Each episode runs once, to its own end.
-- If a task gives eval values, eval uses them.
-- A baseline can fly a role in place of its network.
+- Eval flies the task values that the run started with, and the task's eval values on
+  top.
+- Eval can also fly another preset of the same task, for example a bigger arena.
+- A pilot can fly a role in place of its network.
 
 ### The cascade
 
-The cascade is a baseline for any role in any task. The MRS cascade flies drone $i$ to
+The cascade is a pilot for any role in any task. The MRS cascade flies drone $i$ to
 the reference point of the task, with heading 0. It runs every $\Delta t$, and its rate
 command goes through the action limits.
 
@@ -215,7 +219,7 @@ command goes through the action limits.
 
 ### The acceleration chain
 
-A baseline that gives a world acceleration $a$ flies it through these steps, at each
+A pilot that gives a world acceleration $a$ flies it through these steps, at each
 step:
 
 1. The motors limit $a$. The vertical part gets thrust first, and the sideways part gets

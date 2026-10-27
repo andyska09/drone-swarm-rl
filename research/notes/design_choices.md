@@ -161,7 +161,9 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   `step`, `get_obs`, `reference` and a `PRESETS` dict. `swarm/envs/__init__.py`
   holds the contract every task file meets, the shared `Obs`, and
   `make(task, preset)`, which loads a task by name, so adding a task needs no
-  registry. `core.py` holds what the tasks share. The trainer handles automatic
+  registry. The contract between `envs/` and `learn/` stays narrow: an obs the learner
+  never looks inside, three flags per drone, the pilot names and the metric shapes. So a
+  new task changes nothing in `learn/`. `core.py` holds what the tasks share. The trainer handles automatic
   episode resets, so we do not need gymnax's auto-reset base class. Single-drone
   and swarm tasks use the same interface, with a drone dimension on observations,
   actions and rewards.
@@ -171,12 +173,13 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   approximate time constant of 0.25 s at `kp = 4.0`, so either rate is sufficient
   for it. The extra physics step costs roughly 1% by operation count: about
   1,000 floating-point operations for RK4 versus 70,000 for a policy evaluation.
-- **Observation fields.** Every task fills the same
-  `Obs(own, others, others_mask, target, scene)`. `core.own_obs` takes the wall
-  distances from the task: the arena box (`core.wall_dist`), or the task's own box, as
-  the avoidance tube (`core.box_dist`). `flat` zeroes the empty seats, so the vector
-  width never changes. Keeping the other drones in their own field lets an attention
-  network read them directly.
+- **Observation fields.** Each task builds `Obs(actor={role: matrix}, critic=vector)`:
+  one matrix per role, one row per drone, and the task picks the columns. The learner
+  never looks inside a row, so a task can change its obs with no change in `learn/`.
+  `core.own_obs` takes the wall distances from the task: the arena box
+  (`core.wall_dist`), or the task's own box, as the avoidance tube (`core.box_dist`).
+  `core.others` sorts the drones that each drone sees and zeroes the empty seats, so the
+  row width never changes.
 - **Rotation representation.** Observations include all nine entries of `R`.
   This choice follows SimpleFlight's reported result of roughly 64% worse
   performance with quaternions.
@@ -206,43 +209,50 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   or replay.
 - **Arrival.** In `avoidance`, a drone that reaches its goal leaves the episode, and
   the other drone flies on. The arrived drone stays frozen where it arrived, and the
-  other drone can neither see it nor touch it. The task gives `arrived` and
-  `arrived_this_step` in `info`. `vecenv` trains a drone while it is `alive` and has
-  not arrived. So an arrival ends that drone's training steps with zero future value,
-  as a failure does, but the drone stays `alive`, and `death_rate` does not count it.
-- **Episode endings.** The time limit, `max_steps` in each task, is a
-  truncation: training stops the rollout but still uses the estimated future
-  value `V(s_T)` for surviving drones. A failed drone has zero future value.
-  `done` tells the trainer to reset the scene; `died_this_step` identifies drones
-  that just failed; `truncated` says that every drone still alive bootstraps. That
-  is the time limit, and in `chase` also a failure without a catch: only a catch is
-  terminal for the survivor.
+  other drone can neither see it nor touch it. An arrived drone has `flying` false and
+  `alive` true. So an arrival ends that drone's training steps with zero future value,
+  as a failure does, but `death_rate` does not count it.
+- **Episode endings.** `step` gives three flags per drone, `alive`, `flying` and
+  `bootstrap`, and the scene flag `done`. The trainer computes the rest: the loss uses
+  a drone's step if the drone was flying before it, and the return goes on while the
+  drone flies and the scene goes on. The trainer owns the step limit, `max_steps`: at
+  the limit every flying drone bootstraps from `V(s_T)`, unless the task ended the
+  episode at the same step. When the task ends it, `bootstrap` says which flying drones
+  bootstrap. A failed drone has zero future value. In `chase` only a catch is terminal
+  for the survivors.
 - **The cascade uses the policy interface.** Every action follows the same path:
-  action → rate controller → mixer → physics. There is no separate `action_mode`.
-  `control.cascade_outer` runs the cascade's position, velocity, acceleration and
-  attitude stages, producing throttle and body-rate commands (CTBR).
-  `command_to_action` converts these to the four normalized action values that a
-  network would supply. Both controllers use the same rewards, starting states
+  action → rate controller → mixer → physics. There is no separate `action_mode`. The
+  cascade is a pilot, `core.cascade_pilot`. `control.cascade_outer` runs the cascade's
+  position, velocity, acceleration and attitude stages, producing throttle and
+  body-rate commands (CTBR). `command_to_action` converts these to the four normalized
+  action values that a network would supply. The pilots that give a world acceleration
+  (FRPN, APF, paths) go through `core.accelerate`, the acceleration and attitude stages. Both controllers use the same rewards, starting states
   and episode length, so their results can be compared directly. In this setup,
   the outer controllers run at 100 Hz instead of 200 Hz, and their rate commands
   are limited to ±4 rad/s for roll/pitch and ±2 rad/s for yaw.
 - **Controller state.** `EnvState` stores only the rate controller's `PIDState`.
-  The cascade policy stores the PID states for its position, velocity and
+  The cascade pilot stores the PID states for its position, velocity and
   attitude controllers.
-- **Staggered clocks.** The trainer gives each scene a random clock value on the
-  first reset, and then calls `get_obs` again. Scenes that start together also end
-  together, and then most updates finish no episode and report nothing. Later
-  resets are not staggered, so no episode after the first is cut short. This is
-  the one place where the trainer uses a field of the env state by name (`time`).
-  A task whose time limit is a failure counts it with its own step counter, as
-  `avoidance` does with `steps`, and keeps `max_steps` above it.
+- **Staggered clocks.** The trainer keeps a step count and a step limit for each
+  scene. The first episode's limit is random in [1, `max_steps`], and every later
+  limit is `max_steps`. Scenes that start together also end together, and then most
+  updates finish no episode and report nothing. The task's own `time` starts at 0 in
+  every episode, so the trainer reads no field of the env state, and a deadline of the
+  task, as avoidance's 10 s `timeout`, reads the true time.
 - **Curriculum.** A task can change its params during training: it gives
-  `curriculum(params, metrics)`. `runner.train` calls it after every update with that
-  update's metrics. When it returns new params, the runner builds the update again
+  `curriculum(params, metrics)`. The training loop calls it after every update with
+  that update's metrics. When it returns new params, the runner builds the update again
   with `ppo.make`, because the params are constants inside the compiled update. One
   rebuild compiled in about 2 s on the Mac (CPU). The other way, passing the params
   into the update as data, makes every float param of every task an input instead of
   a constant, and changes `ppo.py`.
+- **Resume.** Every run resumes from its last checkpoint, and the resumed run is
+  bit-exact. `latest.pkl` holds the weights, the optimizer state, the key, each
+  learner's envs and pool, and the env params of a curriculum. Two details make it
+  bit-exact: the reward-scale count has a fixed dtype, and the env params are pickled as
+  JAX arrays, because XLA folds a numpy constant and rounds it differently. The
+  curriculum runs before the save, so a resume starts with the params of the next
+  update.
 
 ## Learner
 
@@ -291,10 +301,10 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   policy steps; training reports the average length of episodes that finished.
 - **Results stay with the run.** Evaluation writes to
   `runs/<run>/evals/<name>/`, keeping results with the run they measure.
-- **Policy selection.** One flag names one seat: `--seat ROLE SOURCE`, where the
-  source is this run's checkpoint, another run's, a `.pkl`, or a hand-written source
-  from `seats.SOURCES` (`cascade`, `frpn`, `apf`, `paths`). A role nobody names
-  flies this run's own checkpoint. That is what lets a duel measure one side
+- **Policy selection.** One `--seat` flag names one seat: the role, then who flies it.
+  That is another run, a `.pkl`, or one of the task's `PILOTS` (`cascade` in every
+  task, and `frpn`, `apf` and `paths` in chase). Any pilot can fly any seat. A role
+  nobody names flies this run's own checkpoint. That is what lets a duel measure one side
   against a fixed opponent.
 - **Replay data.** The viewer reads task, preset, arena, roles and `policy_dt`
   from `header.json`, and state from `trajectory.npz`. It does not import the
@@ -323,4 +333,4 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
 - Collective thrust in newtons instead of the normalized throttle in the CTBR action,
   so the airframe does not matter.
 - One death rule for all tasks. `core.is_dead` kills a drone that flips over, and
-  `chase`, `avoidance` and `tunnel` let it fly on.
+  `chase` and `avoidance` let it fly on.

@@ -1,7 +1,7 @@
 # Task tunnel — run log
 
 The runs of the tunnel task and their results. The spec is in
-[task_tunnel.md](../tasks/task_tunnel.md).
+[task_tunnel.md](../archive/task_tunnel.md).
 
 ## The first CPU run
 

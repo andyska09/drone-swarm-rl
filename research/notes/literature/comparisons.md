@@ -98,14 +98,14 @@ code. What the runs scored against theirs:
 | episode | 10 s | 10 s | 12 s, 600 steps |
 | policy rate | 100 Hz | 50 Hz | 50 Hz |
 | action | CTBR | CTBR | world acceleration and heading rate |
-| spawn | anywhere 2 m inside the box, any heading, tilt up to 0.2 rad, up to 0.5 m/s | any heading, tilt up to 5°, up to 0.1 m/s, 0.5 m apart and from the bounds | not stated |
+| spawn | anywhere 2 m inside the box, 2 m apart, any heading, tilt up to 0.2 rad, up to 0.5 m/s | any heading, tilt up to 5°, up to 0.1 m/s, 0.5 m apart and from the bounds | not stated |
 | the value target at an episode end | a catch is terminal. After a failure the survivors bootstrap | a capture is terminal. Out of bounds and the timeout are truncations for every agent | every end is terminal, the timeout too: SB3 never gets `TimeLimit.truncated` |
 | **training** | | | |
 | method | AMSPBH, from Roncero v3 | AMSPBH, v3 (June 2026) | Roncero's [v1](https://arxiv.org/abs/2506.02849v1) (June 2025) for p_old and [v2](https://arxiv.org/abs/2506.02849v2) (September 2025) for the loop, before Hedge |
 | generations | 0 to 13 | pretraining, then 1 to 13 | pretraining as generation 0, then 1 to 7 |
-| steps per phase | 49.8M at 100 Hz: half of Roncero's flight time | 50M at 50 Hz | 30M at 50 Hz |
-| parallel envs | 4096 | 6144 | 100 |
-| who learns first | the evader | not stated: each side trains against generation k − 1 | the evader |
+| steps per phase | 49.8M per side at 100 Hz: half of Roncero's flight time | 50M at 50 Hz | 30M at 50 Hz |
+| parallel envs | 4096 per side | 6144 | 100 |
+| who learns first | both at once: each side trains against generation k − 1 | not stated: each side trains against generation k − 1 | the evader |
 | pursuer g trains against evader g | no | no | yes |
 | opponent mix | Hedge, γh = 0.7, ηh = 2: 70 % split evenly, 30 % mostly to the opponents that beat the learner | the same as ours | p_old = 0.75: the newest opponent gets 25 %, and the older ones share 75 % evenly, whatever their results |
 | win rates for Hedge | 600 episodes, mean actions, the fixed eval seeds | 600 episodes under training conditions | — |
@@ -142,7 +142,7 @@ here from the chase spec on 2026-10-25.
 | `max_rate_rp` / `max_rate_yaw` | 4.0 / 2.0 rad/s | not published |
 | drone | x500, 2.0 kg, 0.80 m across the propeller tips | not published |
 | drones | from `roles`, default `("pursuer", "evader")` | pursuers + evader |
-| start | uniform random in the box, 2 m clear of every face | both uniform random |
+| start | uniform random in the box, 2 m clear of every face, 2 m apart | both uniform random |
 | start heading | random, full circle | not published |
 | start motion | up to 0.5 m/s on each axis, tilt up to 0.2 rad | not published |
 | contact | `collision_dist = 0.8 m` between centres | the same |

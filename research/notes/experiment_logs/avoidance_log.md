@@ -5,7 +5,7 @@ The runs of the avoidance task, their results, and why the spec changed. The spe
 
 ## Why the task exists, 2026-10-20
 
-The task replaces the tunnel ([task_tunnel.md](../tasks/task_tunnel.md)). The tunnel runs hit
+The task replaces the tunnel ([task_tunnel.md](../archive/task_tunnel.md)). The tunnel runs hit
 the walls, mostly at the first bend, before any meeting ([tunnel_log.md](tunnel_log.md)).
 So the tunnel score mixed two skills: flying the tube and dodging. In open space there
 are no walls, and only the sight range sets the warning time.

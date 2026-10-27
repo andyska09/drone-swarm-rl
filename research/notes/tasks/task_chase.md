@@ -33,6 +33,9 @@ Log: [chase_pools_log.md](../experiment_logs/chase_pools_log.md), and before the
 
 - Each drone starts at a uniform point of the box, 2 m clear of every face:
   $p_i \sim U\left[c - (L/2 - 2\ \text{m}),\ c + (L/2 - 2\ \text{m})\right]$.
+- Every two drones start at least 2 m apart: the first of 16 draws that meets this.
+- If the paths pilot flies the evader, the evader starts on its path. Then the pursuers
+  are drawn again by the same rules.
 - The rest follows the default.
 
 ## Drone
@@ -93,19 +96,20 @@ $$
 | name | when | definition |
 |---|---|---|
 | `caught_evader` | at the end | the episode ended in a capture |
-| `crash_pursuer` | at the end | a pursuer crashed, and the evader is alive |
-| `OOB_pursuer` | at the end | a pursuer went OOB, and the evader is alive |
-| `timeout` | at the end | the episode reached $T$, with every drone alive |
-| `crash_evader` | at the end | the evader crashed, and every pursuer is alive |
-| `OOB_evader` | at the end | the evader went OOB, and every pursuer is alive |
-| `fail_both` | at the end | a pursuer and the evader failed at the same step |
-| `time_to_catch` | at the end | the time of the capture, in s. Only captures count |
+| `fail_both` | at the end | the evader failed, and at the same step a pursuer failed or had a collPP |
+| `crash_pursuer` | at the end | a pursuer crashed |
+| `OOB_pursuer` | at the end | a pursuer went OOB |
 | `collPP` | at the end | the episode ended in a collPP |
+| `crash_evader` | at the end | the evader crashed |
+| `OOB_evader` | at the end | the evader went OOB |
+| `time_to_catch` | at the end | the time of the capture, in s. Only captures count |
 | `catch_offset` | at the end | at a capture, the distance from the middle of the net to the evader, in the net plane: $\min_p \lVert (q_y,\ q_z) \rVert$, with $q$ of the evader in the net frame of $p$ |
 | `distance` | mean over the steps | $\min_p \lVert p_e - c_p \rVert$ |
 | `collPE` | mean over the steps | the share of steps with a collPE for some $p$ |
 
-In the duel, the first seven metrics add up to 1.
+The first seven metrics are the outcomes. Each episode gets exactly one: the first that
+holds, in the order of the table, or else `time_limit`. These eight add up to 1 for any
+$N$.
 
 ## Presets
 
@@ -121,17 +125,19 @@ The floor is at $z = 0$ in every preset.
 ## Training
 
 - Runs set $\gamma$ = 0.99.
-- With $G = 0$ generations, both sides learn at the same time. With $G > 0$, the sides
-  learn in turn against pools of frozen opponents, as below. Runs use $G$ = 13.
+- With $G = 0$ generations, both sides learn at the same time, against each other. With
+  $G > 0$, each side learns against a pool of frozen opponents, as below. Runs use
+  $G$ = 13.
 
 ### Pools
 
-- The run splits into $2(G + 1)$ phases with the same number of updates.
-- In generation $k = 0, \dots, G$, the evader learns first, then the pursuer. In each
-  phase one side learns, and a pool of frozen opponents flies the other side.
-- The learner trains against the other side's pool as it was at the end of generation
-  $k - 1$. So each pursuer trains against older evaders.
-- At the end of its phase, the learner joins its own pool. A pool only grows.
+- The run splits into $G + 1$ phases with the same number of updates, one for each
+  generation $k = 0, \dots, G$.
+- In each phase both sides learn at the same time. Each side trains against the other
+  side's pool as it was at the end of generation $k - 1$.
+- Each side has its own environments, its own blocks and its own opponent mix.
+- The step budget of a run counts the steps of both sides.
+- At the end of a phase, each learner joins its own pool. A pool only grows.
 
 | pool | first member | then |
 |---|---|---|
@@ -154,7 +160,7 @@ episodes, as in eval. $w_j$ is the learner's win rate:
 
 | the pursuer wins | the evader wins | half a win to each side |
 |---|---|---|
-| `caught_evader`, `crash_evader`, `OOB_evader` | `timeout`, `crash_pursuer`, `OOB_pursuer` | `fail_both` |
+| `caught_evader`, `crash_evader`, `OOB_evader` | `time_limit`, `crash_pursuer`, `OOB_pursuer`, `collPP` | `fail_both` |
 
 The weight of member $j$, in a pool of $M$ members:
 
@@ -168,14 +174,14 @@ $$
 | $\eta_h$ | 2 |
 
 - If every $c_j$ is 0, the second term is uniform.
-- The environments form 64 blocks of the same size. Member $j$ flies in $64\, \mu_j$
+- The environments of each side form 64 blocks of the same size. Member $j$ flies in $64\, \mu_j$
   blocks, rounded by the largest remainder. A block keeps its member for the whole phase.
 
 ## Evaluation
 
-A role can be flown by its network, or by one of these baselines:
+A role can be flown by its network, or by one of these pilots:
 
-| baseline | role | what flies |
+| pilot | role | what flies |
 |---|---|---|
 | cascade | any | the default cascade, to the reference point below |
 | FRPN | pursuer | a guidance law that aims at where the evader will be |
