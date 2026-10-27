@@ -59,9 +59,9 @@ Default.
 - **Fail:** with closed walls, a drone leaves the box. With open walls, a drone goes below
   the floor. The drone dies. A fail at the floor is a crash, and a fail at a wall or the
   ceiling is an OOB.
-- **collPP:** a pursuer touches another pursuer, or the net of one pursuer touches the
+- **coll_pp:** a pursuer touches another pursuer, or the net of one pursuer touches the
   other. Both pursuers die.
-- **collPE:** a pursuer touches the evader. The episode goes on.
+- **coll_pe:** a pursuer touches the evader. The episode goes on.
 - **Outside:** the evader is outside the box. The episode goes on.
 - **End:** the episode ends at a capture, at a death, or after $T$ steps. A capture is
   terminal for every drone. A death is terminal for the drones that died, and a
@@ -72,8 +72,8 @@ Default.
 
 $$
 \begin{aligned}
-r_p ={}& \Delta t \left( -\lambda_{\text{step}} - \lambda_{\text{dist}} \lVert p_e - c_p \rVert - \lambda_{\text{PE}}\, [\text{collPE}_p] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_p \rVert \right) + \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{PP}}\, [\text{collPP}_p] - \lambda_{\text{fail}}\, [\text{fail}_p] \\
-r_e ={}& \Delta t \left( \lambda_{\text{step}} - \lambda_{\text{PE}}\, [\text{collPE}_p \text{ for some } p] - \lambda_{\text{out}}\, [\text{outside}] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_e \rVert \right) - \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{fail}}\, [\text{fail}_e]
+r_p ={}& \Delta t \left( -\lambda_{\text{step}} - \lambda_{\text{dist}} \lVert p_e - c_p \rVert - \lambda_{\text{PE}}\, [\text{coll\_pe}_p] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_p \rVert \right) + \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{PP}}\, [\text{coll\_pp}_p] - \lambda_{\text{fail}}\, [\text{fail}_p] \\
+r_e ={}& \Delta t \left( \lambda_{\text{step}} - \lambda_{\text{PE}}\, [\text{coll\_pe}_p \text{ for some } p] - \lambda_{\text{out}}\, [\text{outside}] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_e \rVert \right) - \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{fail}}\, [\text{fail}_e]
 \end{aligned}
 $$
 
@@ -95,17 +95,17 @@ $$
 
 | name | when | definition |
 |---|---|---|
-| `caught_evader` | at the end | the episode ended in a capture |
-| `fail_both` | at the end | the evader failed, and at the same step a pursuer failed or had a collPP |
-| `crash_pursuer` | at the end | a pursuer crashed |
-| `OOB_pursuer` | at the end | a pursuer went OOB |
-| `collPP` | at the end | the episode ended in a collPP |
-| `crash_evader` | at the end | the evader crashed |
-| `OOB_evader` | at the end | the evader went OOB |
+| `caught_e` | at the end | the episode ended in a capture |
+| `fail_pe` | at the end | the evader failed, and at the same step a pursuer failed or had a coll_pp |
+| `crash_p` | at the end | a pursuer crashed |
+| `OOB_p` | at the end | a pursuer went OOB |
+| `coll_pp` | at the end | the episode ended in a coll_pp |
+| `crash_e` | at the end | the evader crashed |
+| `OOB_e` | at the end | the evader went OOB |
 | `time_to_catch` | at the end | the time of the capture, in s. Only captures count |
 | `catch_offset` | at the end | at a capture, the distance from the middle of the net to the evader, in the net plane: $\min_p \lVert (q_y,\ q_z) \rVert$, with $q$ of the evader in the net frame of $p$ |
 | `distance` | mean over the steps | $\min_p \lVert p_e - c_p \rVert$ |
-| `collPE` | mean over the steps | the share of steps with a collPE for some $p$ |
+| `coll_pe` | mean over the steps | the share of steps with a coll_pe for some $p$ |
 
 The first seven metrics are the outcomes. Each episode gets exactly one: the first that
 holds, in the order of the table, or else `time_limit`. These eight add up to 1 for any
@@ -160,7 +160,7 @@ episodes, as in eval. $w_j$ is the learner's win rate:
 
 | the pursuer wins | the evader wins | half a win to each side |
 |---|---|---|
-| `caught_evader`, `crash_evader`, `OOB_evader` | `time_limit`, `crash_pursuer`, `OOB_pursuer`, `collPP` | `fail_both` |
+| `caught_e`, `crash_e`, `OOB_e` | `time_limit`, `crash_p`, `OOB_p`, `coll_pp` | `fail_pe` |
 
 The weight of member $j$, in a pool of $M$ members:
 

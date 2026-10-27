@@ -312,8 +312,8 @@ Sources:
   to generation k − 1, so neither side needs the other's new weights. The phases go from
   28 to 14, and each side still gets 49.8M steps per phase. The runs before 2026-10-27
   used the old schedule: the sides learned in turn, the evader first.
-- **One outcome for any N**, in the order caught, fail_both, pursuer failure, evader
-  failure, time_limit. A pursuer failure is a crash, an OOB or a collPP, so a collPP is
+- **One outcome for any N**, in the order caught, fail_pe, pursuer failure, evader
+  failure, time_limit. A pursuer failure is a crash, an OOB or a coll_pp, so a coll_pp is
   an evader win.
 - **The start rule is our own: 2 m apart.** A drone touches a net only within 1.54 m of
   the pursuer's centre: the farthest touching centre is at (0.40, 0.5, 1.4) m in the net

@@ -66,7 +66,7 @@ two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 | command | `cmd = 0.02·‖ω_cmd‖` | — | `effort = 0.05` | `λcmd = 2e-4·‖aω‖` | `λcmd = 2e-4·‖aω‖` | — | — |
 | command change | — | — | — | — | — | `κsm = 0.002`, on the change of the rate command | — |
 | near miss | — | `10.0·Σ max(1 − d/1.5, 0)` | `αrclose`, same shape, 10.0 | — | — | — | — |
-| contact | `collPP = 10.0` one-off, ends it; `collPE = 10.0`, soft | death, `25.0·N` one-off | elastic bounce, `1.0` | `λcoll = 0.1`, soft, no death | `λcollPP = 10.0`, `λcollPE = 0.1` | — | — |
+| contact | `coll_pp = 10.0` one-off, ends it; `coll_pe = 10.0`, soft | death, `25.0·N` one-off | elastic bounce, `1.0` | `λcoll = 0.1`, soft, no death | `λcollPP = 10.0`, `λcollPE = 0.1` | — | — |
 | upright | — | `−1.0·R₃₃` | `orient = 1.0·R₃₃` | — | — | — | — |
 | crash / out of bounds | `fail = 30.0` one-off | `25.0·N` one-off | `crash = 1.0` per step | `λfail = 30.0` | `λfail = 30.0` | `κb = 10.0`, to the one who left | the ground: `κg = 10.0` |
 | survival | `step = 4.0`: the evader earns it, the pursuer pays it | — | — | — | `λstep = 0.04`: the evader earns it, the pursuers pay it | `κs = 0.0025`, the evader earns it | `κs = 0.007`, the evader earns it |
@@ -121,7 +121,7 @@ code. What the runs scored against theirs:
 | γ | 0.99 | not stated | 0.99 |
 | **evaluation** | | | |
 | final eval | random spawns on `EVAL_SEED`, 1024 episodes, one seed per run | fixed starts at (0, ±1.5, 1) m, 1024 episodes × 3 seeds, no randomization | every generation against every generation, Fig. 8.12 |
-| a pursuer wins on | a catch, or a failure of the evader. `fail_both` is half a win to each side | a capture, or the evader out of bounds | a catch |
+| a pursuer wins on | a catch, or a failure of the evader. `fail_pe` is half a win to each side | a capture, or the evader out of bounds | a catch |
 
 The other PPO settings are ours, not the paper's: rollout 64, GAE 0.95, grad clip 0.5,
 reward normalization and raw observations.
@@ -160,7 +160,7 @@ The net:
 | `c_net`, the middle | 0.9 m below the drone | "the centre of the catching net" |
 | thickness | **zero** — it is a plane | "a capture distance", no number |
 
-The net on another pursuer counting as `collPP` is ours. Gavin's is body to body only.
+The net on another pursuer counting as `coll_pp` is ours. Gavin's is body to body only.
 
 Gavin Nv1, the pursuer. Each `r` below is a positive quantity, and the signs are in the
 sum:
@@ -182,10 +182,10 @@ Our per-step weights are Gavin's divided by `policy_dt`:
 | `distance` | 0.1 | 0.001 | `λdist` |
 | `step` | 4.0 | 0.04 | `λstep` |
 | `cmd` | 0.02 | 0.0002 | `λcmd` |
-| `collPE` | 10.0 | 0.1 | `λcollPE` |
+| `coll_pe` | 10.0 | 0.1 | `λcollPE` |
 | `outside` | 0.0, and 57.0 in `open` and `nemecek` | 0.57 | none |
 | `catch` | 10.0 | not multiplied | `λcatch = 10.0` |
-| `collPP` | 10.0 | not multiplied | `λcollPP = 10.0` |
+| `coll_pp` | 10.0 | not multiplied | `λcollPP = 10.0` |
 | `fail` | 30.0 | not multiplied | `λfail = 30.0` |
 
 | term | ours | Gavin pursuer |
@@ -195,8 +195,8 @@ Our per-step weights are Gavin's divided by `policy_dt`:
 | upright | none | none |
 | velocity | none | none |
 | action difference | none | none |
-| `collPE` | 0.1 per step, both sides, soft | the same |
-| `collPP` | 10.0, ends it, **net counts too** | 10.0, ends it, bodies only |
+| `coll_pe` | 0.1 per step, both sides, soft | the same |
+| `coll_pp` | 10.0, ends it, **net counts too** | 10.0, ends it, bodies only |
 | the evader near the bounds | none. In `open` and `nemecek`, `outside` beyond the box | `λbnd`, evader only, near the bounds |
 
 The episode ends:
@@ -205,6 +205,6 @@ The episode ends:
 |---|---|---|
 | a net catches the evader | ends it, terminal | `λcatch` |
 | `fail` | ends it, the survivors bootstrap | `λfail` |
-| `collPP` | ends it, the survivors bootstrap | `λcollPP`, bodies only |
-| `collPE` | does not end it | the same |
+| `coll_pp` | ends it, the survivors bootstrap | `λcollPP`, bodies only |
+| `coll_pe` | does not end it | the same |
 | the step limit, 1000 | ends it | the same |
