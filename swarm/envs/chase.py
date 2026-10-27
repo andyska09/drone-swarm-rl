@@ -8,9 +8,12 @@ import jax
 import jax.numpy as jnp
 
 from swarm.envs import Obs, core
-from swarm.sim import control, dynamics
+from swarm.sim import control, dynamics, guidance
 
 NUM_ACTIONS = 4
+PROGRESS = ("ep_length", "death_rate", "caught_evader")
+# `paths` draws one of these for each episode, all three equally likely.
+PATHS = ("hover", "circle", "figure8")
 
 
 @flax.struct.dataclass
@@ -41,6 +44,10 @@ class EnvParams(core.Common):
     net_side: float = 1.0
     net_offset: float = 0.4
 
+    # At the start, every two drones are this far apart. A drone farther than 1.54 m
+    # from a pursuer cannot touch its net.
+    spacing: float = 2.0
+
     waypoint_range: float = 3.0
     waypoint_reach: float = 0.2
 
@@ -49,8 +56,7 @@ class EnvParams(core.Common):
 class EnvState:
     drone: dynamics.State
     rate_pid: control.PIDState
-    waypoint: jnp.ndarray
-    key: jnp.ndarray
+    key: jnp.ndarray  # the pilots draw an episode's randomness from it
     alive: jnp.ndarray
     time: jnp.ndarray
 
@@ -113,15 +119,15 @@ def net_collision(drone, params):
 
 
 def get_obs(state, params):
-    others, mask = core.others(state.drone, params)
-    return Obs(
-        own=core.own_obs(state.drone, core.wall_dist(state.drone, params)),
-        others=others,
-        others_mask=mask,
-        # Nobody here flies at a fixed point: a pursuer chases a drone and the evader runs from one, and both sit in `others`.
-        target=jnp.zeros((params.n_drones, 0)),
-        scene=core.scene_obs(state.drone),
+    d = state.drone
+    rows = jnp.concatenate(
+        [
+            core.own_obs(d, core.wall_dist(d, params)),
+            core.others(d, params, True, core.same_role(params.roles)),
+        ],
+        axis=-1,
     )
+    return Obs(actor=core.by_role(rows, params.roles), critic=core.scene_obs(d))
 
 
 def crashed(drone, params):
@@ -152,20 +158,20 @@ def collPE(drone, params):
     return core.hits(drone, params)[pursuers, evader]
 
 
-def is_dead(drone, params):
-    """Both end the episode, but they are paid at different rates, so `step` keeps them apart"""
-
-    return failed(drone, params) | collPP(drone, params)
-
-
 def reference(state, params):
-    """A pursuer flies its NET onto the evader, so it aims `_drop` above it. Flying
-    its body there would hold the evader above the square and never catch."""
+    """Nobody flies to a fixed point: a pursuer chases a drone and the evader runs."""
 
-    pursuers, evader = _sides(params)
-    d = state.drone
-    aim = d.x[evader] + _drop(params) * d.R[pursuers, :, 2]
-    return jnp.broadcast_to(state.waypoint, (params.n_drones, 3)).at[pursuers].set(aim)
+    del state
+    return jnp.full((params.n_drones, 3), jnp.nan)
+
+
+def scenery(state, params):
+    """Each drone's net for the viewer: its side and its rope, 0 for no net."""
+
+    del state
+    pursuers, _ = _sides(params)
+    net = jnp.array([params.net_side, params.net_offset])
+    return {"net": jnp.zeros((params.n_drones, 2)).at[pursuers].set(net)}
 
 
 def compute_reward(state, rate_ref, alive, fail, collide, caught, params):
@@ -204,20 +210,27 @@ def _waypoint(key, x, params):
     return centre + jnp.clip(offset, -limit, limit)
 
 
-def reset(key, params):
-    n = params.n_drones
-    _, evader = _sides(params)
-    k_pos, k_spawn, k_wp, k_state = jax.random.split(key, 4)
+def _starts(key, x, free, params):
+    """x with the `free` drones drawn again: uniform in the box, `margin` in from every
+    face. The first of 16 draws that keeps every two drones `spacing` apart wins."""
+
     centre = jnp.asarray(params.center)
     limit = core.half(params) - params.margin
+    draws = centre + jax.random.uniform(key, (16,) + x.shape, minval=-limit, maxval=limit)
+    draws = jnp.where(free[:, None], draws, x)
+    apart = jax.vmap(lambda d: jnp.min(core.pair_dist(d)))(draws) >= params.spacing
+    return draws[jnp.argmax(apart)]
 
-    x = centre + jax.random.uniform(k_pos, (n, 3), minval=-limit, maxval=limit)
+
+def reset(key, params):
+    n = params.n_drones
+    k_pos, k_spawn, k_state = jax.random.split(key, 3)
+    x = _starts(k_pos, jnp.zeros((n, 3)), jnp.ones(n, bool), params)
     drone = core.spawn(k_spawn, x, params)
 
     state = EnvState(
         drone=drone,
         rate_pid=control.pid_init((n, 3)),
-        waypoint=_waypoint(k_wp, drone.x[evader], params),
         key=k_state,
         alive=jnp.ones(n, bool),
         time=jnp.int32(0),
@@ -226,8 +239,6 @@ def reset(key, params):
 
 
 def step(key, state, action, params):
-    # The waypoint draw uses the key carried in the state, so callers that reuse
-    # one key per rollout still get a fresh draw every step.
     del key
     pursuers, evader = _sides(params)
     drone, rate_pid, rate_ref = core.fly(state.drone, state.rate_pid, action, params)
@@ -239,17 +250,10 @@ def step(key, state, action, params):
     died = fail | collide
     alive = state.alive & ~died
 
-    key, k_wp = jax.random.split(state.key)
-    reached = core.norm(state.waypoint - drone.x[evader]) < params.waypoint_reach
-    waypoint = jnp.where(
-        reached, _waypoint(k_wp, drone.x[evader], params), state.waypoint
-    )
-
     new_state = EnvState(
         drone=drone,
         rate_pid=rate_pid,
-        waypoint=waypoint,
-        key=key,
+        key=state.key,
         alive=alive,
         time=state.time + 1,
     )
@@ -257,32 +261,32 @@ def step(key, state, action, params):
     reward = compute_reward(
         new_state, rate_ref, state.alive, fail, collide, caught, params
     )
-    limit = new_state.time >= params.max_steps
-    done = limit | caught | ~jnp.all(alive)
+    done = caught | ~jnp.all(alive)
 
     # A failure through the floor, or a broken state, is a crash. The rest is OOB.
     crash = fail & crashed(drone, params)
     oob = fail & ~crash
-    p_fail, e_fail = jnp.any(fail[pursuers]), fail[evader]
+    p_crash, p_oob = jnp.any(crash[pursuers]), jnp.any(oob[pursuers])
+    # A collPP is a pursuer failure too.
+    p_fail, e_fail = p_crash | p_oob | jnp.any(collide), fail[evader]
 
     on_net = net_frame(drone, params)[:, evader, 1:]
     info = {
         "alive": alive,
-        "died_this_step": died,
-        # Only a catch is terminal. The trainer bootstraps every drone still alive, so
-        # after a failure the survivors bootstrap and the drone that failed does not.
-        "truncated": done & ~caught,
+        "flying": alive,
+        # Only a catch is terminal. After a failure the survivors bootstrap.
+        "bootstrap": jnp.full(params.n_drones, ~caught),
         "end": {
-            # One outcome per episode, so in 1v1 these seven sum to 1.
+            # One outcome per episode, the first that holds in this order. Then comes the
+            # trainer's `time_limit`.
             "caught_evader": caught,
-            "crash_pursuer": jnp.any(crash[pursuers]) & ~e_fail,
-            "OOB_pursuer": jnp.any(oob[pursuers]) & ~e_fail,
-            "timeout": limit & ~caught & ~jnp.any(died),
+            "fail_both": p_fail & e_fail,
+            "crash_pursuer": p_crash & ~e_fail,
+            "OOB_pursuer": p_oob & ~p_crash & ~e_fail,
+            "collPP": p_fail & ~p_crash & ~p_oob & ~e_fail,
             "crash_evader": crash[evader] & ~p_fail,
             "OOB_evader": oob[evader] & ~p_fail,
-            "fail_both": p_fail & e_fail,
             "time_to_catch": jnp.where(caught, new_state.time * params.policy_dt, jnp.nan),
-            "collPP": jnp.any(collide),
             "catch_offset": jnp.where(caught, jnp.min(core.norm(on_net)), jnp.nan),
         },
         "step": {
@@ -292,6 +296,123 @@ def step(key, state, action, params):
         },
     }
     return get_obs(new_state, params), new_state, reward, done, info
+
+
+def _aim(drone, params):
+    """(N, 3): a pursuer flies its NET onto the evader, so it aims `_drop` above it.
+    Flying its body there would hold the evader above the square and never catch. The
+    evader's row is the evader itself."""
+
+    pursuers, evader = _sides(params)
+    aim = drone.x[evader] + _drop(params) * drone.R[pursuers, :, 2]
+    return jnp.broadcast_to(drone.x[evader], drone.x.shape).at[pursuers].set(aim)
+
+
+def cascade(params, rows):
+    """The cascade: a pursuer flies its net onto the evader, and the evader flies to a
+    waypoint, then to the next one."""
+
+    _, evader = _sides(params)
+    is_evader = (jnp.asarray(rows) == evader)[:, None]
+
+    def start(state):
+        k_wp, key = jax.random.split(state.key)
+        waypoint = _waypoint(k_wp, state.drone.x[evader], params)
+        return state, (core.per_row(control.cascade_init(), len(rows)), waypoint, key)
+
+    def act(state, obs, carry):
+        del obs
+        pids, waypoint, key = carry
+        d = state.drone
+        key, k_wp = jax.random.split(key)
+        reached = core.norm(waypoint - d.x[evader]) < params.waypoint_reach
+        waypoint = jnp.where(reached, _waypoint(k_wp, d.x[evader], params), waypoint)
+        points = jnp.where(is_evader, waypoint, _aim(d, params)[rows])
+        own = jax.tree.map(lambda q: q[rows], d)
+        action, pids = core.cascade(own, points, pids, params)
+        return action, (pids, waypoint, key)
+
+    return act, start
+
+
+def frpn(params, rows):
+    """FRPN: each drone flies its net onto where the evader will be."""
+
+    _, evader = _sides(params)
+
+    def act(state, obs, pids):
+        del obs
+        d = state.drone
+        own = jax.tree.map(lambda q: q[rows], d)
+        a = jax.vmap(guidance.frpn)(_aim(d, params)[rows] - own.x, d.v[evader] - own.v)
+        a = jax.vmap(guidance.speed_limit)(a, own.v)
+        return core.accelerate(own, a, pids, params)
+
+    return act, lambda state: (state, core.per_row(control.pid_init(), len(rows)))
+
+
+def apf(params, rows):
+    """APF: each drone is pushed away from the pursuers and from the faces of the box."""
+
+    pursuers, _ = _sides(params)
+    lo = jnp.asarray(params.center) - core.half(params)
+    hi = jnp.asarray(params.center) + core.half(params)
+
+    def act(state, obs, pids):
+        del obs
+        d = state.drone
+        own = jax.tree.map(lambda q: q[rows], d)
+        a = jax.vmap(guidance.apf, in_axes=(0, 0, None, None, None, None))(
+            own.x, own.v, d.x[pursuers], d.v[pursuers], lo, hi
+        )
+        a = jax.vmap(guidance.speed_limit)(a, own.v)
+        return core.accelerate(own, a, pids, params)
+
+    return act, lambda state: (state, core.per_row(control.pid_init(), len(rows)))
+
+
+def paths(params, rows):
+    """Each drone follows a flat path drawn for the episode: a hover, a circle or a
+    figure-eight inside the box. It starts on the path, with the path's velocity."""
+
+    dt, n = params.policy_dt, len(rows)
+    lo = jnp.asarray(params.center) - core.half(params) + params.margin
+    hi = jnp.asarray(params.center) + core.half(params) - params.margin
+
+    def at(path, t):
+        return jnp.stack([guidance.path_at(s, path, t) for s in PATHS])[path["shape"]]
+
+    def start(state):
+        def draw(k):
+            drawn = [guidance.draw_path(k, s, lo, hi) for s in PATHS]
+            shape = jax.random.randint(jax.random.fold_in(k, 1), (), 0, len(PATHS))
+            path = drawn[0]
+            for i, other in enumerate(drawn[1:], 1):
+                path = jax.tree.map(lambda a, b: jnp.where(shape == i, b, a), path, other)
+            return path | {"shape": shape}
+
+        k_paths, k_place = jax.random.split(state.key)
+        routes = jax.vmap(draw)(jax.random.split(k_paths, n))
+        on = jax.vmap(lambda p: at(p, 0.0))(routes)
+        # The other drones start again, so they keep their spacing from the paths.
+        others = jnp.ones(params.n_drones, bool).at[rows].set(False)
+        x = _starts(k_place, state.drone.x.at[rows].set(on[:, 0]), others, params)
+        drone = state.drone.replace(x=x, v=state.drone.v.at[rows].set(on[:, 1]))
+        return state.replace(drone=drone), (core.per_row(control.pid_init(), n), routes)
+
+    def act(state, obs, carry):
+        del obs
+        pids, routes = carry
+        own = jax.tree.map(lambda q: q[rows], state.drone)
+        target = jax.vmap(lambda p: at(p, state.time * dt))(routes)
+        a = jax.vmap(guidance.follow)(own.x, own.v, target)
+        action, pids = core.accelerate(own, a, pids, params)
+        return action, (pids, routes)
+
+    return act, start
+
+
+PILOTS = {"cascade": cascade, "frpn": frpn, "apf": apf, "paths": paths}
 
 
 PRESETS = {

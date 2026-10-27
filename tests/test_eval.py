@@ -6,20 +6,22 @@ from pathlib import Path
 
 import jax
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from swarm import envs
+from swarm.envs import avoidance, chase
 from swarm.learn import config, evaluate, ppo, runner
 
-OUTCOMES = ("caught_evader", "crash_pursuer", "OOB_pursuer", "timeout",
-            "crash_evader", "OOB_evader", "fail_both")
+OUTCOMES = ("caught_evader", "fail_both", "crash_pursuer", "OOB_pursuer", "collPP",
+            "crash_evader", "OOB_evader", "time_limit")
 
 
-def fixed_match(seats, episodes=64):
-    """Hand-written sources in both chase seats, so no run and no weights."""
+def fixed_match(seats, params=chase.PRESETS["default"], episodes=64):
+    """Hand-written pilots in both chase seats, so no run and no weights."""
 
-    env, params = envs.make("chase", "default")
+    env = chase
     cfg = config.TrainConfig(task="chase", preset="default")
     act, start, _ = evaluate.make_policy(cfg, env, params, None, "latest", seats)
     slices = ppo.role_slices(params.roles)
@@ -51,6 +53,20 @@ def test_cascade_in_both_seats_scores_its_baseline(tmp_path):
     caught = summary["caught_evader"]
     assert caught > 0.9, f"the cascade caught the cascade in only {caught:.2f} of episodes"
     assert out.name == "evader_cascade_pursuer_cascade"
+
+
+def test_eval_flies_the_recorded_env_or_another_preset(tmp_path):
+    """Eval, the matrix and the plots all build their env this way."""
+
+    # No preset has this arena, so it can only come from the run's config.json.
+    recorded = chase.PRESETS["default"].replace(arena=(30.0, 30.0, 16.0))
+    run = runner.new_run(config.TrainConfig(task="chase", preset="default"), recorded, tmp_path)
+    assert evaluate.eval_env(run)[1].arena == (30.0, 30.0, 16.0)
+    assert evaluate.eval_env(run, "small")[1].arena == chase.PRESETS["small"].arena
+
+    params = avoidance.PRESETS["d6"]
+    run = runner.new_run(config.TrainConfig(task="avoidance", preset="d6"), params, tmp_path)
+    assert evaluate.eval_env(run)[1].length == params.length_max, "the eval values were not applied"
 
 
 def test_eval_writes_what_the_viewer_needs(tmp_path):
@@ -86,8 +102,10 @@ def test_a_dead_episode_stops_counting(tmp_path):
     assert np.all(episodes["ep_length"][died] < 700), "a crashed episode ran the full length"
 
 
-def test_every_episode_has_exactly_one_outcome():
-    per = fixed_match({"pursuer": "frpn", "evader": "apf"})
+@pytest.mark.parametrize("pursuers", (1, 3))
+def test_every_episode_has_exactly_one_outcome(pursuers):
+    params = chase.EnvParams(roles=("pursuer",) * pursuers + ("evader",))
+    per = fixed_match({"pursuer": "frpn", "evader": "apf"}, params)
     total = sum(np.asarray(per[k]) for k in OUTCOMES)
     assert np.allclose(total, 1.0), f"outcomes sum to {sorted(set(total.round(3)))}"
 

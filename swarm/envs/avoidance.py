@@ -11,6 +11,7 @@ from swarm.envs import Obs, core
 from swarm.sim import control, dynamics
 
 NUM_ACTIONS = 4
+PROGRESS = ("ep_length", "death_rate")
 
 
 @flax.struct.dataclass
@@ -35,7 +36,7 @@ class EnvParams(core.Common):
     start_gap: float = 1.0
     start_box: float = 1.6
     arrive_radius: float = 1.0
-    time_limit: float = 10.0
+    timeout: float = 10.0
 
     sight: float = float("inf")
 
@@ -52,7 +53,6 @@ class EnvState:
     alive: jnp.ndarray
     arrived: jnp.ndarray
     arrive_time: jnp.ndarray
-    steps: jnp.ndarray
     time: jnp.ndarray
     closest: jnp.ndarray
 
@@ -84,8 +84,6 @@ def get_obs(state, params):
     tube = core.yaw(state.heading)
     p = to_tube(d.x, state.heading, params)
     R = tube.T @ d.R
-    others, mask = core.others(d, params)
-    _, idx = jax.lax.top_k(-core.pair_dist(d.x), params.n_visible)
     drones = jnp.concatenate(
         [
             p,
@@ -100,7 +98,7 @@ def get_obs(state, params):
         ],
         axis=-1,
     )
-    clock = params.time_limit - state.steps * params.policy_dt
+    clock = params.timeout - state.time * params.policy_dt
 
     # Each drone sees the world through F = yaw(turn) S, where S mirrors y if `mirror`.
     # Its body y axis flips with the mirror, so its R stays a rotation.
@@ -117,13 +115,19 @@ def get_obs(state, params):
     walls = core.box_dist(
         p * flip, flip[:, :, None] * R * flip[:, None, :], half(state, params)
     )
-    flip_other = jnp.concatenate([flip, flip, jnp.ones_like(flip[:, :1])], axis=-1)
+    # Each drone measures the others in its own body frame, mirrored with its world.
+    mirrored = d.replace(R=d.R * flip[:, None, :])
+    rows = jnp.concatenate(
+        [
+            core.own_obs(seen, walls),
+            core.others(mirrored, params, sees(state, params), core.same_role(params.roles)),
+            core.target_obs(seen, on(state.goal)),
+        ],
+        axis=-1,
+    )
     return Obs(
-        own=core.own_obs(seen, walls),
-        others=others * flip_other[:, None, :],
-        others_mask=mask * jnp.take_along_axis(sees(state, params), idx, axis=1),
-        target=core.target_obs(seen, on(state.goal)),
-        scene=jnp.concatenate([drones.reshape(-1), jnp.stack([state.length, clock])]),
+        actor=core.by_role(rows, params.roles),
+        critic=jnp.concatenate([drones.reshape(-1), jnp.stack([state.length, clock])]),
     )
 
 
@@ -179,7 +183,6 @@ def reset(key, params):
         alive=jnp.ones(n, bool),
         arrived=jnp.zeros(n, bool),
         arrive_time=jnp.full(n, jnp.nan, float),
-        steps=jnp.int32(0),
         time=jnp.int32(0),
         closest=jnp.min(core.pair_dist(drone.x)),
     )
@@ -209,16 +212,15 @@ def step(key, state, action, params):
     arrive = flying & ~died & (core.norm(drone.x - state.goal) < params.arrive_radius)
     arrived = state.arrived | arrive
 
-    steps = state.steps + 1
-    seconds = steps * params.policy_dt
+    time = state.time + 1
+    seconds = time * params.policy_dt
     new_state = state.replace(
         drone=drone,
         rate_pid=rate_pid,
         alive=alive,
         arrived=arrived,
         arrive_time=jnp.where(arrive, seconds, state.arrive_time),
-        steps=steps,
-        time=state.time + 1,
+        time=time,
         closest=jnp.minimum(
             state.closest, jnp.min(jnp.where(both, core.pair_dist(drone.x), jnp.inf))
         ),
@@ -227,16 +229,14 @@ def step(key, state, action, params):
     reward = compute_reward(arrive, died, params)
     crashed = jnp.any(died)
     finished = jnp.all(arrived)
-    out_of_time = seconds >= params.time_limit
+    out_of_time = seconds >= params.timeout
     over = crashed | finished | out_of_time
-    limit = new_state.time >= params.max_steps
 
     info = {
         "alive": alive,
-        "died_this_step": died,
-        "arrived": arrived,
-        "arrived_this_step": arrive,
-        "truncated": limit & ~over,
+        "flying": alive & ~arrived,
+        # Every end of the task is terminal.
+        "bootstrap": jnp.zeros(params.n_drones, bool),
         "end": {
             "success": finished,
             "wall": jnp.any(wall),
@@ -248,7 +248,7 @@ def step(key, state, action, params):
         },
         "step": {},
     }
-    return get_obs(new_state, params), new_state, reward, over | limit, info
+    return get_obs(new_state, params), new_state, reward, over, info
 
 
 def eval_params(params):
@@ -262,6 +262,22 @@ def curriculum(params, metrics):
             length=min(params.length + params.length_step, params.length_max)
         )
     return None
+
+
+def cascade(params, rows):
+    """The cascade flies each drone to its goal. It reads the true world, so it sends a
+    mirrored drone mirrored commands, and `step` mirrors them back."""
+
+    fly, start = core.cascade_pilot(params, rows, lambda state: state.goal[rows])
+
+    def act(state, obs, pids):
+        action, pids = fly(state, obs, pids)
+        return action * action_signs(state, params)[rows], pids
+
+    return act, start
+
+
+PILOTS = {"cascade": cascade}
 
 
 PRESETS = {

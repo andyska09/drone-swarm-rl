@@ -1,16 +1,18 @@
-"""Check saved run data, config hashes, and the loss after restoring a checkpoint."""
+"""Check saved run data, config hashes, and that a run resumes exactly."""
 
 import csv
+import dataclasses
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import jax
+import pytest
 
 from swarm import envs
-from swarm.learn import config, ppo, runner
+from swarm.envs import avoidance
+from swarm.learn import config, pool, runner
 
 
 def small(**overrides):
@@ -48,14 +50,55 @@ def test_the_hash_follows_the_config(tmp_path):
     assert digest(small(), "c") != digest(small(lr=1e-3), "d"), "two configs, one name"
 
 
-def test_checkpoint_carries_on_exactly(tmp_path):
-    cfg = small()
-    path, carry = runner.train(cfg, root=tmp_path)
+def rows(file):
+    with file.open(newline="") as f:
+        return list(csv.DictReader(f))
 
-    env, env_params = envs.make(cfg.task, cfg.preset)
-    init, update = ppo.make(cfg, env, env_params)
-    restored = runner.restore(init(jax.random.PRNGKey(cfg.seed)), runner.load(path))
 
-    _, live_metrics = update(*carry)
-    _, restored_metrics = update(*restored)
-    assert float(live_metrics["policy_loss"]) == float(restored_metrics["policy_loss"])
+@pytest.mark.parametrize("kind", ("plain", "pool", "curriculum"))
+def test_a_resumed_run_trains_on_exactly(tmp_path, monkeypatch, kind):
+    """The run stops in its last checkpoint, after its last rows. The resume runs the last
+    update again from the checkpoint before, and must write the same rows."""
+
+    pooled = kind == "pool"
+    cfg = dataclasses.replace(small(), checkpoint_every=1)
+    if pooled:
+        # Generations 0 and 1 of two updates, each update one per side.
+        cfg = config.TrainConfig(
+            task="chase", preset="default", num_envs=64, num_steps=8, num_minibatches=2,
+            total_timesteps=8 * 64 * 8, generations=1, checkpoint_every=1, log_every=100,
+        )
+        monkeypatch.setattr(pool, "HEDGE_EPISODES", 4)
+    if kind == "curriculum":
+        # The drones go blind right after update 3, the checkpoint the resume starts from.
+        cfg = dataclasses.replace(cfg, task="avoidance", preset="d_inf")
+        harder = lambda params, row: params.replace(sight=0.0) if row["update"] == 3 else None
+        monkeypatch.setattr(avoidance, "curriculum", harder)
+
+    class Stop(Exception):
+        pass
+
+    save = runner.save
+
+    def stop_at_update_4(path, update, state):
+        if update == 4:
+            raise Stop
+        save(path, update, state)
+
+    monkeypatch.setattr(runner, "save", stop_at_update_4)
+    with pytest.raises(Stop):
+        runner.train(cfg, root=tmp_path)
+    monkeypatch.setattr(runner, "save", save)
+
+    (path,) = tmp_path.iterdir()
+    metrics = rows(path / "metrics.csv")
+    assert int(metrics[-1]["steps"]) == cfg.total_timesteps, "steps did not count every learner"
+    hedge = rows(path / "hedge.csv") if pooled else []
+    runner.resume(path)
+
+    same = lambda r: {k: v for k, v in r.items() if k != "seconds"}
+    assert [same(r) for r in rows(path / "metrics.csv")] == [same(r) for r in metrics]
+    if pooled:
+        assert rows(path / "hedge.csv") == hedge, "the resumed phase weighed its pool again"
+        phase = [r for r in hedge if (r["generation"], r["training"]) == ("1", "pursuer")]
+        assert [r["member"] for r in phase] == ["paths", "evader_00"]

@@ -168,23 +168,6 @@ function tube(e) {
   return g;
 }
 
-// The lines of episode e: each drone's line to follow, dashed in the drone's color.
-function path(e, palette) {
-  const g = new THREE.Group(), l = traj.lines.data;
-  for (let i = 0; i < traj.lines.shape[1]; i++) {
-    const p = at(traj.lines, [e, i, 0, 0]);
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(l[p], l[p + 1], l[p + 2]),
-        new THREE.Vector3(l[p + 3], l[p + 4], l[p + 5])]),
-      new THREE.LineDashedMaterial(
-        { color: palette[i % palette.length], dashSize: 0.3, gapSize: 0.2 }));
-    line.computeLineDistances();  // without it the dashes draw as one solid line
-    g.add(line);
-  }
-  return g;
-}
-
 // ---- orbit, written here so the viewer needs one script tag ----
 
 let target = new THREE.Vector3(0, 0, 3), theta = -1.0, phi = 1.15, radius = 12;
@@ -229,7 +212,7 @@ renderer.domElement.addEventListener("wheel", e => {
 // ---- trajectory ----
 
 let traj = null, header = {}, drones = [], goals = [], shadows = [], arrows = [];
-let trails = [], tubes = [], paths = [], playing = false;
+let trails = [], tubes = [], playing = false;
 const id = name => document.getElementById(name);
 const bar = { episode: id("episode"), time: id("time"), read: id("read"), play: id("play") };
 
@@ -248,7 +231,7 @@ function build() {
   const n = traj.x.shape[2], T = traj.x.shape[1];
   const palette = [0x4fa3ff, 0xff8b5e, 0x62d38a, 0xd98bff, 0xffd166, 0x5edfd8, 0xff6b8a, 0x9aa7ff];
 
-  // A task with walls of its own, the tunnel, flies free of the arena box.
+  // A task with walls of its own flies free of the arena box.
   if (header.arena && !traj.walls) {
     // A list is the box size. Older evals wrote one number: a kill radius.
     const a = header.arena;
@@ -263,8 +246,6 @@ function build() {
   // One tube per episode, because each episode turns the tube to its own heading.
   tubes = traj.walls ? [...Array(traj.walls.shape[0]).keys()].map(tube) : [];
   for (const t of tubes) world.add(t);
-  paths = traj.lines ? [...Array(traj.lines.shape[0]).keys()].map(e => path(e, palette)) : [];
-  for (const p of paths) world.add(p);
 
   for (let i = 0; i < n; i++) {
     const color = palette[i % palette.length];
@@ -282,24 +263,21 @@ function build() {
     }
 
     // The net square, bolted to the body so it tilts with the drone.
-    if (header.net && (header.roles || [])[i] === "pursuer") {
-      const s = header.net.net_side;
+    const s = traj.net ? traj.net.data[at(traj.net, [0, i, 0])] : 0;
+    if (s > 0) {
       const net = new THREE.Mesh(
         new THREE.PlaneGeometry(s, s),
         new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true,
           transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
       net.rotation.y = Math.PI / 2;               // three.js planes face +z
-      net.position.z = -(header.net.net_offset + s / 2);
+      net.position.z = -(traj.net.data[at(traj.net, [0, i, 1])] + s / 2);
       q.add(net);
     }
 
-    // A chase pursuer has no goal: its reference is only the cascade's input.
-    let goal = null;
-    if (!header.goal || header.goal[i]) {
-      goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
-      world.add(goal);
-    }
+    // Shown only where the reference is a point.
+    const goal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
+    world.add(goal);
     goals.push(goal);
 
     // Height is unreadable in a 3D view without a shadow on the ground.
@@ -338,7 +316,6 @@ function show() {
   const x = traj.x.data, R = traj.R.data, g = traj.goal.data, v = traj.v.data;
   const live = traj.live ? traj.live.data[at(traj.live, [e, t])] : 1;
   tubes.forEach((g, k) => { g.visible = k === e; });
-  paths.forEach((g, k) => { g.visible = k === e; });
 
   let far = 0, fastest = 0;
   for (let i = 0; i < n; i++) {
@@ -352,7 +329,8 @@ function show() {
       R[r + 6], R[r + 7], R[r + 8], x[p + 2],
       0, 0, 0, 1);
     drones[i].visible = true;
-    if (goals[i]) goals[i].position.set(g[q + 0], g[q + 1], g[q + 2]);
+    goals[i].visible = [0, 1, 2].every(k => Number.isFinite(g[q + k]));
+    goals[i].position.set(g[q + 0], g[q + 1], g[q + 2]);
 
     // Shadow spreads and fades with height, so altitude reads off the ground.
     const z = Math.max(0, x[p + 2]);

@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from swarm.learn import config, pool, runner
+from swarm.learn import config, runner
 
 
 def cast(current, text):
@@ -28,11 +28,11 @@ def main():
     p.add_argument("--out", default="runs")
     p.add_argument("--wandb", action="store_true")
     p.add_argument("--resume", metavar="RUN",
-                   help="run a pool run on from its unfinished phase; every other flag is ignored")
+                   help="run a run on from its last checkpoint; every other flag is ignored")
     args = p.parse_args()
 
     if args.resume:
-        path, _ = pool.resume(args.resume, use_wandb=args.wandb)
+        path, _ = runner.resume(args.resume, use_wandb=args.wandb)
         print(f"wrote {path}")
         return
     if args.task is None or args.preset is None:
@@ -45,8 +45,7 @@ def main():
         name, _, text = override.partition("=")
         setattr(cfg, name, cast(getattr(cfg, name), text))
 
-    train = pool.train if cfg.generations else runner.train
-    path, _ = train(cfg, root=args.out, use_wandb=args.wandb)
+    path, _ = runner.train(cfg, root=args.out, use_wandb=args.wandb)
     print(f"wrote {path}")
 
 
