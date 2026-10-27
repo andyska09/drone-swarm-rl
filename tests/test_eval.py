@@ -14,8 +14,8 @@ from swarm import envs
 from swarm.envs import avoidance, chase
 from swarm.learn import config, evaluate, ppo, runner
 
-OUTCOMES = ("caught_evader", "fail_both", "crash_pursuer", "OOB_pursuer", "collPP",
-            "crash_evader", "OOB_evader", "time_limit")
+OUTCOMES = ("caught_e", "fail_pe", "crash_p", "OOB_p", "coll_pp",
+            "crash_e", "OOB_e", "time_limit")
 
 
 def fixed_match(seats, params=chase.PRESETS["default"], episodes=64):
@@ -41,8 +41,8 @@ def small(**overrides):
     )
 
 
-def test_cascade_in_both_seats_scores_its_baseline(tmp_path):
-    """A seat that names a source loads no weights, so the run needs only its config."""
+def test_cascade_in_both_seats_needs_no_weights(tmp_path):
+    """A seat that names a pilot loads no weights, so the run needs only its config."""
 
     _, params = envs.make("chase", "default")
     path = runner.new_run(config.TrainConfig(task="chase", preset="default"), params, tmp_path)
@@ -50,7 +50,7 @@ def test_cascade_in_both_seats_scores_its_baseline(tmp_path):
         path, episodes=32, seats=[("pursuer", "cascade"), ("evader", "cascade")]
     )
 
-    caught = summary["caught_evader"]
+    caught = summary["caught_e"]
     assert caught > 0.9, f"the cascade caught the cascade in only {caught:.2f} of episodes"
     assert out.name == "evader_cascade_pursuer_cascade"
 
@@ -111,5 +111,5 @@ def test_every_episode_has_exactly_one_outcome(pursuers):
 
 
 def test_frpn_catches_the_path_evader():
-    caught = float(np.mean(fixed_match({"pursuer": "frpn", "evader": "paths"})["caught_evader"]))
+    caught = float(np.mean(fixed_match({"pursuer": "frpn", "evader": "paths"})["caught_e"]))
     assert caught > 0.6, f"FRPN caught the path evader in only {caught:.2f} of episodes"

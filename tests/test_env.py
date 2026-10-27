@@ -45,7 +45,7 @@ def test_the_fatal_step_pays_the_crash_penalty():
 
 
 def chase_scene(x, limit):
-    """One chase scene with the drones level at x, `limit` steps before its time limit."""
+    """One chase scene with the drones level at x, `limit` steps before its step limit."""
 
     params = chase.PRESETS["default"]
     cfg = config.TrainConfig(task="chase", preset="default", num_envs=1)
@@ -56,20 +56,20 @@ def chase_scene(x, limit):
     return lambda vec: vecenv.step(vec, action, chase, params, cfg), vec, params
 
 
-def test_the_time_limit_bootstraps_unless_the_task_ends_the_episode():
-    # Far apart, nothing happens before the time limit.
+def test_the_step_limit_bootstraps_unless_the_task_ends_the_episode():
+    # Far apart, nothing happens before the step limit.
     step, vec, params = chase_scene([[5.0, 0.0, 8.0], [-5.0, 0.0, 8.0]], 2)
     _, vec, _, done, info = step(vec)
     assert not bool(done[0])
     _, vec, _, done, info = step(vec)
     assert bool(done[0]) and bool(info["end"]["time_limit"][0])
-    assert list(info["bootstrap"][0]) == [1.0, 1.0], "a time limit is not terminal"
+    assert list(info["bootstrap"][0]) == [1.0, 1.0], "the step limit is not terminal"
     assert int(vec.limit[0]) == params.max_steps, "the next episode is not full length"
 
     # The evader hangs in the pursuer's net on the last step: the catch wins.
     step, vec, _ = chase_scene([[0.0, 0.0, 8.0], [0.2, 0.0, 7.1]], 1)
     _, _, _, done, info = step(vec)
-    assert bool(done[0]) and bool(info["end"]["caught_evader"][0])
+    assert bool(done[0]) and bool(info["end"]["caught_e"][0])
     assert not bool(info["end"]["time_limit"][0])
     assert list(info["bootstrap"][0]) == [0.0, 0.0], "a catch is terminal"
 
@@ -83,19 +83,19 @@ def test_chase_reads_its_drone_count_from_roles(pursuers):
     action = jnp.zeros((n, chase.NUM_ACTIONS))
     _, _, reward, done, info = chase.step(jax.random.PRNGKey(1), state, action, params)
 
-    # The own state, then 7 columns and a flag for each of the K seats. No goal.
+    # The own state, then 7 columns and a flag for each of the K slots. No goal.
     assert obs.actor["pursuer"].shape == (pursuers, 20 + 8 * k)
     assert obs.actor["evader"].shape == (1, 20 + 8 * k)
-    assert reward.shape == (n,) and done.shape == () and info["end"]["caught_evader"].shape == ()
+    assert reward.shape == (n,) and done.shape == () and info["end"]["caught_e"].shape == ()
     assert chase.reference(state, params).shape == (n, 3)
 
-    # Every other drone has a seat, and the flag says which are the same role.
+    # Every other drone has a slot, and the flag says which are the same role.
     rows = jnp.concatenate([obs.actor["pursuer"], obs.actor["evader"]])
-    seats, filled = rows[:, 20 : 20 + 7 * k].reshape(n, k, 7), rows[:, 20 + 7 * k :]
+    slots, filled = rows[:, 20 : 20 + 7 * k].reshape(n, k, 7), rows[:, 20 + 7 * k :]
     role = jnp.array([params.roles[i] == "pursuer" for i in range(n)])
-    assert jnp.all(filled == 1.0), "a drone in range lost its seat"
+    assert jnp.all(filled == 1.0), "a drone in range lost its slot"
     for i in range(n):
-        assert int(seats[i, :, -1].sum()) == int(jnp.sum(role == role[i])) - 1
+        assert int(slots[i, :, -1].sum()) == int(jnp.sum(role == role[i])) - 1
 
 
 THREE = chase.EnvParams(roles=("pursuer",) * 3 + ("evader",))
@@ -114,7 +114,7 @@ def test_one_catch_pays_every_pursuer():
     # The evader touches the net of pursuer 1, 0.9 m under it. The others are clear.
     x = [[-6.0, 0.0, 8.0], [0.0, 0.0, 8.0], [6.0, 0.0, 8.0], [0.2, 0.0, 7.1]]
     _, _, reward, done, info = chase_step(x)
-    assert bool(done) and bool(info["end"]["caught_evader"])
+    assert bool(done) and bool(info["end"]["caught_e"])
     assert jnp.all(reward[:3] > 0.9 * THREE.reward.catch), "a pursuer went unpaid"
     assert reward[3] < -0.9 * THREE.reward.catch, "the evader was not billed"
 
@@ -125,7 +125,7 @@ def test_a_net_on_another_pursuer_kills_both():
     x = [[0.3, 0.4, 7.1], [0.0, 0.0, 8.0], [6.0, 0.0, 8.0], [-6.0, 0.0, 8.0]]
     _, _, _, done, info = chase_step(x)
     assert list(info["alive"]) == [False, False, True, True]
-    assert bool(done) and bool(info["end"]["collPP"])
+    assert bool(done) and bool(info["end"]["coll_pp"])
 
 
 def test_chase_starts_keep_the_drones_apart_and_inside_the_box():
@@ -148,5 +148,5 @@ def test_after_a_failure_only_the_survivor_bootstraps():
     # The evader starts under the floor, far from the pursuer.
     step, vec, _ = chase_scene([[5.0, 0.0, 8.0], [-5.0, 0.0, -0.5]], 100)
     _, _, _, done, info = step(vec)
-    assert bool(done[0]) and bool(info["end"]["crash_evader"][0])
+    assert bool(done[0]) and bool(info["end"]["crash_e"][0])
     assert list(info["bootstrap"][0]) == [1.0, 0.0], "pursuer, evader"
