@@ -279,13 +279,48 @@ seeds 0 and 1.
   values, not the code. The two `d0` repeats, training success: s0 98.6% (the debug run:
   84.2%), s1 92.0% (94.2%). So the same seed does not give the same run on the GPU.
 
+### Other-Play runs, 2026-10-25
+
+4 runs on `3d6678c`, `--set ent_coef=0`, 1e9 steps. The hashes repeat the debug runs, so
+the start time names the run. "Training success" is the mean of the last 300 updates.
+"At its last tube" flies the 1024 eval episodes in the longest tube the run trained on,
+with `scratch/avoidance_otherplay.py`. The eval flies the 20 m tube.
+
+| preset | seed | run | tube | training success | at its last tube: mirrored / plain | eval, 20 m | habit |
+|---|---|---|---|---|---|---|---|
+| `d0` | 0 | 23:20 `874a5c` | 5 m, never grew | 70.2% | 68.2% / 73.4% | 0% (99.9% wall) | split by height |
+| `d0` | 1 | 23:31 `56c2bb` | 10 m from update 246 | 54.3% | 55.4% / 58.1% | 0.1% (99.5% wall) | split by height |
+| `d_inf` | 0 | 23:34 `87c03a` | 10 m from update 387 | 0% (99.8% timeouts) | — | 0% | hover |
+| `d_inf` | 1 | 23:34 `ad2036` | 20 m from update 664 | 97.5% | 98.6% / 97.3% | 97.9% | wait |
+
+- **The lanes are gone.** At the closest approach, each drone is on its own left in
+  37–64% of the episodes, and success is about the same in the mirrored and the plain
+  episodes.
+- **The blind drones fail more.** `d0` passes in 70% of the episodes in the 5 m tube and
+  in 54% in the 10 m tube, so the tube stops growing. The debug runs of `d0` passed in
+  84–99% and reached 20 m. The guess of about 75% above was close.
+- **`d0` splits by height.** At the closest approach, the drones are a median 0.8–0.9 m
+  apart in height and about 0.35 m across. Each drone is the higher one in about 50% of the
+  episodes, with no link to the tube heading. A drone ends on the side where it started in
+  62–69% of the episodes, so the start point is a weak coin.
+- **`d_inf` s1 learned the wait.** All successful episodes have an arrival gap above
+  0.8 s (median 1.50 s). The first drone passes over the waiting drone near its end of the
+  tube (median $\lvert \tilde x \rvert$ 8.6 m). Drone 0 goes first in 50%. The map does
+  not stop the wait, as expected.
+- **`d_inf` s0 got stuck in the hover** after the tube grew to 10 m, like 3 of the 15
+  debug runs.
+- **The 20 m eval no longer reads the sensor for `d0`.** `d0` never trained in a 20 m
+  tube, so its drones hit a wall there. The success at the last tube is the fair
+  reading, but the tubes differ between runs.
+
 ## Open
 
 | question | state |
 |---|---|
-| Other-Play against a convention such as "always left" | built: the mirror and the turn for drone 1 (see Other-Play above). Not run. Next: `d0` and `d_inf`, seeds 0 and 1 |
+| Other-Play against a convention such as "always left" | built and run: the lanes are gone, and `d0` falls to 70% (5 m) and 54% (10 m). `d_inf`: one wait, one hover |
+| how to read `d0` when its tube stops growing | the 20 m eval gives 0% walls for a run that never flew 20 m. Open |
 | a rule tied to the world heading can split the drones without the sensor | checked in the debug runs: the lanes and the wait do not use it. A weak link in the small height offset of some lane runs. The turn of Other-Play now hides drone 1's world heading |
-| a blind drone can use its own random start as a coin | guess: about 75% success or more for `d0`, even with Other-Play. Check in the runs |
+| a blind drone can use its own random start as a coin | `d0` with Other-Play: 70% in the 5 m tube, 54% in the 10 m tube. It splits by height |
 | the wait in `d_inf` | candidate: when the first drone arrives, the other drone must be past the middle of the tube, or the episode ends and it gets nothing. Not built. The mirror does not stop the wait. An arrival window needs a value that changes with the tube length |
 | the hover after the tube grows to 10 m, in 3 of 15 runs | candidate: a timeout pays −1, the same as a death. Not built |
 | a test drone that flies straight to its goal and never dodges, to find a half dodge | later |
