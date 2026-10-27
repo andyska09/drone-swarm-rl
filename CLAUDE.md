@@ -74,6 +74,12 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - Docstrings: a module gets a short one. A function gets one only if its contract is not
   obvious from its name and signature.
 
+### Tests
+
+- A test checks behaviour that matters: a physics result, a rule of a task, or a promise
+  that other code relies on. Never write a test only to raise the code coverage.
+- Keep each test fast: small batches and short rollouts, so `pytest tests/` stays quick.
+
 ### For Codex
 
 Edit only the named file. Do not run tests. Stop after the edit, summarize it, and wait
