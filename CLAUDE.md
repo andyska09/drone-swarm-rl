@@ -13,9 +13,9 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - Write every reply in the [simple-english](.claude/output-styles/simple-english.md)
   output style.
 - **Answer the question I asked, and nothing more.** Be short and direct.
-- A question is not a sign that you were wrong. Do not re-analyse the plan, change your
-  recommendations or rewrite your conclusions unless I tell you to. If something I said
-  changes an earlier conclusion, say so in one line at the end, then stop and wait.
+- A question is only a question: answer it, and keep your plan and conclusions until I
+  say they change. If something I said changes an earlier conclusion, say so in one line
+  at the end, then stop and wait.
 - When I give you new information, take it in and answer. Redo the analysis only if I
   ask for it.
 - I am new to this field. Explain every term in plain words. When I ask what a term
@@ -25,33 +25,12 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 
 - **Do only what I ask.** Do not add features, knobs, tests or metrics that I did not ask
   for. Suggest them in the chat instead.
-- If one approach is clearly better, recommend it. If two are equally good, ask me.
-  Always.
-- Keep it simple. Simple means logic that is easy to follow, not few lines. Think first,
-  then write the code.
+- A **decision** that changes the plan is mine: ask it as its own question, with the
+  options and your pick, and act after I answer.
+- Keep it simple. Simple means logic that is easy to follow, not few lines.
 - Keep diffs small. I want to read a change and know what it does.
-- A task spec, `research/notes/tasks/task_<name>.md`, says what the task is now: the
-  model, not the code. `research/notes/tasks/defaults.md` holds what every task shares,
-  and it is the template. Write a spec by these rules:
-  - Describe the task at the level of a paper's method section. Name no function, field,
-    file or array.
-  - Say what the task does. Do not say what it does not do, and do not set "X is"
-    against "Y is not".
-  - Write `Setup` and `Events` in plain words, with a table of values. Keep the symbols,
-    formulas and tables of every other section.
-  - Describe only what is built now. No reasons, no history, no plans, no open questions.
-  - List only what differs from `defaults.md`, in its sections and in its order. A
-    section with no change holds one word: `Default.`
-  - `Events` says when an event happens and how the episode ends. `Reward` says who
-    pays for it. Neither repeats the other.
-  - Use tables, formulas and short lists. Use a paragraph only for the purpose at the top.
-  - Give each value once, with its unit.
-  - One word, one meaning. `defaults.md` holds the words and the shared symbols.
-  - Write it in the [simple-english](.claude/output-styles/simple-english.md) style.
-  - Write formulas in LaTeX: `$...$` inline, and a `$$` line before and after a block.
-    Do not put `|` in math, because it breaks a table row. Write `\lVert x \rVert` and
-    `\lvert x \rvert`.
-  - Check each line against the code when you write or change a spec.
+- **Task specs** in `research/notes/tasks/` say what each task is now: the model, not
+  the code. Write or change one by the [spec rules](research/notes/tasks/README.md).
 - The reasons, the history of the decisions, the run results and the open questions go
   to `research/notes/experiment_logs/<name>_log.md`. Comparisons with papers go to
   `research/notes/literature/comparisons.md`.
@@ -61,24 +40,9 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
   them. Never commit one, never `git add -f` one, and never quote, summarise or name one
   in a tracked file, this one included.
 
-### Code style
+### Code and tests
 
-- Blunt, minimal code. No base classes, protocols or registries. One file per concern,
-  readable top to bottom.
-- Comments: as few as possible. Write one only where the code cannot say it itself: a
-  constraint, a non-obvious reason, a trap. Never restate what the line does. One clear
-  sentence beats three. No banner blocks, no section dividers.
-- **Comments and docstrings say what the code does now.** No story and no claim about
-  what the code does not do. No history and no sources in code: git keeps the history,
-  and the notes keep the sources.
-- Docstrings: a module gets a short one. A function gets one only if its contract is not
-  obvious from its name and signature.
-
-### Tests
-
-- A test checks behaviour that matters: a physics result, a rule of a task, or a promise
-  that other code relies on. Never write a test only to raise the code coverage.
-- Keep each test fast: small batches and short rollouts, so `pytest tests/` stays quick.
+Write them by [CODING_STANDARDS.md](CODING_STANDARDS.md).
 
 ### For Codex
 
@@ -120,7 +84,7 @@ pytest tests/test_dynamics.py -k tumble                # one test
 python run/train.py --task circle_swap --preset pair --steps 5e6  # PPO -> runs/<name>/
 python run/train.py --task circle_swap --preset pair --set gamma=0.99  # any TrainConfig field
 python run/train.py --task chase --preset default --set gamma=0.99 --set generations=13 --steps 1.4e9  # pools
-python run/train.py --resume runs/<name>               # a pool run, from its unfinished phase, in its recorded env
+python run/train.py --resume runs/<name>               # what it resumes: --help
 python run/matrix.py runs/<name>                       # every pursuer against every evader
 python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
 python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role's seat
@@ -142,15 +106,12 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   `cascade_step` which chains all six. PID state is carried explicitly in
   `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
 - `sim/guidance.py` — the hand-written opponents for chase: FRPN, APF and the flown
-  paths. Each one gives a world acceleration, and `learn/seats.py` turns it into a
-  CTBR action.
-- `envs/` — one file per task, each with
-  `reset`, `step`, `get_obs`, `reference`, `compute_reward`, `RewardConfig`,
-  `EnvParams` and `PRESETS`. Plain functions, no gymnax; auto-reset belongs to the
-  trainer. `__init__.py` holds the shared `Obs` layout, `flat`, `take`,
-  `make(task, preset)` and **the env contract every task file must meet** — read it
-  before writing a task. Every task carries a drone axis, `N = 1` included, and each
-  has a spec beside it in `research/notes/tasks/task_<name>.md`.
+  paths. Each one gives a world acceleration.
+- `envs/` — one file per task, plain functions, no gymnax; auto-reset belongs to the
+  trainer. **The env contract** every task file meets is in the docstrings of
+  `envs/__init__.py`: what a task file holds, the obs, the end flags and the metrics.
+  Read it before writing a task. Every task carries a drone axis, `N = 1` included, and
+  each has a spec in `research/notes/tasks/task_<name>.md`.
 - **`envs/core.py` holds everything the tasks share**: `Common` (the `EnvParams`
   fields every task has, which each task's `EnvParams` inherits), `fly` (the rate
   loop and the plant for one policy step), `own_obs`/`target_obs`/`others`,
@@ -159,18 +120,6 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
 - **No task names a drone by number.** `roles` is static, so a task reads its own
   index arrays from it — see `chase._sides`. That is what lets a longer `roles`
   add more pursuers with no other change.
-- **Every task uses the same observation shape**: `Obs(own, others, others_mask,
-  target, scene)`. `own` is body-frame velocity, `R`, `omega`, height, and the
-  distance to the arena wall (in `avoidance`, the tube wall) ahead, behind, left and
-  right. `others` holds
-  the K nearest drones, whatever their role — body-frame offset, body-frame
-  velocity, and a 0/1 flag saying whether that drone shares my role, so a teammate
-  and an opponent are told apart by a number, not by sitting in different blocks.
-  `target` is the body-frame offset to a goal point, and a task with no goal point
-  gives it width 0 — `chase` does. `others_mask` is a 0/1 column, and `flat` zeroes
-  the masked rows before it concatenates, so an empty seat becomes zeros and never
-  changes the vector width. `scene` is the critic's input: the whole game. Add a
-  task, not a new obs format.
 - The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
   with a one-off crash penalty. `avoidance` is the exception: +1 when a drone arrives,
   −1 for a crash, 0 at every other step. `circle_swap` adds a proximity cost and an
@@ -187,19 +136,14 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `learn/ppo.py` turns each distinct name in it into its own set of weights.
-- `learn/` — our PPO. `ppo.py` (`Actor`, `Critic` and `make`, one compiled update),
-  `vecenv.py` (vmap, auto-reset, normalization), `runner.py` (the update loop, run
-  directory, checkpoints, wandb), `config.py` (hyperparameters), `evaluate.py`
-  (fixed eval seeds, mean actions, no auto-reset), `seats.py` (who flies a seat: a
-  network, the cascade, FRPN, APF or a path; eval and training share it), `pool.py`
-  (chase against pools of frozen opponents: generations, phases, Hedge, pool files,
-  resume). `ppo.py`, `vecenv.py` and `runner.py` know nothing about drones: they take
-  an env *module* and one network per role. `seats.py` and `pool.py` know chase.
+- `learn/` — our PPO and the training loop. Each module's docstring says what it holds.
+  `ppo.py` and `vecenv.py` know nothing about drones: they take an env *module* and one
+  network per role.
 - **Every role is its own learner.** One `TrainState` per role, so gradient
   clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
-  mix two sides of a game. `cfg.generations` above 0 trains chase with pools, one side
-  at a time — the design is in
-  [research/notes/tasks/task_chase.md](research/notes/tasks/task_chase.md), Training.
+  mix two sides of a game. `cfg.generations` above 0 trains chase with pools; the
+  design is in [research/notes/tasks/task_chase.md](research/notes/tasks/task_chase.md),
+  Training.
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
@@ -227,17 +171,9 @@ SO(3); we use `R·L⁻ᵀ`. Hover is not a gate — it is an equilibrium, so a
 transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 `tumble` and `spin_down` exercise the torque path.
 
-## Tests — what each one gates
+## Tests
 
-| file | gate |
-|---|---|
-| `test_dynamics.py` | the plant against the goldens |
-| `test_control.py` | the cascade against the goldens |
-| `test_env.py` | the cascade flies a lone drone across the circle; `chase` scales with `roles`, one catch pays every pursuer, a net on another pursuer kills both, and after a failure only the survivor bootstraps |
-| `test_learn.py` | it learns, the same seed gives the same numbers, and a frozen role does not move |
-| `test_runner.py` | a run says what produced it and resumes |
-| `test_pool.py` | the Hedge weights follow eq. 12, and a resume in the middle of a generation keeps its pool |
-| `test_eval.py` | the cascade in both chase seats scores its baseline number |
+Each file in `tests/` opens with a docstring that says what it checks.
 
 ## research/ and the reference code
 
@@ -250,7 +186,9 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 - `code_sources/` (GITIGNORED) — reference code, **not ours**:
   `mrs_multirotor_simulator/` (the C++ we reimplement), `PPO_example/` (the
   supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone),
-  `rl_tracking_eagle-cleaned-up-logic/` (Němeček's pursuit-evasion code).
+  `rl_tracking_eagle-cleaned-up-logic/` (Němeček's pursuit-evasion code). **To run**
+  `PPO_example` or `quad-swarm-rl`, read
+  [reference_code.md](research/notes/reference_code.md).
 - **Papers: grep the transcript, don't open the PDF.** Every PDF has a
   `pdftotext -layout` transcript as a sibling `.md`; open the PDF only for
   figures. [bibliography_index.md](research/papers/bibliography_index.md) is the
@@ -265,73 +203,6 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 - `quad-swarm-rl` is a **live clone with its own `.git` and an `origin` pointing at
   the upstream GitHub repo**. Never commit or push from inside it. Treat every
   `code_sources/` tree as a read-only reference unless the user says otherwise.
-
-## PPO_example — JAX learner (the baseline we build on)
-
-Has its own [CLAUDE.md](research/code_sources/PPO_example/CLAUDE.md), which is
-authoritative when working inside that directory. Read it plus its `README.md`,
-`ppo/train.py`, `envs/interceptor2d.py` — the whole thing is ~1,000 lines.
-
-PureJaxRL-style PPO where the entire training loop is a single XLA program.
-`ppo/train.py` (ActorCritic + `make_train`), `ppo/wrappers.py`, `ppo/config.py`
-(every hyperparameter), `envs/interceptor2d.py` (env + reward + `PRESETS`),
-`run/{train,eval,plot}.py` (CLI → `runs/<preset>_s<seed>/`), `cluster/` (RCI SLURM).
-
-```bash
-# PPO_example/CLAUDE.md names a conda env `agiflight`; it does NOT exist here.
-# Use `conda run -n drone-swarm`.
-python tests/test_smoke.py     # ~15 s, THE GATE: env checks + a learning gate
-python run/train.py --steps 3e6 --num-envs 256 --num-steps 64 --num-minibatches 8   # CPU
-python run/train.py            # GPU defaults: 4096 envs, 50M steps
-python run/eval.py runs/straight_s0
-python run/plot.py runs/straight_s0
-```
-
-Smoke tests must be green before any change is called done and before any GPU
-job. Writing a new env: follow the contract in
-[envs/README.md](research/code_sources/PPO_example/envs/README.md) — gymnax-style
-`flax.struct` state with identical dtypes from `reset_env`/`step_env`, static
-params as `pytree_node=False`, `info` carrying `terminated`/`truncated`/
-`terminal_obs`, and all values chosen in `PRESETS`, never in `run/`.
-
-The traps that repo already paid for: `env.step` auto-resets on done (log
-terminal data *before* it, or use `step_env`); obs-normalization stats are part
-of the policy and live in `params.pkl`; timeout is truncation (bootstrap V),
-capture/miss are terminals; small batch + `ent_coef=0.01` makes entropy blow up
-(keep ≥2048 envs on GPU). Cluster gotchas are in `cluster/README.md` — deploy
-source by git only, verify `git log -1` on the cluster after every pull, and
-`pip install --user` without `--no-deps` shadows the container's CUDA jax.
-
-## quad-swarm-rl — PyTorch swarm reference (attention)
-
-Separate stack, separate env: Python ≥3.11, `pip install -e .` (numpy 1.26,
-torch 2.5, sample-factory, numba, gym/gymnasium). Two halves:
-
-- `gym_art/quadrotor_multi/` — the simulator: `quadrotor_dynamics.py`,
-  `quadrotor_multi.py` (the multi-agent env), `collisions/`, `obstacles/`,
-  `aerodynamics/` (downwash), and `scenarios/` — one file per task
-  (`static_same_goal`, `swarm_vs_swarm`, `mix`, …), each subclassing
-  `scenarios/base.py`. Numba-accelerated hot paths (`--quads_use_numba`).
-- `swarm_rl/` — the training glue on top of Sample Factory APPO:
-  `models/quad_multi_model.py` + `models/attention_layer.py` (the neighbor
-  encoder — this is the "swarming with attention" piece we want),
-  `env_wrappers/reward_shaping.py`, `runs/` (Sample Factory launcher scripts
-  = experiment configs), `sim2real/` (PyTorch → C for Crazyflie firmware).
-
-```bash
-bash train.sh                                    # baseline multi-drone APPO run
-python -m sample_factory.launcher.run --run=swarm_rl.runs.single_quad.single_quad \
-    --max_parallel=4 --pause_between=1 --experiments_per_gpu=1 --num_gpus=4
-python -m swarm_rl.enjoy --algo=APPO --env=quadrotor_multi --quads_render=True \
-    --train_dir=... --experiment=... --quads_view_mode topdown
-./run_tests.sh                                   # = python -m unittest (all tests)
-python -m unittest gym_art.quadrotor_multi.tests.test_multi_env   # single test module
-tensorboard --logdir=./                          # from the experiment folder
-```
-
-Key training flags to recognise: `--quads_mode` (scenario), `--quads_obs_repr`,
-`--quads_neighbor_encoder_type=attention`, `--quads_neighbor_visible_num`,
-`--quads_use_obstacles`, `--quads_use_downwash`, `--replay_buffer_sample_prob`.
 
 ## Shell traps
 

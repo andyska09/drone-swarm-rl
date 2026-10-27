@@ -9,7 +9,7 @@ This repo is single-context. Its domain docs live under `research/notes/`, by th
 
 Before you explore an area, read the spec of each task you touch and the decisions in `design_choices.md` that touch it.
 
-Write into these files in their own format, by the spec rules in `CLAUDE.md`.
+Write into these files in their own format, by the spec rules in `research/notes/tasks/README.md`.
 
 ## Use the glossary's words
 
