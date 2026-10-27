@@ -53,7 +53,7 @@ def reset(key, env, params, cfg, start=None):
         jax.random.split(k, cfg.num_envs), params
     )
 
-    # Shorten the first episodes to spread the time limits across updates.
+    # Shorten the first episodes to spread the step limits across updates.
     limit = params.max_steps - jax.random.randint(k_time, (cfg.num_envs,), 0, params.max_steps)
     seat = None
     if start is not None:
@@ -91,7 +91,7 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
         jax.random.split(k_step, n), vec.env, action, params
     )
     ep_length = vec.ep_length + 1
-    # An end by the task at the same step wins over the time limit.
+    # An end by the task at the same step wins over the step limit.
     time_limit = (ep_length >= vec.limit) & ~ended
     flying = info["flying"]
     bootstrap = flying & (time_limit[:, None] | (ended[:, None] & info["bootstrap"]))

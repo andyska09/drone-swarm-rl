@@ -43,7 +43,7 @@ that is a rule of the task, like avoidance's 10 s `timeout`, belongs in `step`.
                the average instead of counted as a zero.
     step       averaged over the steps — a gap, a per-step collision rate.
 
-At the time limit every flying drone bootstraps, unless the task ended the episode at
+At the step limit every flying drone bootstraps, unless the task ended the episode at
 the same step. The trainer adds `time_limit` to `end`.
 
 A metric with a drone axis is reported once per role, named `<role>_<metric>`; a

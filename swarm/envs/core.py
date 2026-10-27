@@ -43,7 +43,7 @@ class Common:
 
     @property
     def n_visible(self):
-        """Seats in the `others` block, capped at n_neighbors."""
+        """Slots in the `others` block, capped at n_neighbors."""
 
         return min(self.n_neighbors, len(self.roles) - 1)
 
@@ -223,15 +223,15 @@ def same_role(roles):
 def others(drone, params, seen, extra):
     """(N, K·(6 + e) + K): the K nearest drones that each drone sees, nearest first.
 
-    Each seat holds the offset and the velocity in the body frame, then the e columns
-    of `extra`, (N, N, e). Then come K 0/1 flags for the filled seats. An empty seat is
+    Each slot holds the offset and the velocity in the body frame, then the e columns
+    of `extra`, (N, N, e). Then come K 0/1 flags for the filled slots. An empty slot is
     all zeros. `seen` is (N, N), or True when every drone sees every other.
     """
 
     near, idx = jax.lax.top_k(-jnp.where(seen, pair_dist(drone.x), jnp.inf), params.n_visible)
     take = lambda a: jnp.take_along_axis(a, idx[..., None], axis=1)
     rel = lambda a: jnp.einsum("nji,nkj->nki", drone.R, take(a))
-    seats = jnp.concatenate(
+    slots = jnp.concatenate(
         [
             rel(drone.x[None, :, :] - drone.x[:, None, :]),
             rel(drone.v[None, :, :] - drone.v[:, None, :]),
@@ -239,8 +239,8 @@ def others(drone, params, seen, extra):
         ],
         axis=-1,
     )
-    filled = jnp.isfinite(near).astype(seats.dtype)
-    flat = (seats * filled[..., None]).reshape(seats.shape[0], -1)
+    filled = jnp.isfinite(near).astype(slots.dtype)
+    flat = (slots * filled[..., None]).reshape(slots.shape[0], -1)
     return jnp.concatenate([flat, filled], axis=-1)
 
 

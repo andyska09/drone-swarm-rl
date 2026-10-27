@@ -1,5 +1,4 @@
-"""Quadrotor plant. It must match the C++ goldens in tests/golden; the deviations are
-in research/notes/choices.md."""
+"""Quadrotor plant. It must match the C++ goldens in tests/golden."""
 
 import flax.struct
 import jax
@@ -108,8 +107,7 @@ def default_params(**overrides):
 
 
 def orthonormalize(R):
-    """R·L⁻ᵀ, where L is the Cholesky factor of RᵀR, so the result is orthonormal.
-    Why the C++ differs here: choices.md."""
+    """R·L⁻ᵀ, where L is the Cholesky factor of RᵀR, so the result is orthonormal."""
 
     L = jnp.linalg.cholesky(R.T @ R)
     return jax.scipy.linalg.solve_triangular(L, R.T, lower=True).T

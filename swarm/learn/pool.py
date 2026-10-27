@@ -1,6 +1,5 @@
 """Pools for chase, AMSPBH: in each generation both sides learn at once, each against
-the other side's pool of frozen opponents, weighted by a Hedge sampler. The design:
-research/notes/task_chase_training.md."""
+the other side's pool of frozen opponents, weighted by a Hedge sampler."""
 
 import math
 import pickle
@@ -19,10 +18,10 @@ BLOCKS = 64
 SEEDS = {"pursuer": "frpn", "evader": "paths"}
 SIDES = ("evader", "pursuer")
 RIVAL = {"pursuer": "evader", "evader": "pursuer"}
-# A side wins on these outcomes, and `fail_both` is half a win to each side.
+# A side wins on these outcomes, and `fail_pe` is half a win to each side.
 WINS = {
-    "pursuer": ("caught_evader", "crash_evader", "OOB_evader"),
-    "evader": ("time_limit", "crash_pursuer", "OOB_pursuer", "collPP"),
+    "pursuer": ("caught_e", "crash_e", "OOB_e"),
+    "evader": ("time_limit", "crash_p", "OOB_p", "coll_pp"),
 }
 # The frozen side's columns of these stay empty in metrics.csv.
 LEARNER_STATS = (
@@ -79,7 +78,7 @@ def match(cfg, env, env_params, sources, role, episodes):
         def one(key):
             _, _, _, reward, info, live = evaluate.rollout(key, env, env_params, act, start)
             end = evaluate.summarize(reward, info, live, slices)
-            return sum(end[k] for k in WINS[role]) + 0.5 * end["fail_both"]
+            return sum(end[k] for k in WINS[role]) + 0.5 * end["fail_pe"]
 
         return jax.vmap(one)(keys).mean()
 

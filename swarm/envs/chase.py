@@ -1,7 +1,4 @@
-"""N drones chase one evader and catch it with a net hung under the pursuer's body.
-
-The design: research/notes/task_chase.md.
-"""
+"""N drones chase one evader and catch it with a net hung under the pursuer's body."""
 
 import flax.struct
 import jax
@@ -11,22 +8,22 @@ from swarm.envs import Obs, core
 from swarm.sim import control, dynamics, guidance
 
 NUM_ACTIONS = 4
-PROGRESS = ("ep_length", "death_rate", "caught_evader")
+PROGRESS = ("ep_length", "death_rate", "caught_e")
 # `paths` draws one of these for each episode, all three equally likely.
 PATHS = ("hover", "circle", "figure8")
 
 
 @flax.struct.dataclass
 class RewardConfig:
-    """distance, step, cmd, collPE and outside are per second: the reward multiplies them by
-    policy_dt. catch, collPP and fail are paid once."""
+    """distance, step, cmd, coll_pe and outside are per second: the reward multiplies them by
+    policy_dt. catch, coll_pp and fail are paid once."""
 
     distance: float = 0.1
     step: float = 4.0
     cmd: float = 0.02
     catch: float = 10.0
-    collPE: float = 10.0
-    collPP: float = 10.0
+    coll_pe: float = 10.0
+    coll_pp: float = 10.0
     fail: float = 30.0
     # The evader pays it while it is outside the arena box.
     outside: float = 0.0
@@ -143,7 +140,7 @@ def failed(drone, params):
     return core.out_of_arena(drone, params) if params.walls else crashed(drone, params)
 
 
-def collPP(drone, params):
+def coll_pp(drone, params):
     """(N,): a pursuer against another pursuer, body or net. Ends the episode."""
 
     _, evader = _sides(params)
@@ -151,7 +148,7 @@ def collPP(drone, params):
     return jnp.any(hit, axis=-1) | net_collision(drone, params)
 
 
-def collPE(drone, params):
+def coll_pe(drone, params):
     """(P,): a pursuer body against the evader body. Costs, but does not end it."""
 
     pursuers, evader = _sides(params)
@@ -180,12 +177,12 @@ def compute_reward(state, rate_ref, alive, fail, collide, caught, params):
     distance = core.norm(d.x[evader] - net_centre(d, params))
 
     # A pursuer-evader collision costs both sides the same.
-    hit = collPE(d, params)
+    hit = coll_pe(d, params)
     both = jnp.zeros(params.n_drones).at[pursuers].set(hit).at[evader].set(jnp.any(hit))
 
     # The pursuers pay the clock and the evader earns it.
     clock = jnp.full(params.n_drones, -cfg.step).at[evader].set(cfg.step)
-    clock = clock.at[pursuers].add(-cfg.distance * distance) - cfg.collPE * both
+    clock = clock.at[pursuers].add(-cfg.distance * distance) - cfg.coll_pe * both
     clock = clock.at[evader].add(-cfg.outside * core.out_of_arena(d, params)[evader])
     # One catch pays every pursuer and bills the evader once.
     catch = jnp.full(params.n_drones, cfg.catch).at[evader].set(-cfg.catch)
@@ -195,7 +192,7 @@ def compute_reward(state, rate_ref, alive, fail, collide, caught, params):
             alive, params.policy_dt * (clock - cfg.cmd * core.norm(rate_ref)), 0.0
         )
         + catch * caught
-        - cfg.collPP * collide
+        - cfg.coll_pp * collide
         - cfg.fail * fail
     )
 
@@ -246,7 +243,7 @@ def step(key, state, action, params):
     caught = jnp.any(is_caught(drone, params)) & jnp.all(state.alive)
     # The net hangs through the hitbox, so a catch is a catch, not a collision.
     fail = state.alive & failed(drone, params) & ~caught
-    collide = state.alive & collPP(drone, params) & ~caught
+    collide = state.alive & coll_pp(drone, params) & ~caught
     died = fail | collide
     alive = state.alive & ~died
 
@@ -266,9 +263,9 @@ def step(key, state, action, params):
     # A failure through the floor, or a broken state, is a crash. The rest is OOB.
     crash = fail & crashed(drone, params)
     oob = fail & ~crash
-    p_crash, p_oob = jnp.any(crash[pursuers]), jnp.any(oob[pursuers])
-    # A collPP is a pursuer failure too.
-    p_fail, e_fail = p_crash | p_oob | jnp.any(collide), fail[evader]
+    crash_p, oob_p = jnp.any(crash[pursuers]), jnp.any(oob[pursuers])
+    # A coll_pp is a pursuer failure too.
+    fail_p, fail_e = crash_p | oob_p | jnp.any(collide), fail[evader]
 
     on_net = net_frame(drone, params)[:, evader, 1:]
     info = {
@@ -279,20 +276,20 @@ def step(key, state, action, params):
         "end": {
             # One outcome per episode, the first that holds in this order. Then comes the
             # trainer's `time_limit`.
-            "caught_evader": caught,
-            "fail_both": p_fail & e_fail,
-            "crash_pursuer": p_crash & ~e_fail,
-            "OOB_pursuer": p_oob & ~p_crash & ~e_fail,
-            "collPP": p_fail & ~p_crash & ~p_oob & ~e_fail,
-            "crash_evader": crash[evader] & ~p_fail,
-            "OOB_evader": oob[evader] & ~p_fail,
+            "caught_e": caught,
+            "fail_pe": fail_p & fail_e,
+            "crash_p": crash_p & ~fail_e,
+            "OOB_p": oob_p & ~crash_p & ~fail_e,
+            "coll_pp": fail_p & ~crash_p & ~oob_p & ~fail_e,
+            "crash_e": crash[evader] & ~fail_p,
+            "OOB_e": oob[evader] & ~fail_p,
             "time_to_catch": jnp.where(caught, new_state.time * params.policy_dt, jnp.nan),
             "catch_offset": jnp.where(caught, jnp.min(core.norm(on_net)), jnp.nan),
         },
         "step": {
             # The nearest pursuer's net to the evader, averaged over the chase.
             "distance": jnp.min(core.norm(drone.x[evader] - net_centre(drone, params))),
-            "collPE": jnp.any(collPE(drone, params)),
+            "coll_pe": jnp.any(coll_pe(drone, params)),
         },
     }
     return get_obs(new_state, params), new_state, reward, done, info

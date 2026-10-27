@@ -1,7 +1,4 @@
-"""Two drones fly head-on through a closed square tube, each to the other's start.
-
-The design: research/notes/task_avoidance.md.
-"""
+"""Two drones fly head-on through a closed square tube, each to the other's start."""
 
 import flax.struct
 import jax

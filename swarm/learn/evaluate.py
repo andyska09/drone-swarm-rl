@@ -71,7 +71,7 @@ def rollout(key, env, env_params, act, start):
         next_obs, next_state, reward, ended, info = env.step(
             key, state, action, env_params
         )
-        # The time limit ends the episode at the last step, as in training.
+        # The step limit ends the episode at the last step, as in training.
         last = t == env_params.max_steps - 1
         info = {**info, "end": {**info["end"], "time_limit": last & ~ended}}
         # Nothing resets here, so hold the scene at the step the episode ended.
