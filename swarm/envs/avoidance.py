@@ -114,16 +114,16 @@ def get_obs(state, params):
     )
     # Each drone measures the others in its own body frame, mirrored with its world.
     mirrored = d.replace(R=d.R * flip[:, None, :])
-    rows = jnp.concatenate(
+    actor = jnp.concatenate(
         [
             core.own_obs(seen, walls),
-            core.others(mirrored, params, sees(state, params), core.same_role(params.roles)),
+            core.others(mirrored, params, sees(state, params)),
             core.target_obs(seen, on(state.goal)),
         ],
         axis=-1,
     )
     return Obs(
-        actor=core.by_role(rows, params.roles),
+        actor=core.by_role(actor, params.roles),
         critic=jnp.concatenate([drones.reshape(-1), jnp.stack([state.length, clock])]),
     )
 

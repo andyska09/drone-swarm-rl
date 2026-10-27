@@ -14,7 +14,7 @@ def main():
     p.add_argument("run")
     p.add_argument("--episodes", type=int, default=1024)
     p.add_argument("--checkpoint", default="latest", help="'latest', an update number, or a path")
-    p.add_argument("--seat", action="append", nargs=2, default=[], metavar=("ROLE", "SOURCE"),
+    p.add_argument("--seat", action="append", nargs=2, default=[], metavar=("ROLE", "WHO"),
                    help="who flies one role: a name from the task's PILOTS, another run "
                         "directory, or a .pkl")
     p.add_argument("--name", help="subdirectory under evals/")

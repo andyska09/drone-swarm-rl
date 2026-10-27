@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from swarm import envs
 from swarm.envs import avoidance, chase
-from swarm.learn import config, evaluate, ppo, runner
+from swarm.learn import config, evaluate, runner
 
 OUTCOMES = ("caught_e", "fail_pe", "crash_p", "OOB_p", "coll_pp",
             "crash_e", "OOB_e", "time_limit")
@@ -24,7 +24,7 @@ def fixed_match(seats, params=chase.PRESETS["default"], episodes=64):
     env = chase
     cfg = config.TrainConfig(task="chase", preset="default")
     act, start, _ = evaluate.make_policy(cfg, env, params, None, "latest", seats)
-    slices = ppo.role_slices(params.roles)
+    slices = envs.role_slices(params.roles)
     keys = jax.random.split(jax.random.PRNGKey(evaluate.EVAL_SEED), episodes)
 
     def measure(key):

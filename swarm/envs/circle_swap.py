@@ -41,16 +41,16 @@ class EnvState:
 
 def get_obs(state, params):
     d = state.drone
-    rows = jnp.concatenate(
+    actor = jnp.concatenate(
         [
             core.own_obs(d, core.wall_dist(d, params)),
-            core.others(d, params, True, core.same_role(params.roles)),
+            core.others(d, params, True),
             core.target_obs(d, state.goal),
         ],
         axis=-1,
     )
     return Obs(
-        actor=core.by_role(rows, params.roles),
+        actor=core.by_role(actor, params.roles),
         # The goal drives the reward, so the critic cannot score a state without it.
         critic=jnp.concatenate([core.scene_obs(d), state.goal.reshape(-1)]),
     )

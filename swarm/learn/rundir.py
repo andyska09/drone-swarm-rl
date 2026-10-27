@@ -1,9 +1,10 @@
-"""Read a run directory back: its config, its env and its saved files. And the commit
-that a run or an eval records.
+"""Read a run directory back: its config, its env and its saved files. Write its log and
+its csv files. And the commit that a run or an eval records.
 
-evaluate and pool read runs here, because runner imports them: `learn/` imports one way,
+evaluate and pool read and write runs here, because runner imports them: `learn/` imports one way,
 rundir, ppo, vecenv, seats, evaluate, pool, runner."""
 
+import csv
 import dataclasses
 import importlib
 import json
@@ -29,6 +30,20 @@ def git_state():
 def load(path, name="latest.pkl"):
     with (Path(path) / name).open("rb") as f:
         return pickle.load(f)
+
+
+def say(path, line):
+    print(line, flush=True)
+    with (path / "stdout.log").open("a") as f:
+        f.write(line + "\n")
+
+
+def append_row(file, row):
+    with file.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row))
+        if f.tell() == 0:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def load_config(run):

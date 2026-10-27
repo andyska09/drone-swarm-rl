@@ -86,19 +86,13 @@ def main():
         if name not in env.PILOTS
     }
 
-    matches = {}
+    matches = pool.matches(cfg, env, env_params, args.episodes)
 
     def win_rate(pursuer, evader):
-        sources = {
-            side: name if name in env.PILOTS else None
-            for side, name in (("pursuer", pursuer), ("evader", evader))
-        }
-        named = tuple(sorted(sources.items()))
-        if named not in matches:
-            matches[named] = pool.match(cfg, env, env_params, sources, "pursuer", args.episodes)
         seated = (("pursuer", pursuer), ("evader", evader))
+        pilots = {side: name if name in env.PILOTS else None for side, name in seated}
         weights = {side: nets[side, name] for side, name in seated if (side, name) in nets}
-        return float(matches[named](weights))
+        return matches("pursuer", pilots, weights)
 
     rates = []
     for pursuer in pursuers:

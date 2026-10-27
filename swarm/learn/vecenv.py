@@ -45,6 +45,14 @@ def select(pick, a, b):
     )
 
 
+def at_limit(info, ended, reached):
+    """`time_limit`: the step limit ends an episode where it is `reached`, unless the
+    task ended it at the same step. -> the flag, and `info` with it in `end`."""
+
+    time_limit = reached & ~ended
+    return time_limit, {**info, "end": {**info["end"], "time_limit": time_limit}}
+
+
 def reset(key, env, params, cfg, start=None):
     """`start(states) -> (states, carry)` begins each episode of a seat."""
 
@@ -91,14 +99,11 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
         jax.random.split(k_step, n), vec.env, action, params
     )
     ep_length = vec.ep_length + 1
-    # An end by the task at the same step wins over the step limit.
-    time_limit = (ep_length >= vec.limit) & ~ended
+    time_limit, info = at_limit(info, ended, ep_length >= vec.limit)
     flying = info["flying"]
     bootstrap = flying & (time_limit[:, None] | (ended[:, None] & info["bootstrap"]))
     done = (ended | time_limit).astype(reward.dtype)
 
-    info = dict(info)
-    info["end"] = {**info["end"], "time_limit": time_limit}
     info["done"] = done
     info["mask"] = vec.flying.astype(reward.dtype)
     info["cont"] = flying * (1.0 - done[:, None])

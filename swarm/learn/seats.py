@@ -7,6 +7,7 @@ the next carry, and `start(state)` gives the state and the first carry of an epi
 import jax
 import jax.numpy as jnp
 
+from swarm import envs
 from swarm.learn import ppo, vecenv
 
 
@@ -53,7 +54,7 @@ def pool_seat(cfg, env, env_params, role, seed):
     `pool` is (member, weights): each block's member and each block's actor weights.
     Returns the rows it flies, and its act and start over the whole batch."""
 
-    rows = ppo.role_slices(env_params.roles)[role]
+    rows = envs.role_slices(env_params.roles)[role]
     seed_act, seed_start = env.PILOTS[seed](env_params, rows)
     actor = ppo.make_actor(ppo.make_net(cfg, env)[0], {role: rows})
 

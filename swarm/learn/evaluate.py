@@ -8,7 +8,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from swarm.learn import ppo, rundir
+from swarm import envs
+from swarm.learn import ppo, rundir, vecenv
 from swarm.learn.seats import combine, net_policy
 
 # Far from any training seed, so eval never flies an episode training saw.
@@ -33,7 +34,7 @@ def make_policy(cfg, env, env_params, run, checkpoint, seats):
     """Who flies each role: this run's weights, another run's, or one of the task's
     PILOTS."""
 
-    slices = ppo.role_slices(env_params.roles)
+    slices = envs.role_slices(env_params.roles)
     for role in seats:
         if role not in slices:
             raise ValueError(f"{role!r} has no seat; roles are {sorted(slices)}")
@@ -72,8 +73,7 @@ def rollout(key, env, env_params, act, start):
             key, state, action, env_params
         )
         # The step limit ends the episode at the last step, as in training.
-        last = t == env_params.max_steps - 1
-        info = {**info, "end": {**info["end"], "time_limit": last & ~ended}}
+        _, info = vecenv.at_limit(info, ended, t == env_params.max_steps - 1)
         # Nothing resets here, so hold the scene at the step the episode ended.
         state = _hold(done, next_state, state)
         obs = _hold(done, next_obs, obs)
@@ -96,15 +96,9 @@ def rollout(key, env, env_params, act, start):
 def summarize(reward, info, live, slices):
     """One number per metric of one episode, by the rules of `ppo.episode_metrics`."""
 
-    steps = live.sum()
+    last = jnp.arange(live.shape[0]) == live.sum() - 1
     info = {**info, "ep_return": jnp.cumsum(reward, axis=0), "ep_length": jnp.cumsum(live)}
-    return ppo.episode_metrics(
-        info,
-        lambda x: jnp.take(x, steps - 1, axis=0),
-        lambda x: jnp.sum(x * live) / steps,
-        slices,
-        lead=1,
-    )
+    return ppo.episode_metrics(info, last, live, slices, lead=1)
 
 
 def eval_env(run, preset=None):
@@ -131,7 +125,7 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None, prese
 
     keys = jax.random.split(jax.random.PRNGKey(EVAL_SEED), episodes)
 
-    slices = ppo.role_slices(env_params.roles)
+    slices = envs.role_slices(env_params.roles)
 
     def measure(key):
         _, _, _, reward, info, live = rollout(key, env, env_params, act, start)

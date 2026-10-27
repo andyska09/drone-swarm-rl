@@ -4,7 +4,7 @@ import flax.struct
 import jax
 import jax.numpy as jnp
 
-from swarm.envs import Obs, core
+from swarm.envs import Obs, core, role_slices
 from swarm.sim import control, dynamics, guidance
 
 NUM_ACTIONS = 4
@@ -61,9 +61,7 @@ class EnvState:
 def _sides(params):
     """Drone rows: every pursuer, and the one evader. `roles` is static."""
 
-    return jnp.array([i for i, r in enumerate(params.roles) if r == "pursuer"]), (
-        params.roles.index("evader")
-    )
+    return role_slices(params.roles)["pursuer"], params.roles.index("evader")
 
 
 def _drop(params):
@@ -117,14 +115,14 @@ def net_collision(drone, params):
 
 def get_obs(state, params):
     d = state.drone
-    rows = jnp.concatenate(
+    actor = jnp.concatenate(
         [
             core.own_obs(d, core.wall_dist(d, params)),
-            core.others(d, params, True, core.same_role(params.roles)),
+            core.others(d, params, True),
         ],
         axis=-1,
     )
-    return Obs(actor=core.by_role(rows, params.roles), critic=core.scene_obs(d))
+    return Obs(actor=core.by_role(actor, params.roles), critic=core.scene_obs(d))
 
 
 def crashed(drone, params):
@@ -420,4 +418,5 @@ PRESETS = {
         arena=(20.0, 20.0, 10.0), center=(0.0, 0.0, 5.0), walls=False,
         reward=RewardConfig(outside=57.0),
     ),
+    "3v1": EnvParams(roles=("pursuer",) * 3 + ("evader",)),
 }

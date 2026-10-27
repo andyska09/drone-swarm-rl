@@ -56,22 +56,22 @@ def test_metrics_split_by_role_and_leave_out_undefined_episodes():
         },
         "step": {},
     }
-    slices = ppo.role_slices(("pursuer", "pursuer", "evader"))
-    episodes = lambda x: ppo.mean_defined(x, 1.0)
-    metrics = ppo.episode_metrics(info, episodes, lambda x: x.mean(), slices, lead=1)
+    slices = envs.role_slices(("pursuer", "pursuer", "evader"))
+    # One row per episode, read at its end.
+    metrics = ppo.episode_metrics(info, jnp.ones(2), jnp.ones(2), slices, lead=1)
 
     assert set(metrics) == {
-        "ep_length", "pursuer_return", "evader_return", "pursuer_death_rate",
-        "evader_death_rate", "caught", "pursuer_offset", "evader_offset",
+        "ep_length", "return_p", "return_e", "death_rate_p",
+        "death_rate_e", "caught", "offset_p", "offset_e",
     }
-    assert float(metrics["pursuer_return"]) == 4.0 and float(metrics["evader_return"]) == -4.0
+    assert float(metrics["return_p"]) == 4.0 and float(metrics["return_e"]) == -4.0
     assert float(metrics["caught"]) == 0.5
-    assert jnp.isclose(metrics["pursuer_offset"], 0.6), "the NaN episode counted"
-    assert float(metrics["evader_offset"]) == 0.0
+    assert jnp.isclose(metrics["offset_p"], 0.6), "the NaN episode counted"
+    assert float(metrics["offset_e"]) == 0.0
 
 
 def test_a_frozen_role_does_not_move():
-    """The turn passed to the update freezes every role it marks False."""
+    """A pool learner trains one side, and its `train` freezes the other side."""
 
     cfg = config.TrainConfig(
         task="chase",
@@ -85,21 +85,14 @@ def test_a_frozen_role_does_not_move():
     env_params = env_params.replace(max_steps=100)
 
     init, update = ppo.make(cfg, env, env_params)
-    carry = init(jax.random.PRNGKey(0))
-    before = jax.tree.map(jnp.copy, {r: t.params for r, t in carry[0].items()})
-    carry, _ = update(*carry, {"pursuer": True, "evader": False})
-    after = {r: t.params for r, t in carry[0].items()}
+    ts, learner = init(jax.random.PRNGKey(0))
+    assert set(ts) == {"pursuer", "evader"}
 
-    assert set(before) == {"pursuer", "evader"}
-    moved = jax.tree.map(lambda a, b: bool(jnp.any(a != b)), before, after)
-    assert not any(jax.tree.leaves(moved["evader"])), "a frozen role took a step"
-    assert any(jax.tree.leaves(moved["pursuer"])), "the trained role did not move"
+    for side, rival in (("pursuer", "evader"), ("evader", "pursuer")):
+        before = jax.tree.map(jnp.copy, {r: t.params for r, t in ts.items()})
+        (ts, learner), _ = update(ts, learner.replace(train={side: True, rival: False}))
+        after = {r: t.params for r, t in ts.items()}
 
-    # Then the other turn.
-    before = jax.tree.map(jnp.copy, {r: t.params for r, t in carry[0].items()})
-    carry, _ = update(*carry, {"pursuer": False, "evader": True})
-    after = {r: t.params for r, t in carry[0].items()}
-
-    moved = jax.tree.map(lambda a, b: bool(jnp.any(a != b)), before, after)
-    assert not any(jax.tree.leaves(moved["pursuer"])), "the frozen turn took a step"
-    assert any(jax.tree.leaves(moved["evader"])), "the training turn did not move"
+        moved = jax.tree.map(lambda a, b: bool(jnp.any(a != b)), before, after)
+        assert not any(jax.tree.leaves(moved[rival])), f"the frozen {rival} took a step"
+        assert any(jax.tree.leaves(moved[side])), f"the trained {side} did not move"

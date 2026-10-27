@@ -99,19 +99,15 @@ def entropy(std):
     return jnp.sum(jnp.log(std) + 0.5 * (LOG_2PI + 1.0), axis=-1)
 
 
-def role_slices(roles):
-    """Each role's drone indices."""
-
-    return {
-        name: jnp.array([i for i, r in enumerate(roles) if r == name])
-        for name in dict.fromkeys(roles)
-    }
-
-
 def column(role, name, slices):
-    """Metric column per role: `pursuer_return`. A one-role task keeps `return`."""
+    """Metric column per role, by the role's first letter: `return_p`. A one-role task
+    keeps `return`."""
 
-    return f"{role}_{name}" if len(slices) > 1 else name
+    if len(slices) == 1:
+        return name
+    if len({r[0] for r in slices}) < len(slices):
+        raise ValueError(f"two roles start with the same letter: {list(slices)}")
+    return f"{name}_{role[0]}"
 
 
 def by_role(name, x, slices, per_drone):
@@ -132,15 +128,22 @@ def mean_defined(x, weight):
     return jnp.where(n > 0, total / jnp.maximum(n, 1.0), jnp.nan)
 
 
-def episode_metrics(info, at_end, over_steps, slices, lead):
+def episode_metrics(info, end, steps, slices, lead):
     """Every metric that training and eval report.
 
     A metric with `lead` axes, the steps, is a scene fact. One more axis is a drone
-    axis: it splits into one column per role, `<role>_<name>`. `at_end` reads a metric
-    where each episode ends, and `over_steps` averages it over the steps."""
+    axis: it splits into one column per role, `<name>_<r>`. An `end` metric is read at
+    the steps that `end` marks, where an episode ends, and a NaN leaves that episode out.
+    A `step` metric is averaged over the steps, each weighed by `steps`."""
 
     def split(name, x):
         return by_role(name, x.astype(float), slices, x.ndim > lead)
+
+    def at_end(x):
+        return mean_defined(x, end)
+
+    def over_steps(x):
+        return jnp.sum(x * steps) / jnp.sum(steps)
 
     out = {"ep_length": at_end(info["ep_length"])}
     for name, x in (("return", info["ep_return"]), ("death_rate", 1.0 - info["alive"])):
@@ -196,18 +199,18 @@ def opp_actions(action, opponents):
     return a.reshape(a.shape[:-2] + (-1,))
 
 
-def critic_input(obs, opp_action, rows):
-    """The scene and the opponents' actions, one copy for each of a role's `rows` drones."""
+def critic_input(obs, opp_action, n):
+    """The scene and the opponents' actions, one copy for each of a role's `n` drones."""
 
     x = jnp.concatenate([obs.critic, opp_action], axis=-1)
-    return jnp.broadcast_to(x[..., None, :], x.shape[:-1] + (rows, x.shape[-1]))
+    return jnp.broadcast_to(x[..., None, :], x.shape[:-1] + (n, x.shape[-1]))
 
 
 def make_actor(net, slices):
     """Apply each role's actor and return outputs in drone order."""
 
     def apply(params, obs):
-        n = sum(rows.shape[-2] for rows in obs.actor.values())
+        n = sum(x.shape[-2] for x in obs.actor.values())
         lead = obs.critic.shape[:-1] + (n,)
         mean = jnp.zeros(lead + (net.num_actions,))
         std = jnp.ones(lead + (net.num_actions,))
@@ -248,23 +251,35 @@ class Transition:
     mask: jnp.ndarray
 
 
+@flax.struct.dataclass
+class Learner:
+    """One learner's part of an update, besides the weights: its envs, the roles that
+    take a step, and the pool that flies its rivals, or None. `side` is the role it
+    trains, or None when every role learns."""
+
+    vec: vecenv.VecState
+    obs: envs.Obs
+    key: jnp.ndarray
+    # {role: bool}, traced, so freezing a role needs no second compile.
+    train: dict
+    pool: tuple = None
+    side: str = flax.struct.field(pytree_node=False, default=None)
+
+
 def make(cfg, env, env_params, pool_seat=None):
     """`pool_seat` is a `seats.pool_seat`. It flies its rows over what the actors draw,
-    and `update` then takes the pool as its last argument."""
+    with the pool that the learner carries."""
 
     assert cfg.num_updates > 0, "total_timesteps < num_envs * num_steps"
     assert (cfg.num_envs * cfg.num_steps) % cfg.num_minibatches == 0
     batch_size = cfg.num_envs * cfg.num_steps
 
     actor_net, critic_net = make_net(cfg, env)
-    slices = role_slices(env_params.roles)
+    slices = envs.role_slices(env_params.roles)
     opponents = opponent_slices(env_params.roles)
     actor = make_actor(actor_net, slices)
     critic = make_critic(critic_net, slices, opponents)
     pool_rows, pool_act, pool_start = pool_seat or (None, None, None)
-
-    # Whose turn it is. A traced flag, so alternating needs no second compile.
-    every_turn = {r: True for r in slices}
 
     def init(key):
         key, k_env, k_net = jax.random.split(key, 3)
@@ -296,12 +311,14 @@ def make(cfg, env, env_params, pool_seat=None):
             )
             for (role, drones), k in zip(slices.items(), keys)
         }
-        return ts, vec, obs, key
+        return ts, Learner(vec, obs, key, {r: True for r in slices})
 
     def weights(ts):
         return {role: t.params for role, t in ts.items()}
 
-    def update(ts, vec, obs, key, train=every_turn, pool=None):
+    def update(ts, learner):
+        vec, obs, key = learner.vec, learner.obs, learner.key
+        train, pool = learner.train, learner.pool
         # 1 for each drone whose role takes a step: only these rows enter the loss.
         learns = jnp.stack([jnp.asarray(train[r]) for r in env_params.roles]).astype(float)
         start = None if pool_seat is None else lambda state: pool_start(state, pool)
@@ -440,11 +457,7 @@ def make(cfg, env, env_params, pool_seat=None):
 
         done = info["done"]
         metrics = {"episodes": done.sum()} | episode_metrics(
-            info,
-            lambda x: mean_defined(x.astype(done.dtype), done),
-            lambda x: x.mean(),
-            slices,
-            lead=2,
+            info, done, jnp.ones_like(done), slices, lead=2
         )
 
         # Per role: the two sides of a game have opposite signs, so one pooled
@@ -458,6 +471,6 @@ def make(cfg, env, env_params, pool_seat=None):
         metrics |= jax.tree.map(lambda x: x[-1].mean(), stats)
         metrics |= {column(role, "lr", slices): lr_of(t) for role, t in ts.items()}
 
-        return (ts, vec, obs, key), metrics
+        return (ts, learner.replace(vec=vec, obs=obs, key=key)), metrics
 
     return init, jax.jit(update)

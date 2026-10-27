@@ -90,8 +90,8 @@ def test_chase_reads_its_drone_count_from_roles(pursuers):
     assert chase.reference(state, params).shape == (n, 3)
 
     # Every other drone has a slot, and the flag says which are the same role.
-    rows = jnp.concatenate([obs.actor["pursuer"], obs.actor["evader"]])
-    slots, filled = rows[:, 20 : 20 + 7 * k].reshape(n, k, 7), rows[:, 20 + 7 * k :]
+    actor = jnp.concatenate([obs.actor["pursuer"], obs.actor["evader"]])
+    slots, filled = actor[:, 20 : 20 + 7 * k].reshape(n, k, 7), actor[:, 20 + 7 * k :]
     role = jnp.array([params.roles[i] == "pursuer" for i in range(n)])
     assert jnp.all(filled == 1.0), "a drone in range lost its slot"
     for i in range(n):

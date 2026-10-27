@@ -136,7 +136,8 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   [research/notes/literature/reward_terms.md](research/notes/literature/reward_terms.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
-  `learn/ppo.py` turns each distinct name in it into its own set of weights.
+  `envs/__init__.py` gives each distinct name in it its drones. `learn/ppo.py` gives each
+  name its own set of weights.
 - `learn/` — our PPO and the training loop. Each module's docstring says what it holds.
   `ppo.py` and `vecenv.py` know nothing about drones: they take an env *module* and one
   network per role.

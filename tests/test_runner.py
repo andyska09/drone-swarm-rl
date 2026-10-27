@@ -80,10 +80,10 @@ def test_a_resumed_run_trains_on_exactly(tmp_path, monkeypatch, kind):
 
     save = runner.save
 
-    def stop_at_update_4(path, update, state):
-        if update == 4:
+    def stop_at_update_4(path, state):
+        if state.update == 4:
             raise Stop
-        save(path, update, state)
+        save(path, state)
 
     monkeypatch.setattr(runner, "save", stop_at_update_4)
     with pytest.raises(Stop):

@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from swarm.envs import role_slices
 from swarm.sim import control, dynamics, guidance
 
 
@@ -220,12 +221,12 @@ def same_role(roles):
     return same.astype(float)[..., None]
 
 
-def others(drone, params, seen, extra):
-    """(N, K·(6 + e) + K): the K nearest drones that each drone sees, nearest first.
+def others(drone, params, seen):
+    """(N, 8K): the K nearest drones that each drone sees, nearest first.
 
-    Each slot holds the offset and the velocity in the body frame, then the e columns
-    of `extra`, (N, N, e). Then come K 0/1 flags for the filled slots. An empty slot is
-    all zeros. `seen` is (N, N), or True when every drone sees every other.
+    Each slot holds the offset and the velocity in the body frame, then 1 if that drone
+    shares the role. Then come K 0/1 flags for the filled slots. An empty slot is all
+    zeros. `seen` is (N, N), or True when every drone sees every other.
     """
 
     near, idx = jax.lax.top_k(-jnp.where(seen, pair_dist(drone.x), jnp.inf), params.n_visible)
@@ -235,7 +236,7 @@ def others(drone, params, seen, extra):
         [
             rel(drone.x[None, :, :] - drone.x[:, None, :]),
             rel(drone.v[None, :, :] - drone.v[:, None, :]),
-            take(extra),
+            take(same_role(params.roles)),
         ],
         axis=-1,
     )
@@ -244,13 +245,10 @@ def others(drone, params, seen, extra):
     return jnp.concatenate([flat, filled], axis=-1)
 
 
-def by_role(rows, roles):
-    """One matrix per role: the rows of its drones, in drone order."""
+def by_role(x, roles):
+    """Split x, one row per drone, into one matrix per role, in drone order."""
 
-    return {
-        role: rows[np.array([i for i, r in enumerate(roles) if r == role])]
-        for role in dict.fromkeys(roles)
-    }
+    return {role: x[drones] for role, drones in role_slices(roles).items()}
 
 
 def body_radius(params):

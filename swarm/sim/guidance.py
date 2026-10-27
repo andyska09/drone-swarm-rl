@@ -1,5 +1,5 @@
-"""Hand-written opponents: FRPN, APF and flown paths. Each one gives a drone a world
-acceleration."""
+"""The guidance laws behind chase's pilots: FRPN, APF and flown paths. Each one gives a
+drone a world acceleration."""
 
 import jax
 import jax.numpy as jnp

@@ -46,10 +46,10 @@ that is a rule of the task, like avoidance's 10 s `timeout`, belongs in `step`.
 At the step limit every flying drone bootstraps, unless the task ended the episode at
 the same step. The trainer adds `time_limit` to `end`.
 
-A metric with a drone axis is reported once per role, named `<role>_<metric>`; a
-task with one role keeps the bare name. A metric without one is a scene fact and
-keeps its name. Put a number in the group that matches how you want to read it —
-nothing else decides it.
+A metric with a drone axis is reported once per role, named `<metric>_<r>` with `r`
+the role's first letter, for example `return_p`; a task with one role keeps the bare
+name. A metric without one is a scene fact and keeps its name. Put a number in the
+group that matches how you want to read it — nothing else decides it.
 """
 
 import importlib
@@ -67,6 +67,15 @@ class Obs:
 
     actor: dict  # {role: (n, f)}, one row for each drone of the role, in drone order
     critic: jnp.ndarray  # (c,), the whole scene
+
+
+def role_slices(roles):
+    """Each role's drone indices, in drone order."""
+
+    return {
+        name: jnp.array([i for i, r in enumerate(roles) if r == name])
+        for name in dict.fromkeys(roles)
+    }
 
 
 def make(task, preset):
