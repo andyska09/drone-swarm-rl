@@ -72,9 +72,8 @@ cascade). We reimplement it in JAX; we do not wrap the C++.
 
 ## swarm/ — our simulator
 
-Every command below needs the `conda run -n drone-swarm` prefix. Pins in
-`requirements.txt` (jax 0.11.1, flax 0.12.9, numpy 2.5.2, matplotlib 3.11.2,
-pytest 9.1.1).
+Every command below needs the `conda run -n drone-swarm` prefix. The pinned
+versions are in [requirements.txt](requirements.txt).
 
 Run `pytest tests/`, never bare `pytest`, because other folders hold tests too.
 

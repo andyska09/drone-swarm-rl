@@ -11,6 +11,7 @@ research/papers/*.md
 
 .claude/
 .agents/
+.vscode/
 scratch/
 tools/mrs_golden/build/
 

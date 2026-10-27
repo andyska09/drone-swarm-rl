@@ -1,0 +1,19 @@
+[FORMAT]
+max-line-length=100
+
+[MESSAGES CONTROL]
+# This repo names math symbols in capitals (R, F, S), writes a docstring only where a
+# contract needs one, and puts the repo on sys.path before the imports of tests and
+# scripts.
+disable=
+    invalid-name,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    wrong-import-position,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-locals,
+    too-many-statements,
+    too-many-instance-attributes,
+    too-few-public-methods

@@ -3,3 +3,4 @@ flax==0.12.9
 numpy==2.5.2
 matplotlib==3.11.2
 pytest==9.1.1
+pylint==4.1.3
