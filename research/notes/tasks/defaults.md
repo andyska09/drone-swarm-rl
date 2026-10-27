@@ -10,6 +10,7 @@ it changes. `Default.` in a task spec means that the section here holds.
 | episode | one run of a task, from the start state to the end |
 | step | one policy step of $\Delta t$ |
 | role | a group of drones that share one policy, for example `pursuer` |
+| `<name>_<r>` | a name for one role: the name, then the first letter of the role, for example `return_p` or `crash_e`. Two letters name an event of two drones, for example `coll_pp`. The code uses the same names |
 | policy | the network that flies the drones of one role. It sees only the actor input |
 | critic | the network that estimates the reward still to come. Only training uses it |
 | touch | two drones touch when $d_{ij} < d_c$. A drone touches a wall when its ball of radius $\rho$ meets the wall |
@@ -160,8 +161,8 @@ for all of them.
 | `death_rate` | the share of the drones of a role that are dead at the end |
 | `time_limit` | 1 if the episode ended by truncation after $T$ steps, else 0 |
 
-- With more than one role, a per-drone metric gets the role as a prefix, for example
-  `pursuer_return`.
+- With more than one role, a per-drone metric has one column for each role, named by
+  `<name>_<r>`, for example `return_p`.
 - A task metric is read at the last step of the episode, or it is the mean over the
   steps.
 - If a metric is NaN in an episode, the mean leaves that episode out.

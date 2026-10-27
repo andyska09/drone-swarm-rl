@@ -119,21 +119,11 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
 - **No task names a drone by number.** `roles` is static, so a task reads its own
   index arrays from it — see `chase._sides`. That is what lets a longer `roles`
   add more pursuers with no other change.
-- The reward is a per-step cost, not a bonus: `-policy_dt * (distance + spin + …)`
-  with a one-off crash penalty. `avoidance` is the exception: +1 when a drone arrives,
-  −1 for a crash, 0 at every other step. `circle_swap` adds a proximity cost and an
-  upright term. **`chase` keeps three words apart and never mixes them**: `fail` is leaving
-  the box through the ground, a wall or the ceiling (in a preset without walls only the
-  ground, and the evader pays `outside` per second instead), `coll_pp` is a pursuer hitting a
-  pursuer (both end the episode), and `coll_pe` is a pursuer hitting the evader, which
-  costs per step and does not end it. **A name with a role in it is `<event>_<role>`**,
-  with `p` for a pursuer and `e` for the evader (`coll_pp`, `crash_p`, `OOB_e`), used
-  for the `RewardConfig` field, the function and the `info` key alike. The outcomes
-  split a `fail` into `crash` (the ground, or a broken state) and `OOB` (a wall or
-  the ceiling). Only the outcome `fail_pe` joins two words: on one step a pursuer fails
-  or hits a pursuer, and the evader fails. **This reward parks the drone 0.2-0.6 m short of the goal** — the open
-  problem, with the fixes other papers use, is in
-  [research/notes/literature/reward_terms.md](research/notes/literature/reward_terms.md).
+- **Before you change a reward or name an event or a metric**, read the task spec: it
+  holds the task's events, reward and metrics. Their words, the name rule `<name>_<r>`
+  included, are in `research/notes/tasks/defaults.md`. Why a distance cost leaves a drone
+  0.2-0.6 m short of its goal is in
+  [reward_terms.md](research/notes/literature/reward_terms.md).
 - **`EnvParams.roles` is the field everything hangs off.** It is
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `envs/__init__.py` gives each distinct name in it its drones. `learn/ppo.py` gives each
