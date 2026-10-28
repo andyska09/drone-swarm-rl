@@ -180,6 +180,12 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   (`core.wall_dist`), or the task's own box, as the avoidance tube (`core.box_dist`).
   `core.others` sorts the drones that each drone sees and zeroes the empty seats, so the
   row width never changes.
+- **What a drone senses of the others.** A slot of `core.others` holds the offset, the
+  velocity and the role flag. `sense` adds more of that drone: its attitude in my body
+  frame, `R_iᵀ R_j`, and its motor speeds over `max_rpm`. `chase_modal` measures what
+  these give. The motor speeds are scaled, because about 4255 rpm at hover saturates the
+  first tanh layer. `avoidance` mirrors the frame of each drone on its own, and `sense`
+  does not mirror the attitude. So `avoidance` cannot use `sense` as it is.
 - **Rotation representation.** Observations include all nine entries of `R`.
   This choice follows SimpleFlight's reported result of roughly 64% worse
   performance with quaternions.
@@ -188,7 +194,7 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   this conversion explicitly, so the policy does not have to learn it. Angular
   velocity `ω` already uses body axes. `R` still describes the drone's orientation
   relative to the world.
-- **Motor speed is omitted from observations.** The rate controller reads the
+- **Motor speed is omitted from the own observation.** The rate controller reads the
   measured `ω` at every simulation step and compensates for motor lag. We rely
   on that feedback instead of giving `rpm` to the policy. `quad-swarm-rl` and
   SimpleFlight also omit it.

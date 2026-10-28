@@ -1,11 +1,14 @@
 """Run PPO updates and save configuration, metrics, and checkpoints.
 
 One loop runs every run, as a list of phases. A plain run has one phase, in which every
-role learns. A pool run has one phase per generation, with one learner for each side
-(pool.py). latest.pkl holds all that the loop needs, so every run resumes from it."""
+role learns. A run of a task with PILOTED has one phase, in which the pilot flies one role
+and the other roles learn. A pool run has one phase per generation, with one learner for
+each side (pool.py). latest.pkl holds all that the loop needs, so every run resumes from
+it."""
 
 import csv
 import dataclasses
+import functools
 import hashlib
 import json
 import pickle
@@ -13,10 +16,11 @@ import time
 from pathlib import Path
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 from swarm import envs
-from swarm.learn import pool, ppo, rundir
+from swarm.learn import pool, ppo, rundir, seats, vecenv
 
 # A frozen role's columns of these stay empty in metrics.csv.
 LEARNER_STATS = (
@@ -36,8 +40,8 @@ class State:
 
 
 class OnePhase:
-    """The phases of a plain run: one, in which every role learns. pool.Phases has the
-    same members."""
+    """The phases of a plain run: one, in which every role learns. Piloted and
+    pool.Phases have the same members."""
 
     sides = (None,)
     count = 1
@@ -50,6 +54,36 @@ class OnePhase:
     def begin(self, path, generation, env_params, ts, key, learners):
         del path, generation, env_params
         return learners, ts, key
+
+    def end(self, path, generation, ts, update):
+        del path, generation, ts, update
+
+
+class Piloted:
+    """The phase of a task with PILOTED: its pilot flies one role as the only member of a
+    pool of one block, and the other roles learn."""
+
+    sides = (None,)
+    count = 1
+
+    def __init__(self, cfg, env):
+        self.cfg, self.env = cfg, env
+        self.role, self.pilot = env.PILOTED
+
+    def rival_seat(self, env_params, side):
+        del side
+        return seats.pool_seat(self.cfg, self.env, env_params, self.role, self.pilot)
+
+    def begin(self, path, generation, env_params, ts, key, learners):
+        del path, generation, learners
+        # The block's weights never fly, because its member, 0, is the pilot.
+        weights = jax.tree.map(lambda x: jnp.zeros_like(x)[None], ts[self.role].params["actor"])
+        one_block = (jnp.zeros(1, jnp.int32), weights)
+        key, k_reset, k_learn = jax.random.split(key, 3)
+        start = functools.partial(self.rival_seat(env_params, None)[2], pool=one_block)
+        obs, vec = vecenv.reset(k_reset, self.env, env_params, self.cfg, start)
+        learning = {role: role != self.role for role in ts}
+        return [ppo.Learner(vec, obs, k_learn, learning, one_block)], ts, key
 
     def end(self, path, generation, ts, update):
         del path, generation, ts, update
@@ -140,6 +174,11 @@ def start_wandb(cfg, path):
 
 
 def _phases(cfg, env, env_params):
+    if hasattr(env, "PILOTED"):
+        if cfg.generations:
+            role, pilot = env.PILOTED
+            raise ValueError(f"{cfg.task} has no pools: {pilot} flies its {role}")
+        return Piloted(cfg, env)
     return pool.Phases(cfg, env, env_params) if cfg.generations else OnePhase()
 
 
