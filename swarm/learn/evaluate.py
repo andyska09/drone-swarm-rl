@@ -121,6 +121,9 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None, prese
         cfg = dataclasses.replace(cfg, preset=preset)
 
     seats = dict(seats)
+    if env_params.piloted:
+        role, pilot = env_params.piloted
+        seats.setdefault(role, pilot)
     act, start, step = make_policy(cfg, env, env_params, run, checkpoint, seats)
 
     keys = jax.random.split(jax.random.PRNGKey(EVAL_SEED), episodes)

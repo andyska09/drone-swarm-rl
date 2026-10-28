@@ -16,7 +16,7 @@ def main():
     p.add_argument("--checkpoint", default="latest", help="'latest', an update number, or a path")
     p.add_argument("--seat", action="append", nargs=2, default=[], metavar=("ROLE", "WHO"),
                    help="who flies one role: a name from the task's PILOTS, another run "
-                        "directory, or a .pkl")
+                        "directory, or a .pkl. Without it, the preset's pilot flies its role")
     p.add_argument("--name", help="subdirectory under evals/")
     p.add_argument("--preset", help="fly another preset of the run's task, for example a bigger arena")
     args = p.parse_args()

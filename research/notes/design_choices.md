@@ -314,8 +314,8 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
 - **Policy selection.** One `--seat` flag names one seat: the role, then who flies it.
   That is another run, a `.pkl`, or one of the task's `PILOTS` (`cascade` in every
   task, and `frpn`, `apf` and `paths` in chase). Any pilot can fly any seat. A role
-  nobody names flies this run's own checkpoint. That is what lets a duel measure one side
-  against a fixed opponent.
+  nobody names flies the pilot that the preset gives it in training, else this run's own
+  checkpoint. That is what lets a duel measure one side against a fixed opponent.
 - **Replay data.** The viewer reads task, preset, arena, roles and `policy_dt`
   from `header.json`, and state from `trajectory.npz`. It does not import the
   environment.

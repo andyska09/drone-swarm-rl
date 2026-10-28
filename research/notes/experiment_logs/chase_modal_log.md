@@ -101,6 +101,8 @@ Each cell is the mean of the three seeds, then seeds 0, 1 and 2.
   them too. The evader never flies, so its input does not reach the pursuer.
 - The run folders `chase_modal_*` come from the old task. The code has no task of that
   name now, so `run/eval.py` cannot load them.
+- **Eval flies the preset's pilot.** A `paths_*` run needs no `--seat evader paths` now.
+  Before, a run evaluated without it flew the untrained evader network.
 
 ## Open
 
