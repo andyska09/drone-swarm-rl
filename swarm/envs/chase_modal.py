@@ -4,7 +4,6 @@ other drones."""
 from swarm.envs.chase import (  # pylint: disable=unused-import
     NUM_ACTIONS,
     PILOTS,
-    PROGRESS,
     EnvParams,
     EnvState,
     get_obs,
@@ -13,6 +12,8 @@ from swarm.envs.chase import (  # pylint: disable=unused-import
     scenery,
     step,
 )
+
+PROGRESS = ("ep_length", "death_rate", "caught_e", "coll_pp")
 
 PILOTED = ("evader", "paths")
 
