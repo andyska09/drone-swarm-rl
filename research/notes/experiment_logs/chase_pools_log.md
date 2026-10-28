@@ -333,10 +333,16 @@ Sources:
   `ent_coef=0`, the std reset and 1.4e9 steps. Two seeds for each preset, so 18 runs.
 - **Each role senses its own blocks.** Before, the blocks went to every drone, so a run
   could not give a block to one side only.
+- **First question, the user's pick: does a pursuer that senses more beat learned
+  evaders more often?** Against the paths evader, the blocks changed little. So only the
+  pursuer senses more, in `default_p_attitude`, `default_p_rpm` and
+  `default_p_attitude_rpm`, two seeds each. The matrix of each run is read against the
+  matrix of `9e4242`, which has the same setup with no blocks.
 
 ## Open
 
 | question | state |
 |---|---|
 | the last evaders win | try Roncero's layers first, `--set hidden=512,256,256,128`. If that fails, try a recurrent network |
+| does a pursuer that senses more beat learned evaders more often | the 6 runs of `default_p_*`, not run yet |
 | what a sensed block gives a side | the 18 runs of the grid, not run yet |

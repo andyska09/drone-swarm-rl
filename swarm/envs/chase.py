@@ -447,6 +447,8 @@ PRESETS = (
         for p in (1, 3)
         for sense in SENSES
     }
+    # Both sides learn, and only the pursuer senses more.
+    | {"_".join(("default", "p", *p)): EnvParams(sense_pursuer=p) for p in SENSES[1:]}
     # Each side senses at least one block of the other.
     | {
         "_".join(("nemecek", "p", *p, "e", *e)): NEMECEK.replace(

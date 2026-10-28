@@ -149,6 +149,9 @@ Each other preset is one of these four, with these changes:
 | `paths_3v1_attitude` | `default` | 3 | attitude | none | paths |
 | `paths_3v1_rpm` | `default` | 3 | rpm | none | paths |
 | `paths_3v1_attitude_rpm` | `default` | 3 | attitude, rpm | none | paths |
+| `default_p_attitude` | `default` | 1 | attitude | none | learns |
+| `default_p_rpm` | `default` | 1 | rpm | none | learns |
+| `default_p_attitude_rpm` | `default` | 1 | attitude, rpm | none | learns |
 | `nemecek_p_attitude_e_attitude` | `nemecek` | 1 | attitude | attitude | learns |
 | `nemecek_p_attitude_e_rpm` | `nemecek` | 1 | attitude | rpm | learns |
 | `nemecek_p_attitude_e_attitude_rpm` | `nemecek` | 1 | attitude | attitude, rpm | learns |
