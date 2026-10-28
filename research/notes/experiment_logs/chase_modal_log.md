@@ -1,7 +1,7 @@
 # chase_modal — run log
 
 What each chase_modal run was and what it scored, and why the setup is as it is. The task
-is in [task_chase_modal.md](../tasks/task_chase_modal.md).
+is now the paths presets of [task_chase.md](../tasks/task_chase.md).
 
 ## The question
 
@@ -54,10 +54,58 @@ episodes ended so:
 - In three older 1v1 pool runs in `default`, with older code, the generation-0 pursuer won
   0.59, 0.50 and 0.12 against paths (`797201`, `967c5e`, `9e4242`).
 
+## Runs, 2026-10-28
+
+24 runs on MetaCentrum, commit `23b65a8`, `--set gamma=0.99`, seeds 0–2 for each preset.
+1v1 ran 2e8 steps (762 updates), 3v1 ran 5e8 steps (1907 updates). Eval: `--seat evader
+paths`, 1024 episodes, mean actions, the last checkpoint. The eval is close to the
+training numbers of the last 5 % of the updates.
+
+| preset | `caught_e` | `coll_pp` | `time_to_catch` |
+|---|---|---|---|
+| `1v1` | 0.96 [0.95 0.94 0.98] | — | 3.7 s [3.9 3.8 3.3] |
+| `1v1_attitude` | 0.99 [0.96 1.00 1.00] | — | 2.7 s [3.9 2.2 2.0] |
+| `1v1_rpm` | 0.98 [1.00 0.97 0.97] | — | 3.0 s [2.6 3.1 3.2] |
+| `1v1_attitude_rpm` | 0.97 [0.91 1.00 1.00] | — | 3.0 s [4.3 2.1 2.5] |
+| `3v1` | 0.05 [0.03 0.05 0.07] | 0.63 [0.79 0.65 0.45] | — |
+| `3v1_attitude` | 0.05 [0.05 0.03 0.07] | 0.61 [0.59 0.46 0.78] | — |
+| `3v1_rpm` | 0.06 [0.07 0.07 0.04] | 0.57 [0.55 0.73 0.44] | — |
+| `3v1_attitude_rpm` | 0.07 [0.07 0.08 0.07] | 0.66 [0.67 0.67 0.62] | — |
+
+Each cell is the mean of the three seeds, then seeds 0, 1 and 2.
+
+- **1v1 catches in every preset.** A sensed block may make the catch faster: 7 of the 9
+  runs with one catch in 2.0–3.2 s, and the fastest base run needs 3.3 s. But a run that
+  learned sooner also had more updates left to get faster, and 3 seeds are few.
+- **3v1 fails in every preset, and the sensing changes nothing.** The seeds of one preset
+  spread more (`coll_pp` 0.46–0.78) than the presets differ (0.57–0.66).
+- **More steps did not help 3v1.** In training, `caught_e` is 0.03–0.06 at 25 % of the run
+  and 0.05–0.08 at the end. `crash_p` + `OOB_p` fell from 0.96 to 0.02–0.15, and `coll_pp`
+  rose in their place: 0.02–0.16 at 10 % of the run, 0.33–0.75 at the end.
+- **The 3v1 spread does not fall.** The std of the actions starts at 1. In 1v1 it ends at
+  0.17–0.23. In 3v1 it ends at 0.4–1.3, and in `3v1` s0 it grew to 3.2.
+- **The pursuers hit each other mid-chase, away from the evader.** In the eval of `3v1`
+  s0, the median `coll_pp` comes at 4.6 s, and 4 % come before 2 s. In 4 of its 8 saved
+  episodes, two pursuers fly into each other at 4–9 m/s, 5–8 m from the evader.
+- **The evader has no fixed slot in the obs.** `others` lists the drones nearest first. In
+  that eval, the evader is in the last of the 3 slots in 71 % of the steps, and in slot 0
+  or 1 in the rest. In 1v1 it is always the one slot.
+
+## The merge into chase, 2026-10-28
+
+- **chase_modal is now part of chase.** The user picked one task, in which a preset names
+  the whole setup: the box, the number of pursuers, what each role senses, and if the
+  paths pilot flies the evader in training. The 8 presets are now `paths_1v1`,
+  `paths_1v1_attitude`, … `paths_3v1_attitude_rpm` of `chase`.
+- **In the paths presets, only the pursuer senses the blocks.** Before, the evader sensed
+  them too. The evader never flies, so its input does not reach the pursuer.
+- The run folders `chase_modal_*` come from the old task. The code has no task of that
+  name now, so `run/eval.py` cannot load them.
+
 ## Open
 
 | question | state |
 |---|---|
-| the step budget of 3v1 | after 50M steps, the 3v1 pursuers still crash in 0.59 of the episodes. A run needs more steps, or every step of sensing scores near 0 |
-| seeds | the older 1v1 runs spread from 0.12 to 0.59. Plan 2 to 3 seeds for each preset |
-| `coll_pp` is cheap | a `coll_pp` costs a pursuer 10, and a crash costs 30. If every step of sensing gives the same `coll_pp`, the reward is a likely reason |
+| why 3v1 does not learn | candidates, none tested: every step of sensing gives the same `coll_pp`, so the reward (a `coll_pp` costs 10, a crash 30); the evader moves between the slots of the obs; the spread does not fall (`--set ent_coef=0` stopped its blow-up in avoidance). FRPN catches 0.44 in 3v1, so the task can be done |
+| a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
+| the sensing steps in 3v1 | cannot be read until 3v1 learns |

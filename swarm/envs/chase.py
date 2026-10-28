@@ -8,7 +8,7 @@ from swarm.envs import Obs, core, role_slices
 from swarm.sim import control, dynamics, guidance
 
 NUM_ACTIONS = 4
-PROGRESS = ("ep_length", "death_rate", "caught_e")
+PROGRESS = ("ep_length", "death_rate", "caught_e", "coll_pp")
 # `paths` draws one of these for each episode, all three equally likely.
 PATHS = ("hover", "circle", "figure8")
 
@@ -37,6 +37,9 @@ class EnvParams(core.Common):
     max_steps: int = flax.struct.field(pytree_node=False, default=1000)
     # Without walls, only a crash ends an episode.
     walls: bool = flax.struct.field(pytree_node=False, default=True)
+
+    sense_pursuer: tuple = flax.struct.field(pytree_node=False, default=())
+    sense_evader: tuple = flax.struct.field(pytree_node=False, default=())
 
     net_side: float = 1.0
     net_offset: float = 0.4
@@ -115,14 +118,16 @@ def net_collision(drone, params):
 
 def get_obs(state, params):
     d = state.drone
-    actor = jnp.concatenate(
-        [
-            core.own_obs(d, core.wall_dist(d, params)),
-            core.others(d, params, True),
-        ],
-        axis=-1,
-    )
-    return Obs(actor=core.by_role(actor, params.roles), critic=core.scene_obs(d))
+    own = core.own_obs(d, core.wall_dist(d, params))
+    sense = {"pursuer": params.sense_pursuer, "evader": params.sense_evader}
+    # Each role senses its own blocks, so the rows of each role have their own width.
+    actor = {
+        role: jnp.concatenate([own, core.others(d, params, True, sense[role])], -1)[
+            rows
+        ]
+        for role, rows in role_slices(params.roles).items()
+    }
+    return Obs(actor=actor, critic=core.scene_obs(d))
 
 
 def crashed(drone, params):
@@ -211,7 +216,9 @@ def _starts(key, x, free, params):
 
     centre = jnp.asarray(params.center)
     limit = core.half(params) - params.margin
-    draws = centre + jax.random.uniform(key, (16,) + x.shape, minval=-limit, maxval=limit)
+    draws = centre + jax.random.uniform(
+        key, (16,) + x.shape, minval=-limit, maxval=limit
+    )
     draws = jnp.where(free[:, None], draws, x)
     apart = jax.vmap(lambda d: jnp.min(core.pair_dist(d)))(draws) >= params.spacing
     return draws[jnp.argmax(apart)]
@@ -281,7 +288,9 @@ def step(key, state, action, params):
             "coll_pp": fail_p & ~crash_p & ~oob_p & ~fail_e,
             "crash_e": crash[evader] & ~fail_p,
             "OOB_e": oob[evader] & ~fail_p,
-            "time_to_catch": jnp.where(caught, new_state.time * params.policy_dt, jnp.nan),
+            "time_to_catch": jnp.where(
+                caught, new_state.time * params.policy_dt, jnp.nan
+            ),
             "catch_offset": jnp.where(caught, jnp.min(core.norm(on_net)), jnp.nan),
         },
         "step": {
@@ -383,7 +392,9 @@ def paths(params, rows):
             shape = jax.random.randint(jax.random.fold_in(k, 1), (), 0, len(PATHS))
             path = drawn[0]
             for i, other in enumerate(drawn[1:], 1):
-                path = jax.tree.map(lambda a, b: jnp.where(shape == i, b, a), path, other)
+                path = jax.tree.map(
+                    lambda a, b: jnp.where(shape == i, b, a), path, other
+                )
             return path | {"shape": shape}
 
         k_paths, k_place = jax.random.split(state.key)
@@ -409,14 +420,39 @@ def paths(params, rows):
 
 PILOTS = {"cascade": cascade, "frpn": frpn, "apf": apf, "paths": paths}
 
+SENSES = ((), ("attitude",), ("rpm",), ("attitude", "rpm"))
 
-PRESETS = {
-    "default": EnvParams(),
-    "open": EnvParams(walls=False, reward=RewardConfig(outside=57.0)),
-    "small": EnvParams(arena=(24.0, 24.0, 16.0)),
-    "nemecek": EnvParams(
-        arena=(20.0, 20.0, 10.0), center=(0.0, 0.0, 5.0), walls=False,
-        reward=RewardConfig(outside=57.0),
-    ),
-    "3v1": EnvParams(roles=("pursuer",) * 3 + ("evader",)),
-}
+NEMECEK = EnvParams(
+    arena=(20.0, 20.0, 10.0),
+    center=(0.0, 0.0, 5.0),
+    walls=False,
+    reward=RewardConfig(outside=57.0),
+)
+
+PRESETS = (
+    {
+        "default": EnvParams(),
+        "open": EnvParams(walls=False, reward=RewardConfig(outside=57.0)),
+        "small": EnvParams(arena=(24.0, 24.0, 16.0)),
+        "nemecek": NEMECEK,
+        "3v1": EnvParams(roles=("pursuer",) * 3 + ("evader",)),
+    }
+    # The paths pilot flies the evader, and only the pursuers learn.
+    | {
+        "_".join((f"paths_{p}v1",) + sense): EnvParams(
+            roles=("pursuer",) * p + ("evader",),
+            sense_pursuer=sense,
+            piloted=("evader", "paths"),
+        )
+        for p in (1, 3)
+        for sense in SENSES
+    }
+    # Each side senses at least one block of the other.
+    | {
+        "_".join(("nemecek", "p", *p, "e", *e)): NEMECEK.replace(
+            sense_pursuer=p, sense_evader=e
+        )
+        for p in SENSES[1:]
+        for e in SENSES[1:]
+    }
+)

@@ -14,9 +14,8 @@ A task module in this package is a set of plain functions:
                                without one. The viewer draws it as a marker
     PILOTS                  {name: pilot}, the hand-written pilots. pilot(params,
                             rows) -> act, start, as in swarm/learn/seats.py, flying
-                            the drones of `rows`
-    PILOTED                 only if a pilot flies one role in training: (role, pilot),
-                            the pilot a name from PILOTS. Only the other roles learn
+                            the drones of `rows`. A preset's `piloted` can name one
+                            to fly a role in training
     PROGRESS                the metrics the trainer prints in its progress line
     scenery(state, params)  only for what the viewer must draw: walls,
                             {"walls": (k, 3), the corners of a closed outline on

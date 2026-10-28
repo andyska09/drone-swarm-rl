@@ -167,6 +167,9 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   episode resets, so we do not need gymnax's auto-reset base class. Single-drone
   and swarm tasks use the same interface, with a drone dimension on observations,
   actions and rewards.
+- **A preset names the setup of a run, all but the hyperparameters**: the box, the roles,
+  what each role senses, and with `piloted` a pilot that flies one role in training. So
+  one task holds every setup of one game, and one spec describes them all.
 - **Update rates.** We chose 200 Hz physics to better resolve
   the motor's 0.03 s response time: six simulation steps per time constant,
   compared with three at 100 Hz. The rate controller is slower, with an
@@ -181,11 +184,12 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   `core.others` sorts the drones that each drone sees and zeroes the empty seats, so the
   row width never changes.
 - **What a drone senses of the others.** A slot of `core.others` holds the offset, the
-  velocity and the role flag. `sense` adds more of that drone: its attitude in my body
-  frame, `R_iᵀ R_j`, and its motor speeds over `max_rpm`. `chase_modal` measures what
-  these give. The motor speeds are scaled, because about 4255 rpm at hover saturates the
-  first tanh layer. `avoidance` mirrors the frame of each drone on its own, and `sense`
-  does not mirror the attitude. So `avoidance` cannot use `sense` as it is.
+  velocity and the role flag. The caller can add more of that drone: its attitude in my
+  body frame, `R_iᵀ R_j`, and its motor speeds over `max_rpm`. In `chase`, each role has
+  its own blocks, so one side can sense a block that the other side does not. The motor
+  speeds are scaled, because about 4255 rpm at hover saturates the first tanh layer.
+  `avoidance` mirrors the frame of each drone on its own, and the attitude block is not
+  mirrored. So `avoidance` cannot use it as it is.
 - **Rotation representation.** Observations include all nine entries of `R`.
   This choice follows SimpleFlight's reported result of roughly 64% worse
   performance with quaternions.

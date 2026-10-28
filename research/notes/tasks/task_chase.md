@@ -1,15 +1,17 @@
 # chase
 
 Pursuers chase one evader. Each pursuer carries a net under its body and catches the
-evader with it. Both sides learn.
+evader with it. Both sides learn. In the paths presets, the paths pilot flies the evader,
+and only the pursuers learn.
 
 Log: [chase_pools_log.md](../experiment_logs/chase_pools_log.md), and before the pools
-[chase_duel_log.md](../experiment_logs/chase_duel_log.md)
+[chase_duel_log.md](../experiment_logs/chase_duel_log.md). The paths presets:
+[chase_modal_log.md](../experiment_logs/chase_modal_log.md)
 
 ## Setup
 
 - One drone has the role `evader`, and $P$ drones have the role `pursuer`. Each role has
-  its own policy. Every preset is the duel, $P = 1$.
+  its own policy. Each preset sets $P$ to 1 or 3.
 - The world is the arena box of the preset.
 - Each pursuer tries to catch the evader with its net. The evader tries to stay free
   until the time runs out.
@@ -46,10 +48,21 @@ Default.
 
 | input | content | size |
 |---|---|---|
-| actor | the default | $20 + 8K$ |
+| actor | the default, with the sensed blocks of the role in each slot | $20 + (8 + s) K$ |
 | critic | the default | $18N + 4$ per drone of the other role |
 
-- In the duel, $K = 1$. The actor input is 28 wide, and the critic input is 40 wide.
+- Each drone sees every other drone, at any distance, so $K = N - 1$.
+- Each slot of others also holds the sensed blocks of the role of drone $i$, after the
+  role flag, in this order:
+
+| block | content | size |
+|---|---|---|
+| attitude | $\operatorname{vec}(R_i^\top R_j)$, the attitude of drone $j$ in the body frame of drone $i$ | 9 |
+| rpm | $n_{j,k} / n_{\max}$ for $k = 1, \dots, 4$, each motor speed of drone $j$ as a share of the top speed | 4 |
+
+- $s$ is the size of the sensed blocks of the role: 0, 9, 4 or 13. The preset sets the
+  blocks of each role.
+- In the duel, the actor input is $28 + s$ wide, and the critic input is 40 wide.
 - With open walls, a drone can fly outside the box. Then some of its wall distances are
   negative.
 
@@ -120,14 +133,40 @@ $N$.
 | `open` | 32 × 32 × 16 m | (0, 0, 8) m | open | 57.0 |
 | `nemecek` | 20 × 20 × 10 m | (0, 0, 5) m | open | 57.0 |
 
-The floor is at $z = 0$ in every preset.
+- The floor is at $z = 0$ in every preset.
+- In these four presets, $P = 1$, no role senses a block, and both sides learn.
+
+Each other preset is one of these four, with these changes:
+
+| preset | from | $P$ | the pursuer senses | the evader senses | the evader in training |
+|---|---|---|---|---|---|
+| `3v1` | `default` | 3 | none | none | learns |
+| `paths_1v1` | `default` | 1 | none | none | paths |
+| `paths_1v1_attitude` | `default` | 1 | attitude | none | paths |
+| `paths_1v1_rpm` | `default` | 1 | rpm | none | paths |
+| `paths_1v1_attitude_rpm` | `default` | 1 | attitude, rpm | none | paths |
+| `paths_3v1` | `default` | 3 | none | none | paths |
+| `paths_3v1_attitude` | `default` | 3 | attitude | none | paths |
+| `paths_3v1_rpm` | `default` | 3 | rpm | none | paths |
+| `paths_3v1_attitude_rpm` | `default` | 3 | attitude, rpm | none | paths |
+| `nemecek_p_attitude_e_attitude` | `nemecek` | 1 | attitude | attitude | learns |
+| `nemecek_p_attitude_e_rpm` | `nemecek` | 1 | attitude | rpm | learns |
+| `nemecek_p_attitude_e_attitude_rpm` | `nemecek` | 1 | attitude | attitude, rpm | learns |
+| `nemecek_p_rpm_e_attitude` | `nemecek` | 1 | rpm | attitude | learns |
+| `nemecek_p_rpm_e_rpm` | `nemecek` | 1 | rpm | rpm | learns |
+| `nemecek_p_rpm_e_attitude_rpm` | `nemecek` | 1 | rpm | attitude, rpm | learns |
+| `nemecek_p_attitude_rpm_e_attitude` | `nemecek` | 1 | attitude, rpm | attitude | learns |
+| `nemecek_p_attitude_rpm_e_rpm` | `nemecek` | 1 | attitude, rpm | rpm | learns |
+| `nemecek_p_attitude_rpm_e_attitude_rpm` | `nemecek` | 1 | attitude, rpm | attitude, rpm | learns |
 
 ## Training
 
 - Runs set $\gamma$ = 0.99.
-- With $G = 0$ generations, both sides learn at the same time, against each other. With
-  $G > 0$, each side learns against a pool of frozen opponents, as below. Runs use
-  $G$ = 13.
+- In the paths presets, only the pursuers learn, against the paths evader, in one phase.
+  The network of the evader keeps its first weights and never flies.
+- In the other presets, with $G = 0$ generations, both sides learn at the same time,
+  against each other. With $G > 0$, each side learns against a pool of frozen opponents,
+  as below. Runs use $G$ = 13.
 
 ### Pools
 
@@ -187,6 +226,8 @@ A role can be flown by its network, or by one of these pilots:
 | FRPN | pursuer | a guidance law that aims at where the evader will be |
 | APF | evader | a potential field that pushes away from the pursuers and the walls |
 | paths | evader | a hover, a circle or a figure-eight, drawn for each episode |
+
+In the paths presets, the paths pilot flies the evader.
 
 The reference points of the cascade:
 

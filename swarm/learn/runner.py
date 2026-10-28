@@ -1,8 +1,8 @@
 """Run PPO updates and save configuration, metrics, and checkpoints.
 
 One loop runs every run, as a list of phases. A plain run has one phase, in which every
-role learns. A run of a task with PILOTED has one phase, in which the pilot flies one role
-and the other roles learn. A pool run has one phase per generation, with one learner for
+role learns. A run of a preset with `piloted` has one phase, in which the pilot flies one
+role and the other roles learn. A pool run has one phase per generation, with one learner for
 each side (pool.py). latest.pkl holds all that the loop needs, so every run resumes from
 it."""
 
@@ -60,15 +60,15 @@ class OnePhase:
 
 
 class Piloted:
-    """The phase of a task with PILOTED: its pilot flies one role as the only member of a
-    pool of one block, and the other roles learn."""
+    """The phase of a preset with `piloted`: its pilot flies one role as the only member of
+    a pool of one block, and the other roles learn."""
 
     sides = (None,)
     count = 1
 
-    def __init__(self, cfg, env):
+    def __init__(self, cfg, env, piloted):
         self.cfg, self.env = cfg, env
-        self.role, self.pilot = env.PILOTED
+        self.role, self.pilot = piloted
 
     def rival_seat(self, env_params, side):
         del side
@@ -174,11 +174,11 @@ def start_wandb(cfg, path):
 
 
 def _phases(cfg, env, env_params):
-    if hasattr(env, "PILOTED"):
+    if env_params.piloted:
         if cfg.generations:
-            role, pilot = env.PILOTED
-            raise ValueError(f"{cfg.task} has no pools: {pilot} flies its {role}")
-        return Piloted(cfg, env)
+            role, pilot = env_params.piloted
+            raise ValueError(f"{cfg.preset} has no pools: {pilot} flies its {role}")
+        return Piloted(cfg, env, env_params.piloted)
     return pool.Phases(cfg, env, env_params) if cfg.generations else OnePhase()
 
 

@@ -19,8 +19,9 @@ class Common:
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("drone",))
     n_neighbors: int = flax.struct.field(pytree_node=False, default=6)
-    # What `others` adds to each slot, in this order: any of "attitude" and "rpm".
-    sense: tuple = flax.struct.field(pytree_node=False, default=())
+    # (role, pilot): this pilot from the task's PILOTS flies the role in training, and only
+    # the other roles learn.
+    piloted: tuple = flax.struct.field(pytree_node=False, default=())
 
     sim_dt: float = 0.005
     steps_per_action: int = flax.struct.field(pytree_node=False, default=2)
@@ -223,11 +224,11 @@ def same_role(roles):
     return same.astype(float)[..., None]
 
 
-def others(drone, params, seen):
+def others(drone, params, seen, sense=()):
     """(N, (8 + s)K): the K nearest drones that each drone sees, nearest first.
 
     Each slot holds the offset and the velocity in the body frame, then 1 if that drone
-    shares the role, then the s columns that `params.sense` names: "attitude", the R of
+    shares the role, then the s columns that `sense` names: "attitude", the R of
     that drone in the body frame (9), and "rpm", its motor speeds over max_rpm (4). Then
     come K 0/1 flags for the filled slots. An empty slot is all zeros. `seen` is (N, N),
     or True when every drone sees every other.
@@ -247,7 +248,7 @@ def others(drone, params, seen):
             rel(drone.x[None, :, :] - drone.x[:, None, :]),
             rel(drone.v[None, :, :] - drone.v[:, None, :]),
             take(same_role(params.roles)),
-            *(sensed[s] for s in params.sense),
+            *(sensed[s] for s in sense),
         ],
         axis=-1,
     )
