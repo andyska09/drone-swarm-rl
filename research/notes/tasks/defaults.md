@@ -117,7 +117,7 @@ The actor input of drone $i$. Each vector is in the body frame of drone $i$.
 | block | content | size |
 |---|---|---|
 | own | $R_i^\top v_i$, $\operatorname{vec}(R_i)$, $\omega_i$, $z_i$, and the wall distances $w_i$ | 20 |
-| others | for each of the $K$ nearest other drones $j$, nearest first: $R_i^\top (p_j - p_i)$, $R_i^\top (v_j - v_i)$, and $[\text{drone } j \text{ has the role of drone } i]$ | $7K$ |
+| others | for each of the first $K$ other drones $j$ that drone $i$ sees: $R_i^\top (p_j - p_i)$, $R_i^\top (v_j - v_i)$, and $[\text{drone } j \text{ has the role of drone } i]$. The drones of another role come first, then the drones of the role of drone $i$, each nearest first | $7K$ |
 | mask | 1 for each seat in others that holds a drone, else 0. A seat with mask 0 holds zeros | $K$ |
 | goal | set by the task | 0 |
 

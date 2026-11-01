@@ -5,8 +5,8 @@ evader with it. Both sides learn. In the paths presets, the paths pilot flies th
 and only the pursuers learn.
 
 Log: [chase_pools_log.md](../experiment_logs/chase_pools_log.md), and before the pools
-[chase_duel_log.md](../experiment_logs/chase_duel_log.md). The paths presets:
-[chase_modal_log.md](../experiment_logs/chase_modal_log.md)
+[chase_duel_log.md](../experiment_logs/chase_duel_log.md). The presets in which a drone
+senses more, and the paths presets: [chase_modal_log.md](../experiment_logs/chase_modal_log.md)
 
 ## Setup
 

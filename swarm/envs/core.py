@@ -225,7 +225,9 @@ def same_role(roles):
 
 
 def others(drone, params, seen, sense=()):
-    """(N, (8 + s)K): the K nearest drones that each drone sees, nearest first.
+    """(N, (8 + s)K): the first K drones that each drone sees. The drones of another
+    role come first, then those of its own role, each nearest first. So in chase a
+    pursuer always finds the evader in slot 0.
 
     Each slot holds the offset and the velocity in the body frame, then 1 if that drone
     shares the role, then the s columns that `sense` names: "attitude", the R of
@@ -234,7 +236,12 @@ def others(drone, params, seen, sense=()):
     or True when every drone sees every other.
     """
 
-    near, idx = jax.lax.top_k(-jnp.where(seen, pair_dist(drone.x), jnp.inf), params.n_visible)
+    dist = jnp.where(seen, pair_dist(drone.x), jnp.inf)
+    # lexsort reads its keys from the last: the seen drones (and not the drone itself)
+    # first, then another role before its own, then the nearest.
+    keys = (dist, same_role(params.roles)[..., 0], jnp.isinf(dist))
+    idx = jnp.lexsort(keys)[:, : params.n_visible]
+    near = jnp.take_along_axis(dist, idx, axis=1)
     take = lambda a: jnp.take_along_axis(a, idx[..., None], axis=1)
     rel = lambda a: jnp.einsum("nji,nkj->nki", drone.R, take(a))
     sensed = {
