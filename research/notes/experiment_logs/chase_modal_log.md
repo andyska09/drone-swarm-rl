@@ -1,7 +1,9 @@
 # chase_modal — run log
 
-What each chase_modal run was and what it scored, and why the setup is as it is. The task
-is now the paths presets of [task_chase.md](../tasks/task_chase.md).
+Every run in which a drone senses more of the other drones than their offset and velocity:
+what it was, what it scored, and why the setup is as it is. The presets are in
+[task_chase.md](../tasks/task_chase.md). The runs with the base obs are in
+[chase_pools_log.md](chase_pools_log.md).
 
 ## The question
 
@@ -115,10 +117,85 @@ Each cell is the mean of the three seeds, then seeds 0, 1 and 2.
 - Only a preset with more than one pursuer has a `coll_pp`, so the 1v1 presets do not
   change. The pool preset `3v1` changes too.
 
+## Sensing in the pools, 2026-10-28
+
+- **The question.** Does a side win more when it senses more of the other drone? In the
+  runs against the paths evader above, a pursuer that sensed a block caught a little
+  faster.
+- **The grid.** The user picked 3 × 3 presets: each side senses the attitude, the rpm or
+  both, `nemecek_p_<pursuer>_e_<evader>`. No preset has a side that senses nothing, and
+  the grid has no new base run. The user's word for the attitude is tilt.
+- **The setup is that of `b9225b`:** `nemecek`, `generations=13`, `gamma=0.99`,
+  `ent_coef=0`, the std reset and 1.4e9 steps. Two seeds for each preset, so 18 runs.
+- **Each role senses its own blocks.** Before, the blocks went to every drone, so a run
+  could not give a block to one side only.
+- **First question, the user's pick: does a pursuer that senses more beat learned
+  evaders more often?** Against the paths evader, the blocks changed little. So only the
+  pursuer senses more, in `default_p_attitude`, `default_p_rpm` and
+  `default_p_attitude_rpm`, two seeds each. The matrix of each run is read against the
+  matrix of `9e4242` ([chase_pools_log.md](chase_pools_log.md)), which has the same
+  setup with no blocks.
+
+## The evader's slot, 2026-11-01
+
+- **A pursuer now finds the evader in slot 0 of `others`.** The drones of another role
+  come first, then those of the drone's own role, each nearest first. The user picked
+  this.
+- **Why.** In the eval of `3v1` s0, the evader was in the last slot in 71 % of the steps.
+  So a teammate sat in slot 0 most of the time, and a policy that flies at the drone in
+  slot 0 flies at a teammate.
+- **Not a separate target block.** That block would change the width of the obs, so no
+  old `chase` run would load. The role flag stays in each slot, so the width stays.
+- In 1v1 there is only one slot, and `circle_swap` and `avoidance` have one role, so their
+  obs does not change. The old 3v1 runs still load, but they now see the new order.
+
+## The pursuer that senses more, 2026-11-01
+
+6 runs on MetaCentrum, commit `edea2f4`, `--set gamma=0.99 --set generations=13 --set
+ent_coef=0`, 1.4e9 steps, seeds 0 and 1. Only the pursuer senses more. The evader senses
+nothing extra, as in `9e4242`.
+
+The matrix, in the columns of
+[chase_pools_log.md](chase_pools_log.md#pool-training-results). Each cell is the mean of
+the two seeds, then seeds 0 and 1:
+
+| preset | lower triangle | older evaders | diagonal | last pair |
+|---|---|---|---|---|
+| `9e4242`, no blocks | 0.61 | 0.66 | 0.27 | 0.20 |
+| `default_p_attitude` | 0.73 [0.64 0.81] | 0.78 [0.70 0.87] | 0.37 [0.28 0.46] | 0.31 [0.18 0.45] |
+| `default_p_rpm` | 0.77 [0.73 0.81] | 0.81 [0.77 0.85] | 0.52 [0.47 0.57] | 0.59 [0.58 0.61] |
+| `default_p_attitude_rpm` | 0.88 [0.87 0.89] | 0.93 [0.92 0.93] | 0.60 [0.57 0.63] | 0.66 [0.44 0.88] |
+
+The evals, 1024 episodes each, the last checkpoint. Each cell is the pursuer's win rate,
+seeds 0 and 1:
+
+| preset | last pursuer against last evader | FRPN against last evader | last pursuer against cascade |
+|---|---|---|---|
+| `9e4242`, no blocks | 0.20 | 0.04 | 0.95 |
+| `default_p_attitude` | 0.18, 0.45 | 0.04, 0.12 | 0.99, 0.99 |
+| `default_p_rpm` | 0.58, 0.61 | 0.19, 0.03 | 0.97, 0.97 |
+| `default_p_attitude_rpm` | 0.44, 0.88 | 0.16, 0.08 | 0.99, 0.92 |
+
+- **A pursuer that senses more wins more against learned evaders.** Every run is above
+  `9e4242` in every matrix column, but `default_p_attitude` seed 0: its diagonal is equal
+  (0.28 against 0.27), and its last pair is lower (0.18 against 0.20).
+- **More blocks, higher numbers.** In all 4 matrix columns, attitude < rpm < attitude and
+  rpm. With both blocks, the pursuer wins 0.93 against older evaders, against 0.66.
+- **Against the paths evader, the blocks changed little** (Runs, 2026-10-28, above).
+  Against learned evaders, they change a lot.
+- **The last evaders are hard for FRPN in every run.** FRPN wins 0.03–0.19 against them,
+  and 0.04 against the last evader of `9e4242`.
+- **The last pair is noisy.** It is one cell, and its two seeds spread from 0.44 to 0.88
+  in `default_p_attitude_rpm`. The lower triangle spreads at most 0.17 between seeds.
+- **Limits.** `9e4242` is one seed, and it ran on the code of 2026-10-14, where the sides
+  learned in turn. Each matrix plays a pursuer only against the evaders of its own run.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | candidates: the reward, under test with a `coll_pp` cost of 30. Not tested: the evader moves between the slots of the obs; the spread does not fall (`--set ent_coef=0` stopped its blow-up in avoidance). FRPN catches 0.44 in 3v1, so the task can be done |
+| why 3v1 does not learn | candidates: the reward and the evader's slot, under test with a `coll_pp` cost of 30 and the evader in slot 0. Not tested: the spread does not fall (`--set ent_coef=0` stopped its blow-up in avoidance). FRPN catches 0.44 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
+| does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |
+| what a sensed block gives a side | the 18 runs of the grid, not run yet |

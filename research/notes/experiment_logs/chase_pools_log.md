@@ -2,6 +2,8 @@
 
 What each pool run was and what it scored, and why the setup changed. The task, its pool
 training and the hand-written opponents are in [task_chase.md](../tasks/task_chase.md).
+This log holds only the base obs: the offset and the velocity of the other drone. A run in
+which a drone senses more is in [chase_modal_log.md](chase_modal_log.md).
 
 ## Design decisions
 
@@ -321,28 +323,8 @@ Sources:
   collision can happen at step 0. The paths evader is placed first, so its path keeps
   its full size, and then the pursuers are drawn again.
 
-## Sensing in the pools, 2026-10-28
-
-- **The question.** Does a side win more when it senses more of the other drone? In
-  [chase_modal_log.md](chase_modal_log.md), a pursuer that sensed a block caught the paths
-  evader a little faster.
-- **The grid.** The user picked 3 × 3 presets: each side senses the attitude, the rpm or
-  both, `nemecek_p_<pursuer>_e_<evader>`. No preset has a side that senses nothing, and
-  the grid has no new base run. The user's word for the attitude is tilt.
-- **The setup is that of `b9225b`:** `nemecek`, `generations=13`, `gamma=0.99`,
-  `ent_coef=0`, the std reset and 1.4e9 steps. Two seeds for each preset, so 18 runs.
-- **Each role senses its own blocks.** Before, the blocks went to every drone, so a run
-  could not give a block to one side only.
-- **First question, the user's pick: does a pursuer that senses more beat learned
-  evaders more often?** Against the paths evader, the blocks changed little. So only the
-  pursuer senses more, in `default_p_attitude`, `default_p_rpm` and
-  `default_p_attitude_rpm`, two seeds each. The matrix of each run is read against the
-  matrix of `9e4242`, which has the same setup with no blocks.
-
 ## Open
 
 | question | state |
 |---|---|
 | the last evaders win | try Roncero's layers first, `--set hidden=512,256,256,128`. If that fails, try a recurrent network |
-| does a pursuer that senses more beat learned evaders more often | the 6 runs of `default_p_*`, not run yet |
-| what a sensed block gives a side | the 18 runs of the grid, not run yet |
