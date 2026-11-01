@@ -104,10 +104,21 @@ Each cell is the mean of the three seeds, then seeds 0, 1 and 2.
 - **Eval flies the preset's pilot.** A `paths_*` run needs no `--seat evader paths` now.
   Before, a run evaluated without it flew the untrained evader network.
 
+## The coll_pp cost, 2026-10-28
+
+- **A `coll_pp` now costs 30, the same as a crash.** The user picked this. Every run above
+  paid 10.
+- **Why.** In 3v1, `crash_p` + `OOB_p` fell and `coll_pp` rose in their place. At γ = 0.99,
+  the rest of the episode is worth about −5 to a pursuer that lives on: the −4/s clock
+  and the distance cost, over a 1 s horizon. So a `coll_pp` at 10 cost only about 5 more
+  than to live on, and a crash at 30 about 25 more.
+- Only a preset with more than one pursuer has a `coll_pp`, so the 1v1 presets do not
+  change. The pool preset `3v1` changes too.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | candidates, none tested: every step of sensing gives the same `coll_pp`, so the reward (a `coll_pp` costs 10, a crash 30); the evader moves between the slots of the obs; the spread does not fall (`--set ent_coef=0` stopped its blow-up in avoidance). FRPN catches 0.44 in 3v1, so the task can be done |
+| why 3v1 does not learn | candidates: the reward, under test with a `coll_pp` cost of 30. Not tested: the evader moves between the slots of the obs; the spread does not fall (`--set ent_coef=0` stopped its blow-up in avoidance). FRPN catches 0.44 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |

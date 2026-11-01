@@ -101,7 +101,7 @@ $$
 | $\lambda_{\text{cmd}}$ | 0.02 per rad/s |
 | $\lambda_{\text{out}}$ | 0, or 57.0 (see Presets) |
 | $\lambda_{\text{catch}}$ | 10.0 |
-| $\lambda_{\text{PP}}$ | 10.0 |
+| $\lambda_{\text{PP}}$ | 30.0 |
 | $\lambda_{\text{fail}}$ | 30.0 |
 
 ## Metrics

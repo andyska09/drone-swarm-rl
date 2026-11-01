@@ -23,7 +23,7 @@ class RewardConfig:
     cmd: float = 0.02
     catch: float = 10.0
     coll_pe: float = 10.0
-    coll_pp: float = 10.0
+    coll_pp: float = 30.0
     fail: float = 30.0
     # The evader pays it while it is outside the arena box.
     outside: float = 0.0
