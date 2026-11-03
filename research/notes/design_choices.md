@@ -266,18 +266,22 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
 
 ## Learner
 
-- **The bound is a clip, and the std is one learned number per action.** The action
-  is `clip(mean + std·noise, −1, 1)`, the std is the same in every state, and
-  `init_std = 1.0`. The log-prob and the entropy are the plain Gaussian's, in closed
-  form. The rollout keeps the draw before the clip, because the log-prob needs it.
-  AMSPBH does not state its std. This form is the default of rsl_rl, rl_games and
-  skrl, the PPO libraries of Isaac Lab, and of Němeček's SB3. A per-state std can
-  shrink just where precision pays, near the evader, and that is where the pursuer
-  must find its next move. The runs behind it:
-  [experiment_logs/chase_pools_log.md](experiment_logs/chase_pools_log.md).
-- **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** PPO
-  shrinks the std by itself once precision pays, and the bonus fights exactly that. At
-  0.01 the std breaks. The math: [learning/05-RL.md](learning/05-RL.md). The runs:
+- **Each action is a Beta on [−1, 1]**, as in
+  [Chou et al. 2017](../papers/chou17a.md). The actor gives α and β for each action
+  and each state, each `softplus + 1`, so the Beta has one peak and no density piled
+  up at ±1. The action is `2x − 1` with `x ~ Beta(α, β)`. So no clip is needed, and
+  the log-prob is that of the action the drone flies. The log-prob and the entropy are
+  in closed form. The log-prob clips `x` to [1e-6, 1 − 1e-6], because a draw can round
+  to exactly 0 or 1. A new actor starts at α = β ≈ 1.69, a std of about 0.48. Eval and
+  a frozen opponent fly the Beta's mean. The widest Beta is uniform on [−1, 1], with a
+  std of 0.58, so the noise has a ceiling. It replaced a Gaussian with one learned std
+  per action and a clip. In 3v1 that std grew to 6–87, and the mean sat at the clip in
+  most steps. The pool phases lost their std reset with it. The runs:
+  [experiment_logs/chase_modal_log.md](experiment_logs/chase_modal_log.md).
+- **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** With the
+  Gaussian policy, PPO shrank the std by itself once precision paid, and the bonus
+  fought exactly that. At 0.01 the std broke. The math:
+  [learning/05-RL.md](learning/05-RL.md). The runs:
   [experiment_logs/chase_pools_log.md](experiment_logs/chase_pools_log.md).
 - **`gamma` defaults to 0.998**, a 5 s horizon at `policy_dt = 0.01 s`. A 2 s horizon
   (0.995) was too short for a 6.9 m flight that takes 3 to 4 s. Chase sets 0.99
