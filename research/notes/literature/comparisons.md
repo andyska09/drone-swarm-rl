@@ -113,7 +113,7 @@ code. What the runs scored against theirs:
 | a frozen opponent flies | its mean action | not stated | its mean action |
 | pursuer pool seed | FRPN, G = 6.677, W = 0.337, an acceleration | FRPN, G = 5.0, W = 0.20, a velocity command | FRPN. Thesis Table 8.1: G = 6.677, W = 0.337. His pool code: G = 0.665, W = 0.321 |
 | evader pool seeds | `paths`, one member that draws a hover, a circle or a figure-eight for each episode, 8 × Roncero's size and √8 × his speed | hover, circle and figure-eight, radius 0.6–1.0 m, 1–2 m/s | 200 recorded trajectories, and APF |
-| network | 2 × 256, tanh, a Beta per action | actor and critic [512, 256, 256, 128], ELU | actor and critic 3 × 256, ReLU |
+| network | 2 × 256, tanh, one std per action | actor and critic [512, 256, 256, 128], ELU | actor and critic 3 × 256, ReLU |
 | critic input | the whole scene and the opponent's action | the actor's observation | the actor's observation |
 | PPO epochs × minibatches | 4 × 32 | 5 × 8 | 10 × 5 |
 | learning rate | 2e-4, KL-adaptive | 2e-4, KL-adaptive, target 0.016 | 3e-4, fixed |

@@ -187,7 +187,8 @@ Each other preset is one of these four, with these changes:
 | evaders | paths | `evader_00`, `evader_01`, … |
 
 - Generation 0 starts both sides from random weights.
-- Each phase keeps the learner's weights, optimizer state and learning rate.
+- Each phase keeps the learner's weights, optimizer state and learning rate. It sets the
+  learner's std back to 1.0.
 - Each phase starts new episodes. Each side keeps its reward scale from phase to phase.
 - A frozen network flies its mean action. The learner sees its opponent only through the
   observation.

@@ -2,6 +2,7 @@
 the other side's pool of frozen opponents, weighted by a Hedge sampler."""
 
 import functools
+import math
 import pickle
 from pathlib import Path
 
@@ -49,6 +50,14 @@ def members(side, generation):
     """The pool of `side` at the end of generation − 1: its seed, then its policies."""
 
     return [SEEDS[side]] + [f"{side}_{g:02d}" for g in range(generation)]
+
+
+def with_std(t, std):
+    """The TrainState with its actor's std set to `std` for every action."""
+
+    actor = t.params["actor"]["params"]
+    log_std = jnp.full_like(actor["log_std"], math.log(std))
+    return t.replace(params={**t.params, "actor": {"params": {**actor, "log_std": log_std}}})
 
 
 def match(cfg, env, env_params, pilots, role, episodes):
@@ -190,6 +199,10 @@ class Phases:
             obs, vec = vecenv.reset(k_reset, self.env, env_params, self.cfg, start)
             if side in scale:
                 vec = vec.replace(rew_norm=scale[side])
+            # The std shrinks within a phase, and the learner must explore again against
+            # a new pool.
+            if self.cfg.reset_std:
+                ts = {**ts, side: with_std(ts[side], self.cfg.init_std)}
             train = {side: True, RIVAL[side]: False}
             fresh.append(ppo.Learner(vec, obs, k_learn, train, pool, side))
         return fresh, ts, key

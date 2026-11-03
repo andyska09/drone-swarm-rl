@@ -322,11 +322,69 @@ it: no discount and no bootstrap.
   eval ran.
 - **Next:** the 8 runs of 2026-11-02 again, with the Beta.
 
+## Runs with the Beta, 2026-11-03
+
+8 runs on MetaCentrum, commit `c90447f`: the four `paths_3v1` presets, seeds 0 and 1,
+`--set gamma=0.99`, 5e8 steps. The user ran them with the default `ent_coef` 0.001, not 0,
+so the Gaussian batch that matches them is that of 2026-11-01. Eval: `--seat evader paths`,
+1024 episodes, mean actions, the last checkpoint. Each cell is the lowest and the highest
+value of the 8 runs of a batch. "The last 5 %" is the mean of the last 5 % of the updates.
+
+| | 1v1, 2026-10-28 | 3v1, `ent_coef` 0.001 | 3v1, `ent_coef` 0 | 3v1 Beta, `ent_coef` 0.001 |
+|---|---|---|---|---|
+| the pursuer's std per action, at the end | 0.15–0.33 | 18–87 | 5.9–14 | 0.12–0.28 |
+| mean action at the edge, eval | 1–25 % | 87–99 % | 75–95 % | 0 % |
+| the adaptive lr, the last 5 % | 0.0004–0.0006 | 0.01 | 0.002–0.01 | 0.0003–0.0006 |
+| `caught_e`, training | 0.88–1.00 | 0.03–0.05 | 0.04–0.05 | 0.02–0.04 |
+| `caught_e`, eval | 0.91–1.00 | 0.004–0.030 | 0.004–0.035 | 0.020–0.040 |
+| the critic's explained variance, the last 5 % | 0.87–0.96 | 0.31–0.53 | 0.38–0.53 | 0.54–0.73 |
+
+- The Beta's spread changes with the state. So its std is the mean over the steps of the 8
+  saved eval episodes of each run, with the obs rebuilt from the saved states. The mean of
+  the rebuilt Beta matches the flown action to 1e-5.
+- "At the edge" is the share of the eval steps in which the mean thrust, roll or pitch
+  action sits at the clip. The Beta's mean cannot reach ±1, so for the Beta it is
+  |mean| ≥ 0.9, a looser test.
+
+The eval outcomes of the three 3v1 batches:
+
+| | Gaussian, `ent_coef` 0.001 | Gaussian, `ent_coef` 0 | Beta, `ent_coef` 0.001 |
+|---|---|---|---|
+| `caught_e` | 0.004–0.030 | 0.004–0.035 | 0.020–0.040 |
+| `coll_pp` | 0.32–0.76 | 0.18–0.59 | 0.07–0.17 |
+| `crash_p` | 0.22–0.65 | 0.33–0.80 | 0.01–0.07 |
+| `OOB_p` | 0.00–0.02 | 0.00–0.03 | 0.09–0.18 |
+| `time_limit` | 0.00–0.04 | 0.00–0.15 | 0.57–0.75 |
+
+- **The Beta fixed the spread.** The std ended as in 1v1, the mean action never sat near
+  ±1, the adaptive lr stayed low, and the critic fit better. In training, the pursuer's
+  entropy fell from 1.2–1.7 in the first 10 % of the run to −0.8 to −1.7 at the end. Its
+  maximum is 2.77.
+- **The pursuers stay alive.** In the eval, 57–75 % of the episodes run to the step limit.
+  Eval and training now agree, because the drones fly close to their mean.
+- **The catch did not change.** In training, `caught_e` rose to about 0.03 in the first
+  20–30 % of the run, then stayed flat. In the same time, `crash_p` + `OOB_p` fell from
+  0.8–0.96 to about 0.3.
+- **The pursuers hold back.** In the 64 saved eval episodes, the nearest net stays 8–11 m
+  from the evader for all 10 s, and the other two pursuers stay 10–20 m away. The pursuers
+  fly at about 3.7 m/s, close to the evader's 3.1–3.6 m/s. The 1v1 pursuer flies at
+  5.5–8.9 m/s and closes from 14 m to 2.5 m in 2 s.
+- **Flying in pays more over a whole episode.** The eval return of a pursuer is −47 to
+  −50. FRPN flies straight in and gets −13 in 3v1, in the FRPN test above.
+- **A guess, not tested.** With γ = 0.99 a reward loses half its weight every 0.7 s, so a
+  catch 3 s ahead counts 5 % of its size. Holding back at 8 m costs 0.8 per second, next to
+  the clock of 4 per second, which a pursuer pays either way. Flying in is risky: the three
+  pursuers share one policy, so they fly in together, and a `coll_pp` costs 30 to each of
+  the two. A test: the same runs with `--set gamma=0.995`.
+- **The code went back to the Gaussian of `de90325`**, the user's pick, to look at another
+  cause. The Beta stays in commit `c90447f`. These 8 runs load for eval, the matrix or a
+  resume only on that commit. Their saved evals still open in the viewer.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. Next: the Beta policy, whose noise has a ceiling (2026-11-03). Other options: start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Other options: `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |

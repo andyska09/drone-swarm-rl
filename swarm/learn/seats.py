@@ -16,7 +16,8 @@ def net_policy(cfg, env, weights, slices):
 
     def act(state, obs, carry):
         del state
-        return ppo.mean_action(*apply(weights, obs)), carry
+        mean, _ = apply(weights, obs)
+        return ppo.bound(mean), carry
 
     return act
 
@@ -65,9 +66,8 @@ def pool_seat(cfg, env, env_params, role, seed):
         n, blocks = obs.critic.shape[0], member.shape[0]
         flown, carry = jax.vmap(seed_act)(state, obs, carry)
         split = jax.tree.map(lambda x: x.reshape((blocks, n // blocks) + x.shape[1:]), obs)
-        pd = jax.vmap(lambda w, o: actor({role: {"actor": w}}, o))(weights, split)
-        flat = [x.reshape((n,) + x.shape[2:]) for x in pd]
-        net = ppo.mean_action(*flat)[:, rows]
+        mean, _ = jax.vmap(lambda w, o: actor({role: {"actor": w}}, o))(weights, split)
+        net = ppo.bound(mean.reshape((n,) + mean.shape[2:]))[:, rows]
         return jnp.where(is_seed(member, n)[:, None, None], flown, net), carry
 
     def start(state, pool):

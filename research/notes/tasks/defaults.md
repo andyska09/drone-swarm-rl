@@ -174,7 +174,7 @@ learning rate, reward scale and advantage scale.
 
 | setting | value |
 |---|---|
-| actor | MLP 2 × 256, tanh. For each action, a Beta: the network gives $\alpha$ and $\beta$, each a softplus plus 1. The action is $2x - 1$ with $x \sim \operatorname{Beta}(\alpha, \beta)$, so it lies in $[-1, 1]$ |
+| actor | MLP 2 × 256, tanh. A Gaussian with one learned std per action, the same in every state. The std starts at 1.0. The drawn action is clipped to $[-1, 1]$ |
 | critic | MLP 2 × 256, tanh |
 | $\gamma$ | 0.998 |
 | GAE $\lambda$ | 0.95 |

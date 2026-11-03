@@ -10,14 +10,11 @@ import optax
 from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
 from jax import lax
-from jax.scipy.special import betaln, digamma
 
 from swarm import envs
 from swarm.learn import vecenv
 
-LOG_2 = math.log(2.0)
-# A Beta draw can round to exactly 0 or 1, where its log is infinite.
-EPS = 1e-6
+LOG_2PI = math.log(2.0 * math.pi)
 
 KL_TARGET = 0.016
 LR_MIN, LR_MAX = 1e-5, 1e-2
@@ -55,22 +52,23 @@ def _trunk(x, hidden, activation):
 
 
 class Actor(nn.Module):
-    """What flies. Local observations only, so it can run on a drone. Each action is
-    2x − 1 with x ~ Beta(alpha, beta), so it stays in [−1, 1]."""
+    """What flies. Local observations only, so it can run on a drone."""
 
     num_actions: int
     hidden: tuple = (256, 256)
     activation: str = "tanh"
+    init_std: float = 1.0
 
     @nn.compact
     def __call__(self, x):
         x = _trunk(x, self.hidden, self.activation)
-        shape = nn.Dense(
-            2 * self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+        mean = nn.Dense(
+            self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
         )(x)
-        # alpha, beta >= 1: one peak, and no density piled up at ±1.
-        alpha, beta = jnp.split(nn.softplus(shape) + 1.0, 2, axis=-1)
-        return alpha, beta
+        log_std = self.param(
+            "log_std", constant(math.log(self.init_std)), (self.num_actions,)
+        )
+        return mean, jnp.broadcast_to(jnp.exp(log_std), mean.shape)
 
 
 class Critic(nn.Module):
@@ -84,30 +82,21 @@ class Critic(nn.Module):
         return jnp.squeeze(value, -1)
 
 
-def sample(key, alpha, beta):
-    return 2.0 * jax.random.beta(key, alpha, beta) - 1.0
+def sample(key, mean, std):
+    return mean + std * jax.random.normal(key, mean.shape)
 
 
-def mean_action(alpha, beta):
-    """What a policy flies without noise: in eval, and as a frozen opponent."""
-
-    return 2.0 * alpha / (alpha + beta) - 1.0
+def bound(draw):
+    return jnp.clip(draw, -1.0, 1.0)
 
 
-def log_prob(action, alpha, beta):
-    x = jnp.clip(0.5 * (action + 1.0), EPS, 1.0 - EPS)
-    lp = (alpha - 1.0) * jnp.log(x) + (beta - 1.0) * jnp.log1p(-x) - betaln(alpha, beta)
-    return jnp.sum(lp - LOG_2, axis=-1)
+def log_prob(draw, mean, std):
+    z = (draw - mean) / std
+    return -0.5 * jnp.sum(z**2 + 2.0 * jnp.log(std) + LOG_2PI, axis=-1)
 
 
-def entropy(alpha, beta):
-    h = (
-        betaln(alpha, beta)
-        - (alpha - 1.0) * digamma(alpha)
-        - (beta - 1.0) * digamma(beta)
-        + (alpha + beta - 2.0) * digamma(alpha + beta)
-    )
-    return jnp.sum(h + LOG_2, axis=-1)
+def entropy(std):
+    return jnp.sum(jnp.log(std) + 0.5 * (LOG_2PI + 1.0), axis=-1)
 
 
 def column(role, name, slices):
@@ -189,7 +178,7 @@ def normalize_by_role(adv, mask, slices):
 
 
 def make_net(cfg, env):
-    return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation), Critic(
+    return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_std), Critic(
         cfg.hidden, cfg.activation
     )
 
@@ -218,18 +207,18 @@ def critic_input(obs, opp_action, n):
 
 
 def make_actor(net, slices):
-    """Apply each role's actor and return its two arrays in drone order."""
+    """Apply each role's actor and return outputs in drone order."""
 
     def apply(params, obs):
         n = sum(x.shape[-2] for x in obs.actor.values())
         lead = obs.critic.shape[:-1] + (n,)
-        # Ones are a valid Beta, for the rows that no actor flies.
-        alpha = beta = jnp.ones(lead + (net.num_actions,))
+        mean = jnp.zeros(lead + (net.num_actions,))
+        std = jnp.ones(lead + (net.num_actions,))
         for role, drones in slices.items():
-            a, b = net.apply(params[role]["actor"], obs.actor[role])
-            alpha = alpha.at[..., drones, :].set(a)
-            beta = beta.at[..., drones, :].set(b)
-        return alpha, beta
+            m, s = net.apply(params[role]["actor"], obs.actor[role])
+            mean = mean.at[..., drones, :].set(m)
+            std = std.at[..., drones, :].set(s)
+        return mean, std
 
     return apply
 
@@ -253,6 +242,7 @@ def make_critic(net, slices, opponents):
 @flax.struct.dataclass
 class Transition:
     obs: envs.Obs
+    draw: jnp.ndarray  # before the clip, which the log-prob needs
     action: jnp.ndarray
     log_prob: jnp.ndarray
     value: jnp.ndarray
@@ -334,12 +324,13 @@ def make(cfg, env, env_params, pool_seat=None):
         start = None if pool_seat is None else lambda state: pool_start(state, pool)
 
         def act(ts, state, obs, seat, key):
-            pd = actor(weights(ts), obs)
-            action = sample(key, *pd)
+            mean, std = actor(weights(ts), obs)
+            draw = sample(key, mean, std)
+            action = bound(draw)
             if pool_seat is not None:
                 flown, seat = pool_act(state, obs, seat, pool)
                 action = action.at[:, pool_rows].set(flown)
-            return action, pd, seat
+            return action, draw, mean, std, seat
 
         def value_at(ts, state, obs, seat, key):
             """No action exists at this state yet, so draw one."""
@@ -349,7 +340,7 @@ def make(cfg, env, env_params, pool_seat=None):
         def rollout(carry, _):
             ts, vec, obs, key = carry
             key, k, k_final = jax.random.split(key, 3)
-            action, pd, seat = act(ts, vec.env, obs, vec.seat, k)
+            action, draw, mean, std, seat = act(ts, vec.env, obs, vec.seat, k)
             value = critic(weights(ts), obs, action)
             next_obs, vec, reward, done, info = vecenv.step(
                 vec.replace(seat=seat), action, env, env_params, cfg, learns, start
@@ -363,8 +354,9 @@ def make(cfg, env, env_params, pool_seat=None):
             bootstrap = (info["bootstrap"] > 0) & jnp.isfinite(v_final)
             transition = Transition(
                 obs,
+                draw,
                 action,
-                log_prob(action, *pd),
+                log_prob(draw, mean, std),
                 value,
                 reward + cfg.gamma * jnp.where(bootstrap, v_final, 0.0),
                 info["cont"],
@@ -414,9 +406,9 @@ def make(cfg, env, env_params, pool_seat=None):
                 a_n = normalize_by_role(a, tr.mask, slices)
 
                 def loss_fn(params):
-                    pd = actor(params, tr.obs)
+                    mean, std = actor(params, tr.obs)
                     value = critic(params, tr.obs, tr.action)
-                    ratio = jnp.exp(log_prob(tr.action, *pd) - tr.log_prob)
+                    ratio = jnp.exp(log_prob(tr.draw, mean, std) - tr.log_prob)
 
                     # Per drone, so the same numbers can be reported per role.
                     clipped = -jnp.minimum(
@@ -424,7 +416,7 @@ def make(cfg, env, env_params, pool_seat=None):
                         jnp.clip(ratio, 1 - cfg.clip_eps, 1 + cfg.clip_eps) * a_n,
                     )
                     squared = 0.5 * (value - target) ** 2
-                    ent = entropy(*pd)
+                    ent = entropy(std)
 
                     loss = (
                         _mean(clipped, tr.mask)
