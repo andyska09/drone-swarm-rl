@@ -437,11 +437,71 @@ The std of each run over training, the mean over the four actions:
   because they use only the actor.
 - No run has used this input yet. The 3v1 runs go after the ReLU results.
 
+## Runs with ReLU, 2026-11-04
+
+2 runs on MetaCentrum, commit `636ab7a`, so with the old critic input: base `paths_3v1`,
+seeds 0 and 1, `--set activation=relu --set normalize_obs=false --set gamma=0.99`, 5e8 steps.
+The pair with scaling on did not run. Training is the mean of the last 100 updates. The
+tanh column is the two runs of 2026-11-04 with scaling off.
+
+| | ReLU, s0 | ReLU, s1 | tanh |
+|---|---|---|---|
+| `caught_e` | 0.005 | 0.004 | 0.029–0.045 |
+| `OOB_p` | 0.84 | 0.89 | 0.26–0.36 |
+| `coll_pp` | 0.007 | 0.008 | 0.12–0.24 |
+| `time_limit` | 0 | 0 | 0.17–0.23 |
+| `distance` | 9.9 | 9.9 | 7.4–7.9 |
+| explained variance | 0.98 | 0.99 | 0.55–0.59 |
+| final std: thrust, roll, pitch, yaw | 1.2, 0.007, 0.007, 9.2 | 0.16, 0.008, 0.006, 0.84 | 12–29 |
+
+The flight numbers below come from 512 episodes per run with sampled actions, as in
+training, from the last checkpoint.
+
+- **The spread did not blow up.** The mean std fell from 1 to 0.05–0.15.
+- **The pursuers do not chase.** They stay level, and the roll and pitch actions stay near
+  0. The net stays about 10 m from the evader. The yaw action sits at the clip in 85–91 % of
+  the steps.
+- **One pursuer drifts out of the box.** In 98–99 % of the episodes exactly one pursuer dies.
+  The median end is at 3.5–4 s, at about 4 m/s, level. In seed 0 it leaves through any face,
+  and in seed 1 mostly through a wall. That ends the episode.
+- **The spread is not the cause.** The std blew up with tanh. It stayed small with the Beta
+  and with ReLU. In all three, the pursuers did not fly in.
+- **The eval tells little here too.** In seed 0 the mean thrust action is −0.97, so the mean
+  flight falls: `crash_p` is 0.999 at about 1.1 s.
+
+## Runs with a critic input for each drone, 2026-11-04
+
+4 runs on MetaCentrum, commit `2d15eb5`: base `paths_3v1`, seeds 0 and 1, tanh,
+`--set gamma=0.99`, 5e8 steps, two with scaling and two with `--set normalize_obs=false`. They
+differ from the 4 tanh runs of Runs with input scaling only by the critic input. Eval: 1024
+episodes, mean actions, the last checkpoint, on the same commit. Training is the mean of the
+last 100 updates. The std is its final value for each action.
+
+| run | scaling | seed | `caught_e` eval | `coll_pp` | `crash_p` | `OOB_p` | `time_limit` | time to catch | `caught_e` training | std | explained variance |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `a2abcb` | on | 0 | 0.099 | 0.019 | 0.007 | 0.009 | 0.87 | 5.4 s | 0.093 | 0.04–0.07 | 0.62 |
+| `3849a5` | on | 1 | 0.112 | 0.091 | 0.003 | 0.017 | 0.78 | 5.9 s | 0.109 | 0.07–0.10 | 0.69 |
+| `2d0b98` | off | 0 | 0.183 | 0.097 | 0.009 | 0.015 | 0.70 | 6.1 s | 0.173 | 0.04–0.05 | 0.60 |
+| `6fce56` | off | 1 | 0.242 | 0.032 | 0.011 | 0.001 | 0.71 | 6.0 s | 0.233 | 0.03 | 0.66 |
+
+- **These are the first 3v1 runs that learn to fly in.** `caught_e` rose from 0.01–0.04 in the
+  eval to 0.10–0.24, and pursuer deaths fell. The critic input was the main problem.
+- **The spread no longer blows up.** The std falls from 1 to 0.03–0.10, as in 1v1, and the
+  adaptive lr stays low. So the blow-up came from the critic's one value for all three.
+- **The eval and training now agree**, because the drones fly close to their mean.
+- **The pursuers come close, then stay near.** In the 8 saved eval episodes of each run, the
+  nearest pursuer goes from 13 m to about 3–5 m by 4–6 s, and most episodes reach the step
+  limit. FRPN catches 0.44–0.49, so there is still room.
+- **Scaling off catches about twice as often as scaling on**, in both seeds. We do not know
+  why. These are two seeds of each.
+- **The catch still rises at the end without scaling.** From update 1300 to 1900 it goes from
+  0.16 to 0.18 and from 0.22 to 0.24. With scaling it is almost flat, 0.09–0.11.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU is next, then the critic input for each drone (2026-11-04). Other options: `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. Other options: `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |
