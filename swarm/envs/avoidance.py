@@ -191,11 +191,7 @@ def step(key, state, action, params):
     flying = state.alive & ~state.arrived
     signed = action * action_signs(state, params)
     moved = core.fly(state.drone, state.rate_pid, signed, params)[:2]
-    drone, rate_pid = jax.tree.map(
-        lambda a, b: jnp.where(jnp.expand_dims(flying, tuple(range(1, a.ndim))), a, b),
-        moved,
-        (state.drone, state.rate_pid),
-    )
+    drone, rate_pid = core.select_rows(flying, moved, (state.drone, state.rate_pid))
     p = to_tube(drone.x, state.heading, params)
 
     room = half(state, params) - core.body_radius(params)

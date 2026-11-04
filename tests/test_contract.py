@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-TASKS = ("circle_swap", "chase", "avoidance")
+TASKS = ("circle_swap", "chase", "avoidance", "random_goals")
 ENVS = {task: importlib.import_module(f"swarm.envs.{task}") for task in TASKS}
 EPISODES = 3
 # The vmap and the loop round differently, and a tumbling drone grows the difference.

@@ -91,6 +91,14 @@ def per_row(tree, n):
     return jax.tree.map(lambda x: jnp.broadcast_to(x, (n,) + x.shape), tree)
 
 
+def select_rows(pick, a, b):
+    """The tree a on the drones that `pick` marks, and the tree b on the others."""
+
+    return jax.tree.map(
+        lambda x, y: jnp.where(jnp.expand_dims(pick, tuple(range(1, x.ndim))), x, y), a, b
+    )
+
+
 def cascade(drones, points, pids, params):
     """The action of the full cascade that flies each drone to its point."""
 
@@ -216,6 +224,13 @@ def pair_dist(x):
     return jnp.where(jnp.eye(x.shape[0], dtype=bool), jnp.inf, d)
 
 
+def first_apart(draws, spacing):
+    """The first of `draws`, (k, N, 3), that keeps every two drones `spacing` apart."""
+
+    apart = jax.vmap(lambda x: jnp.min(pair_dist(x)))(draws) >= spacing
+    return draws[jnp.argmax(apart)]
+
+
 def same_role(roles):
     """(N, N, 1): 1 where drone j shares the role of drone i."""
 
@@ -287,15 +302,20 @@ def out_of_arena(drone, params):
     )
 
 
-def is_dead(drone, params):
-    """The default rule. A task with different terminations writes its own."""
+def lost(drone, params):
+    """Out of the arena, through the floor, or upside down."""
 
     return (
         out_of_arena(drone, params)
         | (drone.x[:, 2] < 0.0)
         | (drone.R[:, 2, 2] < 0.0)
-        | jnp.any(hits(drone, params), axis=-1)
     )
+
+
+def is_dead(drone, params):
+    """The default rule. A task with different terminations writes its own."""
+
+    return lost(drone, params) | jnp.any(hits(drone, params), axis=-1)
 
 
 def yaw(a):

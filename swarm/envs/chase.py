@@ -219,9 +219,7 @@ def _starts(key, x, free, params):
     draws = centre + jax.random.uniform(
         key, (16,) + x.shape, minval=-limit, maxval=limit
     )
-    draws = jnp.where(free[:, None], draws, x)
-    apart = jax.vmap(lambda d: jnp.min(core.pair_dist(d)))(draws) >= params.spacing
-    return draws[jnp.argmax(apart)]
+    return core.first_apart(jnp.where(free[:, None], draws, x), params.spacing)
 
 
 def reset(key, params):
