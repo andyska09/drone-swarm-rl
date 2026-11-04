@@ -39,6 +39,7 @@ class TrainConfig:
     reset_std: bool = True
 
     normalize_reward: bool = True
+    normalize_obs: bool = True
 
     log_every: int = 10
     checkpoint_every: int = 50

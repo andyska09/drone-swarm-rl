@@ -1,4 +1,4 @@
-"""Batch scenes, end episodes at their step limit, reset them, and normalize rewards."""
+"""Batch scenes, end episodes at their step limit, reset them, and normalize rewards and inputs."""
 
 import flax.struct
 import jax
@@ -25,7 +25,14 @@ class VecState:
     seat: any = None  # the carry of a seat that flies some rows, per scene
 
 
-def _welford(n, batch):
+def normalizer(width):
+    """One scale per column. At first it leaves each column as it is."""
+
+    # A typed count, so a run resumed from latest.pkl compiles the same program.
+    return Normalizer(jnp.zeros(width), jnp.ones(width), jnp.full(width, 1e-4, dtype=float))
+
+
+def welford(n, batch):
     batch_mean, batch_var, batch_count = batch.mean(0), batch.var(0), batch.shape[0]
     delta = batch_mean - n.mean
     total = n.count + batch_count
@@ -35,6 +42,12 @@ def _welford(n, batch):
         + delta**2 * n.count * batch_count / total
     )
     return Normalizer(n.mean + delta * batch_count / total, m2 / total, total)
+
+
+def normalized(n, x):
+    # The optimizer holds an input's scale with the weights, so no gradient may reach it.
+    n = jax.lax.stop_gradient(n)
+    return (x - n.mean) / jnp.sqrt(n.var + 1e-8)
 
 
 def select(pick, a, b):
@@ -72,12 +85,7 @@ def reset(key, env, params, cfg, start=None):
         env=env_state,
         key=key,
         # One scale per drone column, so a pursuer and an evader are not pooled.
-        rew_norm=Normalizer(
-            jnp.zeros(params.n_drones),
-            jnp.ones(params.n_drones),
-            # A typed count, so a run resumed from latest.pkl compiles the same program.
-            jnp.full(params.n_drones, 1e-4, dtype=float),
-        ),
+        rew_norm=normalizer(params.n_drones),
         ret=jnp.zeros((cfg.num_envs, params.n_drones)),
         ep_return=jnp.zeros((cfg.num_envs, params.n_drones)),
         ep_length=jnp.zeros(cfg.num_envs, jnp.int32),
@@ -128,7 +136,7 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
     rew_norm = vec.rew_norm
     ret = vec.ret * cfg.gamma + reward
     if cfg.normalize_reward:
-        stepped = _welford(rew_norm, ret)
+        stepped = welford(rew_norm, ret)
         rew_norm = jax.tree.map(lambda a, b: jnp.where(learns > 0, a, b), stepped, rew_norm)
         reward = reward / jnp.sqrt(rew_norm.var + 1e-8)
 

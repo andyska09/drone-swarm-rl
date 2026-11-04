@@ -199,11 +199,29 @@ def opp_actions(action, opponents):
     return a.reshape(a.shape[:-2] + (-1,))
 
 
-def critic_input(obs, opp_action, n):
+def critic_input(scene, opp_action, n):
     """The scene and the opponents' actions, one copy for each of a role's `n` drones."""
 
-    x = jnp.concatenate([obs.critic, opp_action], axis=-1)
+    x = jnp.concatenate([scene, opp_action], axis=-1)
     return jnp.broadcast_to(x[..., None, :], x.shape[:-1] + (n, x.shape[-1]))
+
+
+def with_scale(variables, x):
+    """A network's variables and a scale for its input x. The scale sits with the weights,
+    so whatever saves or flies a network takes its scale too."""
+
+    return {**variables, "scale": {"input": vecenv.normalizer(x.shape[-1])}}
+
+
+def scaled(variables, x):
+    return vecenv.normalized(variables["scale"]["input"], x)
+
+
+def rescale(variables, x):
+    """The network, with its scale moved by the inputs x."""
+
+    moved = vecenv.welford(variables["scale"]["input"], x.reshape(-1, x.shape[-1]))
+    return {**variables, "scale": {"input": moved}}
 
 
 def make_actor(net, slices):
@@ -215,7 +233,8 @@ def make_actor(net, slices):
         mean = jnp.zeros(lead + (net.num_actions,))
         std = jnp.ones(lead + (net.num_actions,))
         for role, drones in slices.items():
-            m, s = net.apply(params[role]["actor"], obs.actor[role])
+            actor = params[role]["actor"]
+            m, s = net.apply(actor, scaled(actor, obs.actor[role]))
             mean = mean.at[..., drones, :].set(m)
             std = std.at[..., drones, :].set(s)
         return mean, std
@@ -229,10 +248,9 @@ def make_critic(net, slices, opponents):
     def apply(params, obs, action):
         value = jnp.zeros(action.shape[:-1])
         for role, drones in slices.items():
-            v = net.apply(
-                params[role]["critic"],
-                critic_input(obs, opp_actions(action, opponents[role]), len(drones)),
-            )
+            critic = params[role]["critic"]
+            opp = opp_actions(action, opponents[role])
+            v = net.apply(critic, critic_input(scaled(critic, obs.critic), opp, len(drones)))
             value = value.at[..., drones].set(v)
         return value
 
@@ -292,9 +310,11 @@ def make(cfg, env, env_params, pool_seat=None):
         def params(role, drones, k):
             k_a, k_c = jax.random.split(k)
             opp = opp_actions(one_action, opponents[role])
+            own, scene = one_scene.actor[role], one_scene.critic
+            critic_in = critic_input(scene, opp, len(drones))
             return {
-                "actor": actor_net.init(k_a, one_scene.actor[role]),
-                "critic": critic_net.init(k_c, critic_input(one_scene, opp, len(drones))),
+                "actor": with_scale(actor_net.init(k_a, own), own),
+                "critic": with_scale(critic_net.init(k_c, critic_in), scene),
             }
 
         ts = {
@@ -454,6 +474,17 @@ def make(cfg, env, env_params, pool_seat=None):
             return (ts, key), stats
 
         (ts, key), stats = lax.scan(epoch, (ts, key), None, length=cfg.update_epochs)
+
+        def rescaled(role, t):
+            nets = {
+                "actor": rescale(t.params["actor"], traj.obs.actor[role]),
+                "critic": rescale(t.params["critic"], traj.obs.critic),
+            }
+            return hold(train[role], t.replace(params=nets), t)
+
+        # After the epochs, so the rollout and the loss read the same inputs.
+        if cfg.normalize_obs:
+            ts = {role: rescaled(role, t) for role, t in ts.items()}
 
         done = info["done"]
         metrics = {"episodes": done.sum()} | episode_metrics(

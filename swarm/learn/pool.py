@@ -55,9 +55,10 @@ def members(side, generation):
 def with_std(t, std):
     """The TrainState with its actor's std set to `std` for every action."""
 
-    actor = t.params["actor"]["params"]
-    log_std = jnp.full_like(actor["log_std"], math.log(std))
-    return t.replace(params={**t.params, "actor": {"params": {**actor, "log_std": log_std}}})
+    actor = t.params["actor"]
+    log_std = jnp.full_like(actor["params"]["log_std"], math.log(std))
+    weights = {**actor["params"], "log_std": log_std}
+    return t.replace(params={**t.params, "actor": {**actor, "params": weights}})
 
 
 def match(cfg, env, env_params, pilots, role, episodes):
