@@ -36,7 +36,7 @@ drone, so every slot has mask 0.
 | input | content | size |
 |---|---|---|
 | actor | the default with $K = N - 1$, the sensed blocks in each slot, and the goal block $R_i^\top (g_i - p_i)$, $-R_i^\top v_i$ | $26 + (8 + s) K$ |
-| critic | the default, and for each drone $j$: $g_j$, $n_{j,k} / n_{\max}$ for $k = 1, \dots, 4$, and $[\text{drone } j \text{ flies}]$ | $26 N$ |
+| critic | the default, and for each drone $j$: $g_j$, $n_{j,k} / n_{\max}$ for $k = 1, \dots, 4$, and $[\text{drone } j \text{ flies}]$ | $26 N$, plus the actor input |
 
 Each slot of others holds the sensed blocks of the preset after its default content:
 
@@ -51,8 +51,9 @@ $s$ is the size of the sensed blocks: 0, 9, 4 or 13.
 
 - **Goal:** a drone reaches its goal when it comes within $\epsilon$ of it, at any speed.
   Its next goal $g_i \sim U(G)$ comes in the same step.
-- **Death:** the default. A death is terminal for that drone. The dead drone leaves the
-  scene, so sight and contact skip it, and the other drones fly on.
+- **Death:** the default. A death is terminal for that drone. The dead drone stays where
+  it was at the start of that step and leaves the scene, so sight and contact skip it, and
+  the other drones fly on.
 - **End:** the episode ends when no drone flies, or after $T$ steps, which is a truncation
   for every flying drone.
 
