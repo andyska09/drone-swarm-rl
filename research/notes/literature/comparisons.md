@@ -43,10 +43,10 @@ world frame, adds the distance to the opponent and the time, and scales every va
 
 | | observation | reward |
 |---|---|---|
-| ours | none | divide by a running spread of the return, one per drone column |
+| ours | a running mean and std for each column, one set for each network, as in `PPO_example`. The opponents block of the critic stays raw. `normalize_obs` turns it off | divide by a running spread of the return, one per drone column |
 | quad-swarm | none — raw SI units, `--normalize_input=False` | hand-tuned weights, `--reward_clip=10` |
 | Gavin 1v1 | divide by two hand-picked constants: max view range `k_p`, max velocity `k_v` | not stated |
-| Gavin Nv1 | same | not stated |
+| Gavin Nv1 | normalized, how is not stated | not stated |
 | Roncero v3 | not stated | not stated |
 | Němeček | each value by its largest size: positions by `arena_size` = 10 m, the relative velocity by 24 m/s, his own velocity by 12 m/s, `ω` by 6.28 rad/s, `z` mapped to [−1, 1], the time by 600 steps | none: SB3 without `VecNormalize` |
 
@@ -54,7 +54,7 @@ world frame, adds the distance to the opponent and the time, and scales every va
 
 Per-step terms, and one-off terms marked. Our weights are per second, and the code
 multiplies them by `policy_dt = 0.01`. Gavin's are per step at 100 Hz, so our chase
-weights equal his. Roncero's and Němeček's are per step at 50 Hz. Sources for those
+weights equal his, except `coll_pp`. Roncero's and Němeček's are per step at 50 Hz. Sources for those
 two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 
 | term | ours `chase` | ours `circle_swap` | quad-swarm | Gavin 1v1 | Gavin Nv1 | Roncero v3 | Němeček |
@@ -66,7 +66,7 @@ two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 | command | `cmd = 0.02·‖ω_cmd‖` | — | `effort = 0.05` | `λcmd = 2e-4·‖aω‖` | `λcmd = 2e-4·‖aω‖` | — | — |
 | command change | — | — | — | — | — | `κsm = 0.002`, on the change of the rate command | — |
 | near miss | — | `10.0·Σ max(1 − d/1.5, 0)` | `αrclose`, same shape, 10.0 | — | — | — | — |
-| contact | `coll_pp = 10.0` one-off, ends it; `coll_pe = 10.0`, soft | death, `25.0·N` one-off | elastic bounce, `1.0` | `λcoll = 0.1`, soft, no death | `λcollPP = 10.0`, `λcollPE = 0.1` | — | — |
+| contact | `coll_pp = 30.0` one-off, ends it; `coll_pe = 10.0`, soft | death, `25.0·N` one-off | elastic bounce, `1.0` | `λcoll = 0.1`, soft, no death | `λcollPP = 10.0`, `λcollPE = 0.1` | — | — |
 | upright | — | `−1.0·R₃₃` | `orient = 1.0·R₃₃` | — | — | — | — |
 | crash / out of bounds | `fail = 30.0` one-off | `25.0·N` one-off | `crash = 1.0` per step | `λfail = 30.0` | `λfail = 30.0` | `κb = 10.0`, to the one who left | the ground: `κg = 10.0` |
 | survival | `step = 4.0`: the evader earns it, the pursuer pays it | — | — | — | `λstep = 0.04`: the evader earns it, the pursuers pay it | `κs = 0.0025`, the evader earns it | `κs = 0.007`, the evader earns it |
@@ -124,7 +124,7 @@ code. What the runs scored against theirs:
 | a pursuer wins on | a catch, or a failure of the evader. `fail_pe` is half a win to each side | a capture, or the evader out of bounds | a catch |
 
 The other PPO settings are ours, not the paper's: rollout 64, GAE 0.95, grad clip 0.5,
-reward normalization and raw observations.
+reward normalization and input scaling.
 
 ## Chase beside Gavin & Bronz 2026
 
@@ -143,11 +143,25 @@ here from the chase spec on 2026-10-25.
 | drone | x500, 2.0 kg, 0.80 m across the propeller tips | not published |
 | drones | from `roles`, default `("pursuer", "evader")` | pursuers + evader |
 | start | uniform random in the box, 2 m clear of every face, 2 m apart | both uniform random |
+| where the evader flies | the whole box. `paths` stays 2 m inside it | "constrained in a smaller volume of size 12 × 12 × 6 meters in the centre of the arena" |
 | start heading | random, full circle | not published |
 | start motion | up to 0.5 m/s on each axis, tilt up to 0.2 rad | not published |
 | contact | `collision_dist = 0.8 m` between centres | the same |
 
-Gavin's value network gets the same input as our critic, without `ω`, and normalized.
+Gavin's value network gets the same input as our critic, without `ω`. He normalizes all of
+it, and we scale the scene and keep the opponents' actions raw.
+
+Training:
+
+| | ours | Gavin |
+|---|---|---|
+| steps | 7e8 per side in a pool run, 5e8 in `paths_3v1` | 5e9 per side |
+| parallel envs | 4096 per side | 1024 |
+| network | 2 × 256, tanh | 2 × 256, ReLU |
+| action noise | one learned std per action, then a clip | the network gives the mean and the std, then a tanh squash |
+| critic | one per role, so one value for all the drones of a role | one per team, with the global state and the opponents' actions |
+| opponents | pools with Hedge, in generations | a pool with PFSP: 50 % of the episodes against the newest opponent, 50 % by the PFSP weights. A snapshot joins the pool past a score threshold |
+| a run against a fixed evader | `paths_3v1`, against `paths`. It catches about 0.03 | `noSP`, against APF. It catches 65.2 % of APF in 3v1 |
 
 The net:
 
@@ -185,7 +199,7 @@ Our per-step weights are Gavin's divided by `policy_dt`:
 | `coll_pe` | 10.0 | 0.1 | `λcollPE` |
 | `outside` | 0.0, and 57.0 in `open` and `nemecek` | 0.57 | none |
 | `catch` | 10.0 | not multiplied | `λcatch = 10.0` |
-| `coll_pp` | 10.0 | not multiplied | `λcollPP = 10.0` |
+| `coll_pp` | 30.0 | not multiplied | `λcollPP = 10.0` |
 | `fail` | 30.0 | not multiplied | `λfail = 30.0` |
 
 | term | ours | Gavin pursuer |
@@ -196,7 +210,7 @@ Our per-step weights are Gavin's divided by `policy_dt`:
 | velocity | none | none |
 | action difference | none | none |
 | `coll_pe` | 0.1 per step, both sides, soft | the same |
-| `coll_pp` | 10.0, ends it, **net counts too** | 10.0, ends it, bodies only |
+| `coll_pp` | 30.0, ends it, **net counts too** | 10.0, ends it, bodies only |
 | the evader near the bounds | none. In `open` and `nemecek`, `outside` beyond the box | `λbnd`, evader only, near the bounds |
 
 The episode ends:
