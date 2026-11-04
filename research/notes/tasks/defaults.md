@@ -129,13 +129,14 @@ The actor input of drone $i$. Each vector is in the body frame of drone $i$.
 - The task gives the inputs in raw SI units. Training scales them before a network reads
   them.
 
-The critic input is the same for every drone of a role. So the critic gives one value
-for all of them.
+The critic input of drone $i$ holds the whole scene and the actor input of drone $i$. So
+the critic gives each drone its own value.
 
 | block | content | size |
 |---|---|---|
 | scene | $p_j$, $v_j$, $\operatorname{vec}(R_j)$ and $\omega_j$ of every drone, world frame | $18N$ |
 | opponents | this step's action $a_j$ of each drone in another role | 4 per drone |
+| own | the actor input of drone $i$ | the size of the actor input |
 
 ## Events
 
@@ -190,7 +191,8 @@ learning rate, input scale, reward scale and advantage scale.
 
 - Each network reads $(x - \bar x) / \sqrt{s^2 + 10^{-8}}$ in place of its input $x$, with
   a running mean $\bar x$ and a running variance $s^2$ for each column. The critic scales
-  the scene, and it reads the opponents block as it is.
+  the scene with its own values, reads the opponents block as it is, and scales the own
+  block with the values of the actor.
 - $\bar x$ and $s^2$ start at 0 and 1. They move once per update, after the epochs, by
   every input of that rollout. A role that does not learn keeps them.
 - A network saves $\bar x$ and $s^2$ with its weights. So eval, a resumed run and a frozen

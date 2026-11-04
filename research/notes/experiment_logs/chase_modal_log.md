@@ -420,11 +420,28 @@ The std of each run over training, the mean over the four actions:
   uses ReLU, and its units do not saturate like tanh units. Base sensing only, until 3v1
   learns.
 
+## A critic input for each drone, 2026-11-04
+
+- **The critic now reads each drone's own actor input**, after the scene and the opponents'
+  actions. In `paths_3v1` that is 120 numbers, up from 76. So each pursuer gets its own
+  value. The critic weights stay shared, and the actor does not change. There is no switch,
+  the user's pick.
+- **Why.** With one input for all three pursuers, the critic cannot show which of them flies
+  into a hit. So the blame falls on all three, and flying in looks bad for each of them.
+- **It is a known input.** [MAPPO](https://arxiv.org/pdf/2103.01955) calls it the
+  Agent-Specific Global State, and our old input is its EP. It tests this only in StarCraft,
+  with one reward for the whole team. Gavin's pursuers learn with one input for all. So
+  this is a test, not a sure fix.
+- **The own block uses the actor's mean and std**, so there is nothing new to save.
+- **Runs from before this change cannot resume.** Eval and the matrix still work on them,
+  because they use only the actor.
+- No run has used this input yet. The 3v1 runs go after the ReLU results.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU is next. Other options: a critic input for each pursuer, `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU is next, then the critic input for each drone (2026-11-04). Other options: `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |

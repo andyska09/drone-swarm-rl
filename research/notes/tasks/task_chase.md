@@ -49,7 +49,7 @@ Default.
 | input | content | size |
 |---|---|---|
 | actor | the default, with the sensed blocks of the role in each slot | $20 + (8 + s) K$ |
-| critic | the default | $18N + 4$ per drone of the other role |
+| critic | the default | $18N + 4$ per drone of the other role, plus the actor input |
 
 - Each drone sees every other drone, at any distance, so $K = N - 1$.
 - Each slot of others also holds the sensed blocks of the role of drone $i$, after the
@@ -62,7 +62,7 @@ Default.
 
 - $s$ is the size of the sensed blocks of the role: 0, 9, 4 or 13. The preset sets the
   blocks of each role.
-- In the duel, the actor input is $28 + s$ wide, and the critic input is 40 wide.
+- In the duel, the actor input is $28 + s$ wide, and the critic input is $68 + s$ wide.
 - With open walls, a drone can fly outside the box. Then some of its wall distances are
   negative.
 

@@ -199,11 +199,12 @@ def opp_actions(action, opponents):
     return a.reshape(a.shape[:-2] + (-1,))
 
 
-def critic_input(scene, opp_action, n):
-    """The scene and the opponents' actions, one copy for each of a role's `n` drones."""
+def critic_input(scene, opp_action, own):
+    """The scene and the opponents' actions, then each drone's own actor input."""
 
     x = jnp.concatenate([scene, opp_action], axis=-1)
-    return jnp.broadcast_to(x[..., None, :], x.shape[:-1] + (n, x.shape[-1]))
+    x = jnp.broadcast_to(x[..., None, :], own.shape[:-1] + x.shape[-1:])
+    return jnp.concatenate([x, own], axis=-1)
 
 
 def with_scale(variables, x):
@@ -250,7 +251,8 @@ def make_critic(net, slices, opponents):
         for role, drones in slices.items():
             critic = params[role]["critic"]
             opp = opp_actions(action, opponents[role])
-            v = net.apply(critic, critic_input(scaled(critic, obs.critic), opp, len(drones)))
+            own = scaled(params[role]["actor"], obs.actor[role])
+            v = net.apply(critic, critic_input(scaled(critic, obs.critic), opp, own))
             value = value.at[..., drones].set(v)
         return value
 
@@ -307,11 +309,11 @@ def make(cfg, env, env_params, pool_seat=None):
         one_action = jnp.zeros((1, env_params.n_drones, env.NUM_ACTIONS))
         keys = jax.random.split(k_net, len(slices))
 
-        def params(role, drones, k):
+        def params(role, k):
             k_a, k_c = jax.random.split(k)
             opp = opp_actions(one_action, opponents[role])
             own, scene = one_scene.actor[role], one_scene.critic
-            critic_in = critic_input(scene, opp, len(drones))
+            critic_in = critic_input(scene, opp, own)
             return {
                 "actor": with_scale(actor_net.init(k_a, own), own),
                 "critic": with_scale(critic_net.init(k_c, critic_in), scene),
@@ -320,7 +322,7 @@ def make(cfg, env, env_params, pool_seat=None):
         ts = {
             role: TrainState.create(
                 apply_fn=None,
-                params=params(role, drones, k),
+                params=params(role, k),
                 # The lr sits in the optimizer state, so each role carries its own.
                 tx=optax.inject_hyperparams(
                     lambda learning_rate: optax.chain(
@@ -329,7 +331,7 @@ def make(cfg, env, env_params, pool_seat=None):
                     )
                 )(learning_rate=cfg.lr),
             )
-            for (role, drones), k in zip(slices.items(), keys)
+            for role, k in zip(slices, keys)
         }
         return ts, Learner(vec, obs, key, {r: True for r in slices})
 
