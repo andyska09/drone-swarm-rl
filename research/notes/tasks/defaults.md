@@ -126,7 +126,8 @@ The actor input of drone $i$. Each vector is in the body frame of drone $i$.
   the floor: nose, tail, left and right. The nose ray is the body $x$ axis, projected on
   the floor. If the nose points straight up or down, the body $y$ axis, projected and
   turned by −90°, takes its place. Outside $B$, some distances are negative.
-- The inputs are raw SI units.
+- The task gives the inputs in raw SI units. Training scales them before a network reads
+  them.
 
 The critic input is the same for every drone of a role. So the critic gives one value
 for all of them.
@@ -170,7 +171,7 @@ for all of them.
 ## Training
 
 PPO, with one actor and one critic for each role. Each role has its own optimizer,
-learning rate, reward scale and advantage scale.
+learning rate, input scale, reward scale and advantage scale.
 
 | setting | value |
 |---|---|
@@ -187,6 +188,14 @@ learning rate, reward scale and advantage scale.
 | batch | 4096 environments × 64 steps per update |
 | epochs × minibatches | 4 × 32 |
 
+- Each network reads $(x - \bar x) / \sqrt{s^2 + 10^{-8}}$ in place of its input $x$, with
+  a running mean $\bar x$ and a running variance $s^2$ for each column. The critic scales
+  the scene, and it reads the opponents block as it is.
+- $\bar x$ and $s^2$ start at 0 and 1. They move once per update, after the epochs, by
+  every input of that rollout. A role that does not learn keeps them.
+- A network saves $\bar x$ and $s^2$ with its weights. So eval, a resumed run and a frozen
+  network read the inputs with the values of that save.
+- A run can turn the input scale off. Then $\bar x$ and $s^2$ stay at 0 and 1.
 - Each drone column divides its reward by the running std of its discounted return.
 - The advantages are centred and scaled for each role.
 - At a truncation, each flying drone adds $\gamma V$ of the final state to its last
