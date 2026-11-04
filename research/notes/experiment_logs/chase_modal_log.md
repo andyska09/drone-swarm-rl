@@ -380,11 +380,51 @@ The eval outcomes of the three 3v1 batches:
   cause. The Beta stays in commit `c90447f`. These 8 runs load for eval, the matrix or a
   resume only on that commit. Their saved evals still open in the viewer.
 
+## Runs with input scaling, 2026-11-04
+
+4 runs on MetaCentrum, commit `636ab7a`: base `paths_3v1` only, seeds 0 and 1, tanh,
+`--set gamma=0.99`, `ent_coef` 0.001, 5e8 steps. Two runs scale the inputs, and two run with
+`--set normalize_obs=false` on the same code. What the scaling is and why:
+[chase_pools_log.md](chase_pools_log.md), Input scaling. Eval: 1024 episodes, mean actions,
+the last checkpoint. "Training" is the mean of the last 100 updates. The std is its final
+value for each action.
+
+| run | scaling | seed | `caught_e` eval | `coll_pp` eval | `crash_p` eval | `time_limit` eval | `caught_e` training | std | explained variance |
+|---|---|---|---|---|---|---|---|---|---|
+| `a2abcb` | on | 0 | 0.024 | 0.88 | 0.03 | 0.06 | 0.028 | 2520–4544 | 0.42 |
+| `3849a5` | on | 1 | 0.025 | 0.55 | 0.40 | 0.02 | 0.035 | 1290–1423 | 0.25 |
+| `2d0b98` | off | 0 | 0.035 | 0.34 | 0.56 | 0.03 | 0.045 | 18–29 | 0.59 |
+| `6fce56` | off | 1 | 0.009 | 0.44 | 0.39 | 0.16 | 0.029 | 12–27 | 0.55 |
+
+The std of each run over training, the mean over the four actions:
+
+| update | 100 | 250 | 400 | 600 | 900 | 1300 | 1900 |
+|---|---|---|---|---|---|---|---|
+| on, s0 | 1.17 | 1.63 | 3.55 | 10.3 | 69.8 | 622 | 3238 |
+| on, s1 | 1.18 | 1.38 | 2.61 | 7.39 | 32.1 | 185 | 1289 |
+| off, s0 | 1.08 | 1.28 | 1.91 | 3.79 | 8.90 | 13.4 | 24.4 |
+| off, s1 | 1.15 | 1.38 | 1.64 | 3.20 | 7.42 | 9.39 | 17.5 |
+
+- **Scaling did not fix 3v1.** `caught_e` stays near 0.03 with and without it. The 1v1
+  runs of 2026-10-28 reach about 0.9 against the same evader.
+- **The spread blew up in all 4 runs, and much more with scaling.** The adaptive lr reached
+  its cap of 0.01 in all 4. We do not know why scaling makes the spread grow faster.
+- **With scaling, the pursuers stay alive sooner.** Around update 140, `ep_length` is
+  600–720 with scaling and 250–300 without it.
+- **The critic fits worse with scaling.** Its explained variance is 0.25–0.42, against
+  0.55–0.59.
+- **The spread is a symptom.** The Beta runs of 2026-11-03 kept the std small, and they
+  caught as rarely.
+- **The eval tells little**, for the reason in the runs of 2026-11-01.
+- **Next, the user's pick:** the same 4 runs with `--set activation=relu`, because Gavin
+  uses ReLU, and its units do not saturate like tanh units. Base sensing only, until 3v1
+  learns.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Other options: `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU is next. Other options: a critic input for each pursuer, `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |

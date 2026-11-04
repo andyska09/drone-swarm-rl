@@ -323,6 +323,51 @@ Sources:
   collision can happen at step 0. The paths evader is placed first, so its path keeps
   its full size, and then the pursuers are drawn again.
 
+## Input scaling, 2026-11-04
+
+- **Each network now scales its input** by a running mean and std. The user picked running
+  scaling over fixed sizes, as in `PPO_example`. The rule is in
+  [defaults.md](../tasks/defaults.md), Training. `normalize_obs` switches it, and it is on by
+  default.
+- **Why we tried it.** Raw inputs are large, and they can saturate tanh units. The pool
+  table above gave a hint: the smaller the box, the higher the lower triangle. The walls
+  also differ between those presets, so it was only a hint.
+- **The mean and std move once per update, after the epochs.** `PPO_example` moves them at
+  each step, and it stores the scaled obs. We store raw obs and scale them again in the
+  loss, so a move during the rollout makes the loss read other inputs than the rollout did.
+  A move at each step also starts badly: every rotation rate is 0 at reset, so its std
+  starts near 0. So the first rollout flies unscaled.
+- **The mean and std sit in the network's variables, with the weights.** So a checkpoint,
+  a frozen pool member, eval and a resume all keep the values of that network. No gradient
+  reaches them.
+- **Old runs no longer load** for eval, the matrix or a resume. They need a commit before
+  `636ab7a`. Their saved evals still open in the viewer.
+
+4 runs on MetaCentrum, commit `636ab7a`: `default`, seeds 0 and 1, `--set gamma=0.99
+--set generations=13`, `ent_coef` 0.001, 1.4e9 steps. Two runs scale the inputs, and two run
+with `--set normalize_obs=false` on the same code. The columns are those of Pool training
+results.
+
+| run | scaling | seed | lower triangle | older evaders | diagonal | last pair |
+|---|---|---|---|---|---|---|
+| `8a62bf` | on | 0 | 0.61 | 0.67 | 0.27 | 0.16 |
+| `94c6c1` | on | 1 | 0.67 | 0.72 | 0.32 | 0.39 |
+| `5084e8` | off | 0 | 0.66 | 0.69 | 0.40 | 0.36 |
+| `e2eb68` | off | 1 | 0.59 | 0.63 | 0.34 | 0.56 |
+
+- **No clear gain from scaling.** The lower triangle is 0.64 with it and 0.62 without it.
+  That gap is smaller than the gap between two seeds, 0.06–0.07.
+- **The diagonal and the last pair are lower with scaling**: 0.29 and 0.28, against 0.37 and
+  0.46. A matrix plays a pursuer only against the evaders of its own run, and scaling changes
+  both sides. So this can mean weaker pursuers or stronger evaders. In Hedge at generation
+  13, the evaders beat the older pursuers 0.94 and 0.89 with scaling, and 0.80 and 0.76
+  without it. Playing the runs against each other can tell. We did not run it.
+- **Against the hand-written evaders, nothing changes much.** `pursuer_13` wins 0.89–0.95
+  against `paths`, APF and the cascade with scaling, and 0.94–0.97 without it.
+- **No spread blow-up in 1v1.** The pursuer's std ends at 0.54–0.62 in all 4 runs.
+- **Scaling off is close to `9e4242`.** Its lower triangle is 0.61, and the two runs without
+  scaling score 0.59 and 0.66. `9e4242` is one seed, on older code, with `ent_coef` 0.
+
 ## Open
 
 | question | state |
