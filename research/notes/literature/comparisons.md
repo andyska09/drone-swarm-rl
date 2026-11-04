@@ -114,7 +114,7 @@ code. What the runs scored against theirs:
 | pursuer pool seed | FRPN, G = 6.677, W = 0.337, an acceleration | FRPN, G = 5.0, W = 0.20, a velocity command | FRPN. Thesis Table 8.1: G = 6.677, W = 0.337. His pool code: G = 0.665, W = 0.321 |
 | evader pool seeds | `paths`, one member that draws a hover, a circle or a figure-eight for each episode, 8 × Roncero's size and √8 × his speed | hover, circle and figure-eight, radius 0.6–1.0 m, 1–2 m/s | 200 recorded trajectories, and APF |
 | network | 2 × 256, tanh, one std per action | actor and critic [512, 256, 256, 128], ELU | actor and critic 3 × 256, ReLU |
-| critic input | the whole scene and the opponent's action | the actor's observation | the actor's observation |
+| critic input | the whole scene, the opponent's action and the drone's own actor input | the actor's observation | the actor's observation |
 | PPO epochs × minibatches | 4 × 32 | 5 × 8 | 10 × 5 |
 | learning rate | 2e-4, KL-adaptive | 2e-4, KL-adaptive, target 0.016 | 3e-4, fixed |
 | entropy / clip / value loss | 0.001 / 0.2 / 0.5 | 0.001 / 0.2 / 1.0 | 0.001 / 0.1 / 1.0 |
@@ -148,8 +148,9 @@ here from the chase spec on 2026-10-25.
 | start motion | up to 0.5 m/s on each axis, tilt up to 0.2 rad | not published |
 | contact | `collision_dist = 0.8 m` between centres | the same |
 
-Gavin's value network gets the same input as our critic, without `ω`. He normalizes all of
-it, and we scale the scene and keep the opponents' actions raw.
+Gavin's value network gets the scene and the opponents' actions, as our critic does, without
+`ω`. Our critic also reads each drone's own actor input. He normalizes all of his input, and
+we keep the opponents' actions raw.
 
 Training:
 
@@ -159,7 +160,7 @@ Training:
 | parallel envs | 4096 per side | 1024 |
 | network | 2 × 256, tanh | 2 × 256, ReLU |
 | action noise | one learned std per action, then a clip | the network gives the mean and the std, then a tanh squash |
-| critic | one per role, so one value for all the drones of a role | one per team, with the global state and the opponents' actions |
+| critic | one per role, with its own value for each drone | one per team, with the global state and the opponents' actions |
 | opponents | pools with Hedge, in generations | a pool with PFSP: 50 % of the episodes against the newest opponent, 50 % by the PFSP weights. A snapshot joins the pool past a score threshold |
 | a run against a fixed evader | `paths_3v1`, against `paths`. It catches about 0.03 | `noSP`, against APF. It catches 65.2 % of APF in 3v1 |
 
