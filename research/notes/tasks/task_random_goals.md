@@ -15,7 +15,7 @@ traffic. The setup is the reliability test of
 | what | value |
 |---|---|
 | goal box $G$ | 20 × 20 × 1 m around $c$ |
-| goal radius $\epsilon$ | 0.1 m |
+| goal radius $\epsilon$ | 0.5 m |
 | step limit $T$ | 1000 steps (10 s) |
 
 ## Start

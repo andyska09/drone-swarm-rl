@@ -27,7 +27,7 @@ class EnvParams(core.Common):
 
     # The starts and the goals lie in this box around `center`.
     goal_box: tuple = flax.struct.field(pytree_node=False, default=(20.0, 20.0, 1.0))
-    goal_radius: float = 0.1
+    goal_radius: float = 0.5
     spacing: float = 2.0
 
     blind: bool = flax.struct.field(pytree_node=False, default=False)
