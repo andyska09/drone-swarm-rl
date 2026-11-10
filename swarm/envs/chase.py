@@ -129,14 +129,23 @@ def get_obs(state, params):
     d = state.drone
     own = core.own_obs(d, core.wall_dist(d, params))
     sense = {"pursuer": params.sense_pursuer, "evader": params.sense_evader}
+    slices = role_slices(params.roles)
     # Each role senses its own blocks, so the rows of each role have their own width.
     actor = {
         role: jnp.concatenate([own, core.others(d, params, True, sense[role])], -1)[
             rows
         ]
-        for role, rows in role_slices(params.roles).items()
+        for role, rows in slices.items()
     }
-    return Obs(actor=actor, critic=core.scene_obs(d))
+    return Obs(
+        actor=actor,
+        critic=core.scene_obs(d),
+        own={role: own[rows] for role, rows in slices.items()},
+        pairs={
+            role: core.pairs(d, params, sense[role])[rows] for role, rows in slices.items()
+        },
+        world=core.world(d),
+    )
 
 
 def crashed(drone, params):

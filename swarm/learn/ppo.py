@@ -6,6 +6,7 @@ import flax.linen as nn
 import flax.struct
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
@@ -58,9 +59,11 @@ class Actor(nn.Module):
     hidden: tuple = (256, 256)
     activation: str = "tanh"
     init_std: float = 1.0
+    attention: bool = False
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, *parts):
+        x = _join(parts, self.attention, self.activation)
         x = _trunk(x, self.hidden, self.activation)
         mean = nn.Dense(
             self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
@@ -74,12 +77,49 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     hidden: tuple = (256, 256)
     activation: str = "tanh"
+    attention: bool = False
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, *parts):
+        x = _join(parts, self.attention, self.activation)
         x = _trunk(x, self.hidden, self.activation)
         value = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(x)
         return jnp.squeeze(value, -1)
+
+
+def _join(parts, attention, activation):
+    """A network's one input: its flat input, or with `attention` the parts of
+    `attention_input`, the teammates through a Perceiver."""
+
+    if not attention:
+        (x,) = parts
+        return x
+    own, rivals, mates = parts
+    return jnp.concatenate([own, rivals, Perceiver(activation)(mates)], -1)
+
+
+class Perceiver(nn.Module):
+    """A set of tokens, (..., k, w), in any order and of any k, to one vector of a
+    fixed width: learned queries attend to the tokens. No token gives zeros."""
+
+    activation: str = "tanh"
+    queries: int = 4
+    heads: int = 4
+    head_dim: int = 32
+
+    @nn.compact
+    def __call__(self, tokens):
+        width = self.heads * self.head_dim
+        lead = tokens.shape[:-2]
+        if tokens.shape[-2] == 0:
+            return jnp.zeros(lead + (self.queries * width,))
+        # The inputs come unscaled, in metres and m/s, so a bounded layer comes first.
+        tokens = _trunk(tokens, (width,), self.activation)
+        q = self.param("queries", nn.initializers.normal(1.0), (self.queries, width))
+        out = nn.MultiHeadDotProductAttention(self.heads, qkv_features=width)(
+            jnp.broadcast_to(q, lead + q.shape), tokens
+        )
+        return out.reshape(lead + (-1,))
 
 
 def sample(key, mean, std):
@@ -178,9 +218,49 @@ def normalize_by_role(adv, mask, slices):
 
 
 def make_net(cfg, env):
-    return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_std), Critic(
-        cfg.hidden, cfg.activation
-    )
+    if cfg.net not in ("mlp", "attention"):
+        raise ValueError(f"net is 'mlp' or 'attention', not {cfg.net!r}")
+    attention = cfg.net == "attention"
+    return Actor(
+        env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_std, attention
+    ), Critic(cfg.hidden, cfg.activation, attention)
+
+
+def sides(drones, n):
+    """Columns out of n drones for the drones of one role: the drones of the other roles,
+    and each drone's teammates, (len(drones), len(drones) - 1)."""
+
+    mine = np.asarray(drones)
+    rivals = np.setdiff1d(np.arange(n), mine)
+    mates = [[j for j in mine if j != i] for i in mine]
+    return rivals, np.array(mates, dtype=int).reshape(len(mine), len(mine) - 1)
+
+
+def repeat_rows(x, n):
+    """(..., N, w) to (..., n, N, w): one copy for each of n drones."""
+
+    return jnp.broadcast_to(x[..., None, :, :], x.shape[:-2] + (n,) + x.shape[-2:])
+
+
+def attention_input(obs, role, drones, action=None):
+    """What an attention network of `role` reads: the own block, the drones of the other
+    roles in one block, and each drone's teammates as a set. With `action` it is the
+    critic's input: each drone also carries its state in the world frame, and each drone
+    of another role its action this step."""
+
+    n = len(drones)
+    rivals, mates = sides(drones, obs.world.shape[-2])
+    own, pairs = obs.own[role], obs.pairs[role]
+    if action is None:
+        rival = pairs[..., rivals, :]
+    else:
+        own = jnp.concatenate([own, obs.world[..., drones, :]], -1)
+        pairs = jnp.concatenate([pairs, repeat_rows(obs.world, n)], -1)
+        rival = jnp.concatenate(
+            [pairs[..., rivals, :], repeat_rows(action, n)[..., rivals, :]], -1
+        )
+    rows = np.arange(n)[:, None]
+    return own, rival.reshape(rival.shape[:-2] + (-1,)), pairs[..., rows, mates, :]
 
 
 def opponent_slices(roles):
@@ -235,7 +315,11 @@ def make_actor(net, slices):
         std = jnp.ones(lead + (net.num_actions,))
         for role, drones in slices.items():
             actor = params[role]["actor"]
-            m, s = net.apply(actor, scaled(actor, obs.actor[role]))
+            if net.attention:
+                x = attention_input(obs, role, drones)
+            else:
+                x = (scaled(actor, obs.actor[role]),)
+            m, s = net.apply(actor, *x)
             mean = mean.at[..., drones, :].set(m)
             std = std.at[..., drones, :].set(s)
         return mean, std
@@ -250,9 +334,13 @@ def make_critic(net, slices, opponents):
         value = jnp.zeros(action.shape[:-1])
         for role, drones in slices.items():
             critic = params[role]["critic"]
-            opp = opp_actions(action, opponents[role])
-            own = scaled(params[role]["actor"], obs.actor[role])
-            v = net.apply(critic, critic_input(scaled(critic, obs.critic), opp, own))
+            if net.attention:
+                x = attention_input(obs, role, drones, action)
+            else:
+                opp = opp_actions(action, opponents[role])
+                own = scaled(params[role]["actor"], obs.actor[role])
+                x = (critic_input(scaled(critic, obs.critic), opp, own),)
+            v = net.apply(critic, *x)
             value = value.at[..., drones].set(v)
         return value
 
@@ -292,6 +380,8 @@ def make(cfg, env, env_params, pool_seat=None):
 
     assert cfg.num_updates > 0, "total_timesteps < num_envs * num_steps"
     assert (cfg.num_envs * cfg.num_steps) % cfg.num_minibatches == 0
+    if cfg.net == "attention" and cfg.normalize_obs:
+        raise ValueError("the attention nets read unscaled inputs: set normalize_obs=false")
     batch_size = cfg.num_envs * cfg.num_steps
 
     actor_net, critic_net = make_net(cfg, env)
@@ -311,6 +401,13 @@ def make(cfg, env, env_params, pool_seat=None):
 
         def params(role, k):
             k_a, k_c = jax.random.split(k)
+            if actor_net.attention:
+                actor_in = attention_input(one_scene, role, slices[role])
+                critic_in = attention_input(one_scene, role, slices[role], one_action)
+                return {
+                    "actor": actor_net.init(k_a, *actor_in),
+                    "critic": critic_net.init(k_c, *critic_in),
+                }
             opp = opp_actions(one_action, opponents[role])
             own, scene = one_scene.actor[role], one_scene.critic
             critic_in = critic_input(scene, opp, own)

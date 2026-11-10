@@ -202,13 +202,17 @@ def own_obs(drone, walls):
     )
 
 
+def world(drone):
+    """(N, 18): the exact state of each drone in the world frame."""
+
+    n = drone.x.shape[0]
+    return jnp.concatenate([drone.x, drone.v, drone.R.reshape(n, 9), drone.omega], axis=-1)
+
+
 def scene_obs(drone):
     """The exact state (one vector) of every drone in world frame."""
 
-    n = drone.x.shape[0]
-    return jnp.concatenate(
-        [drone.x, drone.v, drone.R.reshape(n, 9), drone.omega], axis=-1
-    ).reshape(-1)
+    return world(drone).reshape(-1)
 
 
 def target_obs(drone, x, v=0.0):
@@ -239,16 +243,31 @@ def same_role(roles):
     return same.astype(float)[..., None]
 
 
+def pairs(drone, params, sense=()):
+    """(N, N, 6 + s): row i, column j is drone j in the body frame of drone i: the offset
+    and the velocity, then the s columns that `sense` names: "attitude", the R of drone
+    j in the body frame (9), and "rpm", its motor speeds over max_rpm (4)."""
+
+    n = drone.x.shape[0]
+    rel = lambda a: jnp.einsum("nji,nkj->nki", drone.R, a[None, :, :] - a[:, None, :])
+    sensed = {
+        "attitude": jnp.einsum("nji,kjl->nkil", drone.R, drone.R).reshape(n, n, 9),
+        "rpm": jnp.broadcast_to(drone.rpm / params.model.max_rpm, (n, n, 4)),
+    }
+    return jnp.concatenate(
+        [rel(drone.x), rel(drone.v), *(sensed[s] for s in sense)], axis=-1
+    )
+
+
 def others(drone, params, seen, sense=()):
     """(N, (8 + s)K): the first K drones that each drone sees. The drones of another
     role come first, then those of its own role, each nearest first. So in chase a
     pursuer always finds the evader in slot 0.
 
     Each slot holds the offset and the velocity in the body frame, then 1 if that drone
-    shares the role, then the s columns that `sense` names: "attitude", the R of
-    that drone in the body frame (9), and "rpm", its motor speeds over max_rpm (4). Then
-    come K 0/1 flags for the filled slots. An empty slot is all zeros. `seen` is (N, N),
-    or True when every drone sees every other.
+    shares the role, then the s columns of `pairs`. Then come K 0/1 flags for the filled
+    slots. An empty slot is all zeros. `seen` is (N, N), or True when every drone sees
+    every other.
     """
 
     dist = jnp.where(seen, pair_dist(drone.x), jnp.inf)
@@ -258,21 +277,9 @@ def others(drone, params, seen, sense=()):
     idx = jnp.lexsort(keys)[:, : params.n_visible]
     near = jnp.take_along_axis(dist, idx, axis=1)
     take = lambda a: jnp.take_along_axis(a, idx[..., None], axis=1)
-    rel = lambda a: jnp.einsum("nji,nkj->nki", drone.R, take(a))
-    sensed = {
-        "attitude": jnp.einsum("nji,nkjl->nkil", drone.R, drone.R[idx]).reshape(
-            idx.shape + (9,)
-        ),
-        "rpm": drone.rpm[idx] / params.model.max_rpm,
-    }
+    sensed = take(pairs(drone, params, sense))
     slots = jnp.concatenate(
-        [
-            rel(drone.x[None, :, :] - drone.x[:, None, :]),
-            rel(drone.v[None, :, :] - drone.v[:, None, :]),
-            take(same_role(params.roles)),
-            *(sensed[s] for s in sense),
-        ],
-        axis=-1,
+        [sensed[..., :6], take(same_role(params.roles)), sensed[..., 6:]], axis=-1
     )
     filled = jnp.isfinite(near).astype(slots.dtype)
     flat = (slots * filled[..., None]).reshape(slots.shape[0], -1)

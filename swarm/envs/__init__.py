@@ -68,6 +68,11 @@ class Obs:
 
     actor: dict  # {role: (n, f)}, one row for each drone of the role, in drone order
     critic: jnp.ndarray  # (c,), the whole scene
+    # The attention networks read these three. A task without them leaves None.
+    own: dict = None  # {role: (n, 20)}, the own block of each drone of the role
+    # {role: (n, N, p)}: row i, column j is drone j, in drone order, as drone i senses it
+    pairs: dict = None
+    world: jnp.ndarray = None  # (N, 18), each drone's state in the world frame
 
 
 def role_slices(roles):

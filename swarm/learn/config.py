@@ -31,6 +31,9 @@ class TrainConfig:
     # this many more (pool.py). At 0 both sides learn at once.
     generations: int = 0
 
+    # "mlp", or "attention": the teammates go through attention (ppo.Perceiver), so any
+    # number of them fits. "attention" reads the inputs unscaled: normalize_obs=false.
+    net: str = "mlp"
     hidden: tuple = (256, 256)
     activation: str = "tanh"
     # The std a new policy starts at.
