@@ -32,7 +32,8 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - **Task specs** in `research/notes/tasks/` say what each task is now: the model, not
   the code. Write or change one by the [spec rules](research/notes/tasks/README.md).
 - The reasons, the history of the decisions, the run results and the open questions go
-  to `research/notes/experiment_logs/<name>_log.md`. Comparisons with papers go to
+  to `research/notes/experiment_logs/<name>_log.md`, in the shape that its
+  [README](research/notes/experiment_logs/README.md) gives. Comparisons with papers go to
   `research/notes/literature/comparisons.md`.
 - Everything stays under the repo root, `handoff.md` included. Scripts, probes and build
   artifacts go in `scratch/` (gitignored), never in `/tmp` or a session scratchpad.
@@ -89,6 +90,7 @@ python run/eval.py runs/<name>                         # -> runs/<name>/evals/la
 python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role's seat
 python run/replay.py                                   # serve + open the 3D viewer
 python run/plot.py runs/<name>/evals/latest            # time plots of one episode
+python run/compare.py runs/<a> runs/<b>                # evals and training curves side by side
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 python3 tools/metacentrum/submit.py --walltime 1:00:00 -- --task chase --preset default --set generations=13 --steps 1.4e9  # on MetaCentrum: tools/metacentrum/metacentrum.md. 1 h is enough for a 1.4e9 pool run: always give --walltime 1:00:00
 python3 tools/rci/submit.py --walltime 1:00:00 -- ...  # the same on RCI: tools/rci/rci.md
@@ -188,8 +190,8 @@ Each file in `tests/` opens with a docstring that says what it checks.
   entry point — a tracked table of paper → files → one-line summary. Add a row
   whenever a PDF is added, and generate its transcript with
   `pdftotext -layout <file>.pdf <file>.md`.
-- Only the PDFs are gitignored. Transcripts and `bibliography_index.md` are
-  tracked, so a fresh clone can grep every paper without the binaries.
+- The PDFs and their transcripts are gitignored. Of `research/papers/`, only
+  `bibliography_index.md` is tracked.
 - The unpublished papers (see Rules) are excluded through `.git/info/exclude`, which is
   itself untracked, so no tracked file names them. Add an index row only for a paper
   that is publicly published.
