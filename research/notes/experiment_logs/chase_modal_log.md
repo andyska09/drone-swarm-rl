@@ -497,11 +497,119 @@ last 100 updates. The std is its final value for each action.
 - **The catch still rises at the end without scaling.** From update 1300 to 1900 it goes from
   0.16 to 0.18 and from 0.22 to 0.24. With scaling it is almost flat, 0.09–0.11.
 
+## Long runs with a critic input for each drone, 2026-11-04
+
+2 runs on MetaCentrum, commit `2d15eb5`: base `paths_3v1`, seeds 0 and 1, tanh,
+`--set gamma=0.99 --set normalize_obs=false`, 5e9 steps. That is 10 times the steps of
+`2d0b98` and `6fce56`, and it matches Gavin's steps per side. They took 1 h 58 min and 1 h 31
+min. Eval: 1024 episodes, mean actions, the last checkpoint, on the same commit. Training is
+the mean of the last 100 updates. The std is its final value for each action.
+
+| run | steps | seed | `caught_e` eval | `coll_pp` | `crash_p` | `OOB_p` | `time_limit` | time to catch | `distance` | `caught_e` training | std | explained variance |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `2d0b98` | 5e8 | 0 | 0.183 | 0.097 | 0.009 | 0.015 | 0.70 | 6.1 s | 5.2 m | 0.173 | 0.04–0.05 | 0.60 |
+| `76ea05` | 5e9 | 0 | 0.184 | 0.028 | 0.002 | 0.001 | 0.79 | 5.9 s | 4.4 m | 0.188 | 0.005–0.008 | 0.63 |
+| `6fce56` | 5e8 | 1 | 0.242 | 0.032 | 0.011 | 0.001 | 0.71 | 6.0 s | 4.5 m | 0.233 | 0.03 | 0.66 |
+| `4e80e4` | 5e9 | 1 | 0.265 | 0.045 | 0.007 | 0.018 | 0.67 | 6.3 s | 4.3 m | 0.258 | 0.005–0.007 | 0.66 |
+
+The 5e9 runs over training, as the mean of each 5e8 steps up to that mark:
+
+| steps | 5e8 | 1e9 | 2e9 | 3e9 | 4e9 | 5e9 |
+|---|---|---|---|---|---|---|
+| `caught_e`, s0 | 0.124 | 0.153 | 0.173 | 0.180 | 0.183 | 0.186 |
+| `caught_e`, s1 | 0.209 | 0.251 | 0.248 | 0.251 | 0.250 | 0.256 |
+| mean std, s0 | 0.265 | 0.033 | 0.012 | 0.008 | 0.007 | 0.006 |
+| mean std, s1 | 0.216 | 0.018 | 0.008 | 0.006 | 0.006 | 0.006 |
+
+The catch by what the evader does, from a second flight of the same 1024 episodes. Its totals
+match the eval. `hover` means a mean evader speed under 0.5 m/s, 333 episodes. The wall rows
+use the evader's closest approach to a face of the box. FRPN flew the pursuers on the same
+commit.
+
+| catch rate | `2d0b98` | `76ea05` | `6fce56` | `4e80e4` | FRPN |
+|---|---|---|---|---|---|
+| all | 0.183 | 0.184 | 0.242 | 0.265 | 0.510 |
+| `hover` | 0.18 | 0.10 | 0.25 | 0.23 | 0.59 |
+| moving | 0.18 | 0.22 | 0.24 | 0.28 | 0.47 |
+| moving, under 3 m from a face | 0.13 | 0.21 | 0.21 | 0.24 | 0.32 |
+| moving, over 5 m from a face | 0.25 | 0.26 | 0.31 | 0.31 | 0.55 |
+
+- **10 times the steps did not lift the catch.** The eval moved by 0.00 and 0.02, and the
+  noise on one `caught_e` is about ±0.013.
+- **The catch goes flat early.** Seed 1 stops at about 1e9 steps, and seed 0 almost stops at
+  about 2.5e9. At the end it changes by less than 0.01 per 1e9 steps. At 5e8 steps it is almost
+  final, so 5e8 steps are enough for a test.
+- **The two seeds stay apart**, at 0.18 and 0.26. Each one stays with its own flight.
+- **The std and the lr freeze.** The std keeps falling to 0.006. `lr_p` reaches its floor of
+  1e-5 at about 2e9 steps in seed 1 and 3.5e9 in seed 0. With a small std, a small change of
+  the mean is a large KL, so the adaptive lr keeps falling. The KL still sits at 0.023–0.027 at
+  the floor. The timing fits the flat catch, but it does not prove the cause.
+- **The pursuers do not finish, and evader speed is not the limit.** They catch a `hover` no
+  more often than a moving evader, and FRPN catches 0.59 of the `hover` paths. In the 8 saved
+  eval episodes of each 5e9 run, the nearest net mostly stays 1–5 m away after 4 s.
+- **The walls and the hits are not the main cause.** The catch is only a little lower near a
+  face, and `coll_pp` stays at 0.03–0.05.
+- **In seed 0, fewer hits gave no more catches.** `coll_pp` fell from 0.097 to 0.028, and those
+  episodes moved to `time_limit`, from 0.70 to 0.79.
+- **FRPN catches 0.51 here.** The older 0.44 and 0.49 came from 256 and 512 episodes.
+- **`ent_coef=0.01` came up against the low std, and we dropped it.** It is Gavin's value, and
+  it does not transfer: [design_choices.md](../design_choices.md).
+- **Next, the user's pick:** `--set gamma=0.995`, seeds 0 and 1, 5e8 steps. Only gamma differs
+  from `2d0b98` and `6fce56`. The chase code did not change from `2d15eb5` to `11324cb`: only
+  helpers moved.
+
+## Runs with `gamma=0.995`, 2026-11-04
+
+2 runs on MetaCentrum, commit `11324cb`: base `paths_3v1`, seeds 0 and 1, tanh,
+`--set gamma=0.995 --set normalize_obs=false`, 5e8 steps. Only gamma differs from `2d0b98` and
+`6fce56`. A step is 0.01 s, so the reward horizon $1/(1-\gamma)$ goes from 1 s to 2 s. Eval:
+1024 episodes, mean actions, the last checkpoint, on the same commit. Training is the mean of
+the last 100 updates. The std is its final value for each action.
+
+| run | gamma | seed | `caught_e` eval | `coll_pp` | `crash_p` | `OOB_p` | `time_limit` | time to catch | `distance` | `caught_e` training | std | explained variance |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `2d0b98` | 0.99 | 0 | 0.183 | 0.097 | 0.009 | 0.015 | 0.70 | 6.1 s | 5.2 m | 0.173 | 0.04–0.05 | 0.60 |
+| `714794` | 0.995 | 0 | 0.157 | 0.053 | 0.006 | 0.020 | 0.76 | 5.9 s | 4.7 m | 0.172 | 0.02–0.05 | 0.57 |
+| `6fce56` | 0.99 | 1 | 0.242 | 0.032 | 0.011 | 0.001 | 0.71 | 6.0 s | 4.5 m | 0.233 | 0.03 | 0.66 |
+| `4180cc` | 0.995 | 1 | 0.176 | 0.080 | 0.027 | 0.027 | 0.69 | 5.7 s | 5.0 m | 0.174 | 0.03–0.04 | 0.57 |
+
+The same 1024 episodes, flown again on `11324cb`. The totals match the eval. The groups are
+those of Long runs. "Closest net" is the nearest any net comes to the evader in an episode.
+
+| | `2d0b98` | `714794` | `6fce56` | `4180cc` |
+|---|---|---|---|---|
+| catch, `hover` | 0.18 | 0.14 | 0.25 | 0.20 |
+| catch, moving | 0.18 | 0.16 | 0.24 | 0.16 |
+| catch, moving, under 3 m from a face | 0.13 | 0.15 | 0.21 | 0.16 |
+| catch, moving, over 5 m from a face | 0.25 | 0.25 | 0.31 | 0.21 |
+| closest net under 2 m | 0.74 | 0.76 | 0.76 | 0.79 |
+| closest net under 1 m | 0.37 | 0.35 | 0.45 | 0.39 |
+| catch, of the episodes under 1 m | 0.49 | 0.45 | 0.54 | 0.46 |
+| mean net distance after 4 s | 3.9 m | 3.4 m | 2.9 m | 3.4 m |
+
+- **`gamma=0.995` did not lift the catch.** The eval is lower in both seeds, by 0.025 and 0.066,
+  and the noise on one `caught_e` is about ±0.012. In training, seed 0 is equal and seed 1 is
+  0.06 lower. The two `gamma=0.99` seeds also differ by 0.06, so with two seeds each we cannot
+  say that it is worse. We can say that it gave no gain.
+- **Both seeds end at the same training catch**, 0.17. Seed 1 stops rising at about 3e8 steps,
+  where `6fce56` was still rising at 5e8.
+- **The nets come close, and the last part fails.** A net comes under 2 m in 74–79 % of the
+  episodes and under 1 m in 35–45 %. Only about half of the episodes under 1 m end in a catch.
+  Gamma did not change this.
+- **The critic did not get better.** The explained variance is 0.57 in both, below 0.60–0.66.
+  The value loss cannot be compared, because the reward scale changes with gamma.
+- **A possible reason, not tested.** With `gae_lambda` 0.95, the advantage weighs about 18 steps
+  (0.18 s) at gamma 0.995 and 17 steps at gamma 0.99. So a longer horizon reaches the actor only
+  through the critic.
+- **The saved episodes can differ from the eval rows.** In `714794`, 3 of the 8 saved episodes
+  end at another step than the same episode in `episodes.npz`. Eval flies them in a second run
+  with the same keys. We think that rounding causes this, but we did not test it.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. Other options: `gamma=0.995`, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.49 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. 10 times the steps (2026-11-04) left the catch at 0.18–0.26: it goes flat by 1e9–2.5e9 steps, the std falls to 0.006, and the lr reaches its floor. The pursuers catch a `hover` no more often than a moving evader. `gamma=0.995` (2026-11-04) gave no gain: the catch is 0.16–0.18. Other options: start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.51 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |
