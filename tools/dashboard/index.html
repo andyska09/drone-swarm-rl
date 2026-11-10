@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training curves</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+<style>
+  :root { color-scheme: light dark; --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b;
+          --muted: #898781; --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.1);
+          --line1: #2a78d6; --line2: #eb6834; }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --grid: #2c2c2a; --axis: #383835;
+            --border: rgba(255, 255, 255, 0.1); --line1: #3987e5; --line2: #d95926; }
+  }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center;
+           gap: 8px 24px; padding: 12px 16px; background: var(--surface);
+           border-bottom: 1px solid var(--border); }
+  select { font: inherit; padding: 4px; max-width: 100%; }
+  main { padding: 0 16px 48px; transition: opacity 0.2s; }
+  h2 { margin: 24px 0 0; font-size: 15px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px;
+          margin-top: 12px; }
+  .card { min-width: 0; padding: 8px; background: var(--surface); border: 1px solid var(--border);
+          border-radius: 8px; }
+  .top { display: flex; justify-content: space-between; gap: 8px; padding: 0 4px 4px; }
+  .read { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .key { display: inline-block; width: 12px; height: 2px; margin: 0 4px 0 12px; border-radius: 1px;
+         vertical-align: middle; }
+  .key:first-child { margin-left: 0; }
+  .muted { color: var(--muted); }
+  .u-hz .u-cursor-x { border-right: 1px solid var(--muted); }
+  .u-select { background: color-mix(in srgb, var(--muted) 20%, transparent); }
+</style>
+</head>
+<body>
+<header>
+  <select id="run"></select>
+  <span id="legend"></span>
+  <span id="at" class="muted"></span>
+</header>
+<main id="out"></main>
+<script>
+// One plot per column of runs/<run>/metrics.csv, against steps. A column that names a role, as
+// return_p and evader_return do, goes under that role. A pool run has one line for each side that
+// learns, by its training column.
+const NOT_PLOTTED = ["update", "steps", "training"];
+const HEIGHT = 180;
+const menu = document.getElementById("run");
+const out = document.getElementById("out");
+const at = document.getElementById("at");
+let charts = [];
+
+const color = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+const SI = [[1e9, "B"], [1e6, "M"], [1e3, "K"]];
+function compact(v) {
+  const [base, unit] = SI.find(([b]) => Math.abs(v) >= b) ?? [1, ""];
+  return +(v / base).toPrecision(3) + unit;
+}
+
+const value = v => v == null ? "–" : Math.abs(v) >= 1e4 ? compact(v) : String(+v.toPrecision(4));
+
+// All ticks of one axis share a style: compact once the axis reaches 10,000.
+function ticks(u, splits) {
+  const big = Math.max(...splits.map(Math.abs)) >= 1e4;
+  return splits.map(v => big ? compact(v) : String(+v.toPrecision(6)));
+}
+
+// The y axis is as wide as its longest tick label.
+function axisWidth(u, labels, i, cycle) {
+  const axis = u.axes[i];
+  if (cycle > 1) return axis._size;
+  u.ctx.font = axis.font[0];
+  const longest = Math.max(0, ...(labels ?? []).map(t => u.ctx.measureText(t).width));
+  return Math.ceil(axis.ticks.size + axis.gap + longest / devicePixelRatio);
+}
+
+// uPlot puts a line of zeros on a 0 to 100 axis.
+function yRange(u, min, max) {
+  if (min === 0 && max === 0) return [0, 1];
+  return min == null ? [null, null] : uPlot.rangeNum(min, max, 0.1, true);
+}
+
+function parse(text) {
+  const [head, ...lines] = text.trim().split(/\r?\n/);
+  const names = head.split(",");
+  // The row that train.py is writing right now can be cut short.
+  const rows = lines.map(line => line.split(",")).filter(cells => cells.length === names.length);
+  return { names, rows };
+}
+
+// xs holds each step count once: a pool run logs one row per side at the same steps.
+function curves({ names, rows }) {
+  const col = Object.fromEntries(names.map((name, i) => [name, i]));
+  const steps = rows.map(r => +r[col.steps]);
+  const xs = [...new Set(steps)];
+  const index = new Map(xs.map((x, i) => [x, i]));
+  const side = rows.map(r => col.training === undefined ? "" : r[col.training]);
+  const sides = [...new Set(side)].sort();
+  const lines = {};
+  for (const name of names.filter(n => !NOT_PLOTTED.includes(n))) {
+    lines[name] = sides.map(() => new Array(xs.length).fill(null));
+    rows.forEach((r, k) => {
+      const v = parseFloat(r[col[name]]);
+      if (Number.isFinite(v)) lines[name][sides.indexOf(side[k])][index.get(steps[k])] = v;
+    });
+  }
+  return { xs, sides, lines };
+}
+
+function roleOf(name, roles) {
+  const words = name.split("_");
+  return roles.find(r => words.includes(r) || words.includes(r[0])) ?? "";
+}
+
+function key(s) {
+  const span = document.createElement("span");
+  span.className = "key";
+  span.style.background = color(`--line${s + 1}`);
+  return span;
+}
+
+function chart(grid, name, xs, ys, sides) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = '<div class="top"><span></span><span class="read"></span></div>';
+  card.querySelector("span").textContent = name;
+  grid.append(card);
+
+  const read = card.querySelector(".read");
+  const texts = ys.map((_, s) => {
+    if (sides.length > 1) read.append(key(s));
+    return read.appendChild(document.createElement("span"));
+  });
+  // The readout shows the values under the cursor, or the newest ones.
+  const point = i => {
+    ys.forEach((y, s) => { texts[s].textContent = value(y[i]); });
+    at.textContent = `at ${compact(xs[i])} steps`;
+  };
+
+  const axis = {
+    stroke: color("--muted"),
+    font: "11px system-ui, sans-serif",
+    grid: { stroke: color("--grid"), width: 1 },
+    ticks: { stroke: color("--axis"), width: 1, size: 4 },
+    values: ticks,
+  };
+  const u = new uPlot({
+    width: card.clientWidth - 16,
+    height: HEIGHT,
+    legend: { show: false },
+    cursor: { sync: { key: "curves" }, y: false },
+    scales: { x: { time: false }, y: { range: yRange } },
+    axes: [{ ...axis, size: 30 }, { ...axis, size: axisWidth }],
+    series: [{}, ...ys.map((_, s) => ({ stroke: color(`--line${s + 1}`), width: 2 }))],
+    hooks: { setCursor: [u => point(u.cursor.idx ?? xs.length - 1)] },
+  }, [xs, ...ys], card);
+  point(xs.length - 1);
+  return u;
+}
+
+function legend(sides) {
+  const box = document.getElementById("legend");
+  box.replaceChildren();
+  if (sides.length > 1) sides.forEach((side, s) => box.append(key(s), `${side} learns`));
+}
+
+async function load(run, roles) {
+  history.replaceState(null, "", "?" + new URLSearchParams({ run }));
+  out.style.opacity = 0.5;
+  const text = await (await fetch(`/runs/${run}/metrics.csv`, { cache: "no-cache" })).text();
+  if (menu.value !== run) return;  // a newer pick is on its way
+  const { xs, sides, lines } = curves(parse(text));
+  charts.forEach(c => c.destroy());
+  charts = [];
+  out.replaceChildren();
+  out.style.opacity = 1;
+  legend(sides);
+  if (!xs.length) return out.append("No rows yet.");
+
+  const names = Object.keys(lines);
+  const empty = names.filter(n => lines[n].flat().every(v => v === null));
+  for (const role of ["", ...roles]) {
+    const group = names.filter(n => !empty.includes(n) && roleOf(n, roles) === role);
+    if (!group.length) continue;
+    if (role) out.append(Object.assign(document.createElement("h2"), { textContent: role }));
+    const grid = Object.assign(document.createElement("div"), { className: "grid" });
+    out.append(grid);
+    for (const name of group) charts.push(chart(grid, name, xs, lines[name], sides));
+  }
+  if (empty.length) {
+    const note = Object.assign(document.createElement("p"), { className: "muted" });
+    note.textContent = "No values: " + empty.join(", ");
+    out.append(note);
+  }
+}
+
+async function main() {
+  const list = await (await fetch("/runs.json")).json();
+  if (!list.length) return out.append("No run under runs/ has a metrics.csv.");
+  const roles = new Map(list.map(r => [r.name, [...new Set(r.roles)]]));
+  for (const { name } of list) menu.add(new Option(name, name));
+  const asked = new URLSearchParams(location.search).get("run");
+  if (roles.has(asked)) menu.value = asked;
+  menu.onchange = () => load(menu.value, roles.get(menu.value));
+  addEventListener("resize", () => {
+    for (const c of charts) c.setSize({ width: c.root.parentNode.clientWidth - 16, height: HEIGHT });
+  });
+  load(menu.value, roles.get(menu.value));
+}
+
+main();
+</script>
+</body>
+</html>

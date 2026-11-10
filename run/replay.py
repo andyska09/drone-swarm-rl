@@ -1,4 +1,5 @@
-"""Browse every eval in the viewer, and any two specs side by side: python run/replay.py"""
+"""Browse every eval in the viewer, any two specs side by side, and the training curves of any
+run: python run/replay.py"""
 
 import argparse
 import functools
@@ -33,6 +34,24 @@ def evals():
     return out
 
 
+def runs():
+    """Newest first: every run under runs/ with a metrics.csv, and its roles. The roles come
+    from here because config.json can hold Infinity, which the browser's JSON cannot read."""
+
+    found = sorted(
+        ROOT.glob("runs/*/metrics.csv"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return [
+        {
+            "name": metrics.parent.name,
+            "roles": json.loads((metrics.parent / "config.json").read_text())["env"]["roles"],
+        }
+        for metrics in found
+    ]
+
+
 def specs():
     """Every task spec, then every paper spec."""
 
@@ -48,7 +67,7 @@ def specs():
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        lists = {"/evals.json": evals, "/specs.json": specs}
+        lists = {"/evals.json": evals, "/specs.json": specs, "/runs.json": runs}
         if self.path not in lists:
             return super().do_GET()
         body = json.dumps(lists[self.path]()).encode()
@@ -75,6 +94,7 @@ def main():
     print(f"{len(found)} evals, newest {found[0]['path']}")
     print(f"{url}   (ctrl-c to stop)")
     print(f"specs side by side: http://localhost:{args.port}/tools/specs/index.html")
+    print(f"training curves: http://localhost:{args.port}/tools/dashboard/index.html")
     webbrowser.open(url)
 
     server = http.server.ThreadingHTTPServer(
