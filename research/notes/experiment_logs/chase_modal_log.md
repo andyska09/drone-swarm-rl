@@ -7,10 +7,11 @@ what it was, what it scored, and why the setup is as it is. The presets are in
 
 ## Facts
 
-- The number to beat in 3v1: eval `caught_e` 0.183 and 0.242 (`2d0b98`, `6fce56`; base `paths_3v1`, `gamma=0.99`, `normalize_obs=false`, 5e8 steps). FRPN catches 0.51. 2026-11-04 ([§](#long-runs-with-a-critic-input-for-each-drone-2026-11-04))
+- The number to beat in 3v1: eval `caught_e` 0.183 and 0.242 (`2d0b98`, `6fce56`; base `paths_3v1`, `gamma=0.99`, `normalize_obs=false`, `coll_pp` cost 30, 5e8 steps). FRPN catches 0.51. 2026-11-04 ([§](#long-runs-with-a-critic-input-for-each-drone-2026-11-04))
 - The critic input for each drone lifted eval `caught_e` from 0.01–0.04 to 0.10–0.11 with input scaling and 0.18–0.24 without; the std no longer blows up (0.03–0.10). 2026-11-04 ([§](#runs-with-a-critic-input-for-each-drone-2026-11-04))
 - 10 times the steps did not lift the catch (5e9 steps: 0.184 and 0.265). It goes flat early, so 5e8 steps are enough for a test. 2026-11-04 ([§](#long-runs-with-a-critic-input-for-each-drone-2026-11-04))
 - `gamma=0.995` gave no gain: eval `caught_e` 0.157 and 0.176, against 0.183 and 0.242 at `gamma=0.99`. 2026-11-04 ([§](#runs-with-gamma0995-2026-11-04))
+- A `coll_pp` cost of 10 did not lift the catch: eval `caught_e` 0.250 and 0.166, against 0.183 and 0.242 at 30. Eval `coll_pp` rose to 0.18 and 0.47. 2026-11-10 ([§](#runs-with-a-coll_pp-cost-of-10-2026-11-10))
 - No `ent_coef` holds the std (two values): at 0.001 it falls to 0.03–0.05; at 0.003 it blew up to 124–18010 and eval `caught_e` fell to 0.006–0.027. 2026-11-05 ([§](#runs-with-ent_coef0003-2026-11-05))
 - The std falls as about c / update, and the lr follows it (lr / std 1.1–1.7e-3) down to its floor, so the policy stops moving. 2026-11-05 ([§](#the-std-and-the-lr-over-training))
 - The frozen policy is not at a top: a β = 0.25 blend toward FRPN in all three lifts its score, −4.33 to −4.02 and −4.35 to −4.22. 2026-11-05 ([§](#flying-on-from-the-frozen-states))
@@ -784,11 +785,73 @@ The mean std and the training catch over training:
   `--set init_std=0.3`. In the FRPN test, a σ of 0.3 cost little (catch 0.49 to 0.47), and 1 cost
   a lot (0.19).
 
+## Runs with a `coll_pp` cost of 10, 2026-11-10
+
+2 runs on MetaCentrum, commit `c8d89d5`: base `paths_3v1`, seeds 0 and 1, tanh,
+`--set gamma=0.99 --set normalize_obs=false`, 5e8 steps. A `coll_pp` costs 10, not 30 (commit
+`9f50d40`). Only the cost differs from `2d0b98` and `6fce56`: the rest of the `swarm/` diff from
+`2d15eb5` moves code into helpers. Eval: 1024 episodes, mean actions, the last checkpoint, on
+`3642bd8`, which has the same `swarm/` as `c8d89d5`. Training is the mean of the last 100
+updates. The std is its final value for each action.
+
+- **Why.** In Flying on from the frozen states, all three pursuers on FRPN score −3.05 and −3.35
+  at a cost of 10, above the learned −4.27 and −4.33. At 30 they score below the learned policy.
+
+| run | cost | seed | `caught_e` eval | `coll_pp` | `crash_p` | `OOB_p` | `time_limit` | time to catch | `distance` | `caught_e` training | std | explained variance |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `2d0b98` | 30 | 0 | 0.183 | 0.097 | 0.009 | 0.015 | 0.70 | 6.1 s | 5.2 m | 0.173 | 0.04–0.05 | 0.60 |
+| `a573b5` | 10 | 0 | 0.250 | 0.176 | 0.017 | 0.034 | 0.52 | 6.1 s | 5.0 m | 0.238 | 0.02–0.03 | 0.68 |
+| `6fce56` | 30 | 1 | 0.242 | 0.032 | 0.011 | 0.001 | 0.71 | 6.0 s | 4.5 m | 0.233 | 0.03 | 0.66 |
+| `052a62` | 10 | 1 | 0.166 | 0.468 | 0.011 | 0.012 | 0.34 | 5.5 s | 5.6 m | 0.180 | 0.03–0.04 | 0.58 |
+
+Training over the updates, the mean of each range:
+
+| updates | 1–100 | 101–200 | 201–500 | 501–1000 | 1001–1907 |
+|---|---|---|---|---|---|
+| `caught_e`, `2d0b98` (30) | 0.04 | 0.07 | 0.10 | 0.13 | 0.17 |
+| `caught_e`, `a573b5` (10) | 0.06 | 0.16 | 0.21 | 0.24 | 0.23 |
+| `caught_e`, `6fce56` (30) | 0.04 | 0.09 | 0.16 | 0.18 | 0.22 |
+| `caught_e`, `052a62` (10) | 0.05 | 0.14 | 0.17 | 0.18 | 0.18 |
+| `coll_pp`, `2d0b98` (30) | 0.18 | 0.07 | 0.06 | 0.06 | 0.09 |
+| `coll_pp`, `a573b5` (10) | 0.27 | 0.42 | 0.33 | 0.18 | 0.15 |
+| `coll_pp`, `6fce56` (30) | 0.15 | 0.05 | 0.03 | 0.03 | 0.04 |
+| `coll_pp`, `052a62` (10) | 0.28 | 0.37 | 0.49 | 0.47 | 0.49 |
+
+- **The catch did not rise.** The mean eval `caught_e` is 0.208 at a cost of 10 and 0.212 at 30.
+  Seed 0 rose by 0.067 and seed 1 fell by 0.076. The noise on one `caught_e` is about ±0.013.
+- **The hits rose.** Eval `coll_pp` is 0.176 and 0.468, against 0.097 and 0.032.
+- **The hits took the place of `time_limit`.** It fell from 0.70–0.71 to 0.34–0.52. `crash_p` and
+  `OOB_p` stay at 0.001–0.034.
+- **At 30, the pursuers first learn to stay apart. At 10 they do not.** In updates 101–200,
+  `coll_pp` is 0.05–0.07 at 30 and 0.37–0.42 at 10.
+- **At 10, the catch rises faster, then goes flat at the same level.** In updates 101–200 the
+  training catch is 0.14–0.16 at 10 and 0.07–0.09 at 30. In updates 1001–1907 it is 0.18–0.23 at
+  10 and 0.17–0.22 at 30.
+- **The std falls as at 30.** It ends at 0.02–0.04, against 0.03–0.05.
+- **Decision, with the user:** the `coll_pp` cost stays at 10, and the pursuer gets a new
+  reward ([The progress reward](#the-progress-reward-2026-11-10), below).
+
+## The progress reward, 2026-11-10
+
+- **The pursuer earns progress in place of the clock and the distance cost.** It earns 0.25
+  for each metre that its own net closes on the evader. The user picked the shape and the
+  weight. Sánchez Roncero pays the same 0.25 per metre, and Němeček 0.5.
+- **Why.** At γ = 0.99, the rest of the episode was worth about −5 to a pursuer that lives on
+  ([The coll_pp cost](#the-coll_pp-cost-2026-10-28)), so a death also ended its costs. With
+  progress, a pursuer that lives on can still earn. Geles et al. 2026 pay a racer the same
+  way: 1 for each metre it closes on the next gate, and no clock.
+- **Each pursuer's own net, not the team's.** The user picked it.
+- **A catch now pays 30, not 10.** The user picked it. The evader pays the same 30.
+- **The rest stays:** `coll_pp` 10, fail 30, `coll_pe` 10 per s, cmd 0.02 per rad/s. The
+  evader keeps its clock.
+- **The catch was already shared.** One catch pays every pursuer the same, so it is the
+  captor and helper reward of de Souza et al. 2021 with captor = helper.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. 10 times the steps (2026-11-04) left the catch at 0.18–0.26: it goes flat by 2.5e8–8e8 steps, the std falls to 0.006, and the lr reaches its floor. The pursuers catch a `hover` no more often than a moving evader. `gamma=0.995` (2026-11-04) gave no gain: the catch is 0.16–0.18. The freeze checks (2026-11-05): the frozen policy is not at a top, because small steps toward FRPN raise its score at γ = 0.99. The std falls as about c / update and the lr follows it, so the policy stops moving. `ent_coef=0.003` (2026-11-05) blew the std up. Proposed next: hold the std at 0.3. Other options: start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.51 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. 10 times the steps (2026-11-04) left the catch at 0.18–0.26: it goes flat by 2.5e8–8e8 steps, the std falls to 0.006, and the lr reaches its floor. The pursuers catch a `hover` no more often than a moving evader. `gamma=0.995` (2026-11-04) gave no gain: the catch is 0.16–0.18. The freeze checks (2026-11-05): the frozen policy is not at a top, because small steps toward FRPN raise its score at γ = 0.99. The std falls as about c / update and the lr follows it, so the policy stops moving. `ent_coef=0.003` (2026-11-05) blew the std up. A `coll_pp` cost of 10 (2026-11-10) left the catch at 0.17–0.25, and the hits rose. Next: the progress reward (2026-11-10). Other options: hold the std at 0.3, start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.51 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |

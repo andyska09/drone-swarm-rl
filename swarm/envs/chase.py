@@ -15,13 +15,15 @@ PATHS = ("hover", "circle", "figure8")
 
 @flax.struct.dataclass
 class RewardConfig:
-    """distance, step, cmd, coll_pe and outside are per second: the reward multiplies them by
-    policy_dt. catch, coll_pp and fail are paid once."""
+    """step, cmd, coll_pe and outside are per second: the reward multiplies them by
+    policy_dt. progress is per metre. catch, coll_pp and fail are paid once."""
 
-    distance: float = 0.1
+    # Each pursuer earns it for each metre that its own net closes on the evader.
+    progress: float = 0.25
+    # The evader earns it while it flies.
     step: float = 4.0
     cmd: float = 0.02
-    catch: float = 10.0
+    catch: float = 30.0
     coll_pe: float = 10.0
     coll_pp: float = 10.0
     fail: float = 30.0
@@ -78,6 +80,13 @@ def net_centre(drone, params):
 
     pursuers, _ = _sides(params)
     return drone.x[pursuers] - _drop(params) * drone.R[pursuers, :, 2]
+
+
+def net_gap(drone, params):
+    """(P,): the distance from the evader to each pursuer's net centre."""
+
+    _, evader = _sides(params)
+    return core.norm(drone.x[evader] - net_centre(drone, params))
 
 
 def net_frame(drone, params):
@@ -174,25 +183,28 @@ def scenery(state, params):
     return {"net": jnp.zeros((params.n_drones, 2)).at[pursuers].set(net)}
 
 
-def compute_reward(state, rate_ref, alive, fail, collide, caught, params):
-    cfg, d = params.reward, state.drone
+def compute_reward(before, d, rate_ref, alive, fail, collide, caught, params):
+    """`before` and `d` are the drones at the start and at the end of the step."""
+
+    cfg = params.reward
     pursuers, evader = _sides(params)
-    distance = core.norm(d.x[evader] - net_centre(d, params))
+    closed = net_gap(before, params) - net_gap(d, params)
+    progress = jnp.zeros(params.n_drones).at[pursuers].set(cfg.progress * closed)
 
     # A pursuer-evader collision costs both sides the same.
     hit = coll_pe(d, params)
     both = jnp.zeros(params.n_drones).at[pursuers].set(hit).at[evader].set(jnp.any(hit))
 
-    # The pursuers pay the clock and the evader earns it.
-    clock = jnp.full(params.n_drones, -cfg.step).at[evader].set(cfg.step)
-    clock = clock.at[pursuers].add(-cfg.distance * distance) - cfg.coll_pe * both
+    clock = jnp.zeros(params.n_drones).at[evader].set(cfg.step) - cfg.coll_pe * both
     clock = clock.at[evader].add(-cfg.outside * core.out_of_arena(d, params)[evader])
     # One catch pays every pursuer and bills the evader once.
     catch = jnp.full(params.n_drones, cfg.catch).at[evader].set(-cfg.catch)
 
     return (
         jnp.where(
-            alive, params.policy_dt * (clock - cfg.cmd * core.norm(rate_ref)), 0.0
+            alive,
+            params.policy_dt * (clock - cfg.cmd * core.norm(rate_ref)) + progress,
+            0.0,
         )
         + catch * caught
         - cfg.coll_pp * collide
@@ -259,7 +271,7 @@ def step(key, state, action, params):
     )
 
     reward = compute_reward(
-        new_state, rate_ref, state.alive, fail, collide, caught, params
+        state.drone, drone, rate_ref, state.alive, fail, collide, caught, params
     )
     done = caught | ~jnp.all(alive)
 
@@ -293,7 +305,7 @@ def step(key, state, action, params):
         },
         "step": {
             # The nearest pursuer's net to the evader, averaged over the chase.
-            "distance": jnp.min(core.norm(drone.x[evader] - net_centre(drone, params))),
+            "distance": jnp.min(net_gap(drone, params)),
             "coll_pe": jnp.any(coll_pe(drone, params)),
         },
     }

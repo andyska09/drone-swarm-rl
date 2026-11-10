@@ -85,22 +85,24 @@ Default.
 
 $$
 \begin{aligned}
-r_p ={}& \Delta t \left( -\lambda_{\text{step}} - \lambda_{\text{dist}} \lVert p_e - c_p \rVert - \lambda_{\text{PE}}\, [\text{coll\_pe}_p] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_p \rVert \right) + \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{PP}}\, [\text{coll\_pp}_p] - \lambda_{\text{fail}}\, [\text{fail}_p] \\
+r_p ={}& \lambda_{\text{prog}} \left( g_{p,t-1} - g_{p,t} \right) + \Delta t \left( - \lambda_{\text{PE}}\, [\text{coll\_pe}_p] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_p \rVert \right) + \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{PP}}\, [\text{coll\_pp}_p] - \lambda_{\text{fail}}\, [\text{fail}_p] \\
 r_e ={}& \Delta t \left( \lambda_{\text{step}} - \lambda_{\text{PE}}\, [\text{coll\_pe}_p \text{ for some } p] - \lambda_{\text{out}}\, [\text{outside}] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_e \rVert \right) - \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{fail}}\, [\text{fail}_e]
 \end{aligned}
 $$
 
 - One capture pays $\lambda_{\text{catch}}$ to every pursuer. The evader pays it once.
-- Each pursuer pays the distance from the evader to the centre of its own net.
+- $g_p = \lVert p_e - c_p \rVert$ is the distance from the evader to the centre of the
+  net of pursuer $p$, and $g_{p,t}$ is its value at the end of step $t$. So each pursuer
+  earns $\lambda_{\text{prog}}$ for each metre that its own net closes on the evader.
 
 | symbol | value |
 |---|---|
 | $\lambda_{\text{step}}$ | 4.0 |
-| $\lambda_{\text{dist}}$ | 0.1 per m |
+| $\lambda_{\text{prog}}$ | 0.25 per m |
 | $\lambda_{\text{PE}}$ | 10.0 |
 | $\lambda_{\text{cmd}}$ | 0.02 per rad/s |
 | $\lambda_{\text{out}}$ | 0, or 57.0 (see Presets) |
-| $\lambda_{\text{catch}}$ | 10.0 |
+| $\lambda_{\text{catch}}$ | 30.0 |
 | $\lambda_{\text{PP}}$ | 10.0 |
 | $\lambda_{\text{fail}}$ | 30.0 |
 
