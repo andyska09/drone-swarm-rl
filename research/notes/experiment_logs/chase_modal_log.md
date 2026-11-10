@@ -605,11 +605,177 @@ those of Long runs. "Closest net" is the nearest any net comes to the evader in 
   end at another step than the same episode in `episodes.npz`. Eval flies them in a second run
   with the same keys. We think that rounding causes this, but we did not test it.
 
+## Why the learning freezes, 2026-11-05
+
+Checks on the runs above, with no training. The 5e9 runs flew on a copy of their own commit,
+`2d15eb5`. The scripts are in `scratch/freeze/` (gitignored).
+
+### The std and the lr over training
+
+Each cell is the mean of the updates within 10 of the column. The std is
+$\exp(\text{entropy\_p}/4 - 1.4189)$. `b4511f` is `1v1` seed 0 of 2026-10-28, which has 762
+updates.
+
+| update | 100 | 190 | 400 | 762 | 1000 | 3000 | 10000 | 19000 |
+|---|---|---|---|---|---|---|---|---|
+| std, `76ea05` | 1.01 | 0.92 | 0.42 | 0.14 | 0.10 | 0.029 | 0.008 | 0.006 |
+| std, `4e80e4` | 0.97 | 0.81 | 0.31 | 0.11 | 0.070 | 0.016 | 0.006 | 0.006 |
+| std, `b4511f` | 0.79 | 0.58 | 0.33 | 0.18 | — | — | — | — |
+| `caught_e`, `76ea05` | 0.05 | 0.08 | 0.17 | 0.11 | 0.11 | 0.16 | 0.17 | 0.18 |
+| `caught_e`, `4e80e4` | 0.05 | 0.13 | 0.20 | 0.25 | 0.25 | 0.25 | 0.26 | 0.26 |
+| `caught_e`, `b4511f` | 0.14 | 0.20 | 0.79 | 0.96 | — | — | — | — |
+
+- **The lr follows the std.** In the four 3v1 runs with the critic input for each drone, lr / std
+  stays at 1.1–1.7e-3 from update 190 until the lr reaches its floor. In 1v1 it is 1.4–2.7e-3.
+  Adam moves each weight by about the lr, whatever the size of the gradient. The KL measures the
+  move of the mean in units of the std. So the KL rule holds the lr at a fixed share of the std.
+- **The critic slows down with the actor.** Both are in one optimizer, with one lr.
+- **The std falls as about c / update**, with c about 50–100, from update 1000 until the lr
+  reaches its floor.
+- **1v1 has a similar curve, but it learned in time.** Its catch rose from 0.16–0.23 to 0.87–0.94
+  between updates 190 and 600, while its std fell from about 0.6 to 0.25.
+- **In seed 1 the catch goes flat earlier than Long runs says.** `4e80e4` has 93 % of its final
+  training catch at 2.5e8 steps. `76ea05` has 64 % there, and 89 % at update 3000.
+
+### What the frozen pursuers do
+
+The last checkpoint of each 5e9 run, 1024 eval episodes, mean actions.
+
+- **They fly in a formation behind the evader.** After 6 s, the median net distances, nearest
+  first, are 2.6–3.0, 4.2–4.6 and 5.7–6.3 m. From 5 s on, the nearest pursuer closes in at
+  0.25 m/s or less. The two closest pursuers stay a median 4.1–4.8 m apart.
+- **The nearest does not go in when the others are far.** From 4 to 9 s, with the second net
+  7–10 m away, the nearest net stays a median 3.6 m (`4e80e4`) and 4.3 m (`76ea05`) away. With
+  the second net 3–4 m away, it stays 2.6 m away.
+
+### Flying on from the frozen states
+
+From the same eval episodes, the pursuers flew on from 4 s in other ways. The flight before 4 s
+is the same in every way, because the keys are the same and the flight is deterministic. Only
+the episodes in which every drone flies and the nearest net is 2–6 m away count: 779 of 1024 in
+`4e80e4` and 773 in `76ea05`.
+
+- "Nearest" is the pursuer whose net is nearest at 4 s. The other two fly the learned policy.
+- The blend is action = (1 − β) × learned + β × FRPN. β = 0 is the learned policy.
+- The score is the discounted return from 4 s, the mean of the three pursuers, at γ = 0.99. At
+  an end that is no catch, each pursuer that still flies gets
+  $-\Delta t\,(4 + 0.1\,d)/(1 - \gamma)$, the value of holding at its last net distance $d$.
+- Catch and `coll_pp` are the outcomes of the rest of the episode.
+
+Each cell is `4e80e4`, then `76ea05`:
+
+| β | nearest only: score | nearest only: catch | all three: score | all three: catch | all three: `coll_pp` |
+|---|---|---|---|---|---|
+| 0 (learned) | −4.33, −4.35 | 0.21, 0.13 | −4.33, −4.35 | 0.21, 0.13 | 0.04, 0.03 |
+| 0.10 | −4.25, −4.30 | 0.24, 0.16 | −4.22, −4.29 | 0.27, 0.20 | 0.03, 0.04 |
+| 0.25 | −4.13, −4.24 | 0.33, 0.19 | −4.02, −4.22 | 0.41, 0.29 | 0.10, 0.10 |
+| 0.50 | −3.57, −3.96 | 0.62, 0.36 | −3.97, −4.25 | 0.56, 0.40 | 0.40, 0.41 |
+| 0.75 | −2.70, −2.97 | 0.80, 0.70 | −5.16, −5.27 | 0.45, 0.41 | 0.53, 0.59 |
+| 1 (FRPN) | −2.32, −2.15 | 0.84, 0.81 | −5.63, −6.36 | 0.44, 0.38 | 0.53, 0.60 |
+
+The score of all three at β = 1, at other settings, from the same flights:
+
+| setting | learned | all three on FRPN |
+|---|---|---|
+| γ = 0.99, `coll_pp` cost 30 | −4.33, −4.35 | −5.63, −6.36 |
+| γ = 0.99, `coll_pp` cost 10 | −4.27, −4.33 | −3.05, −3.35 |
+| γ = 0.995, `coll_pp` cost 30 | −8.22, −8.45 | −8.69, −9.92 |
+| γ = 0.998, `coll_pp` cost 30 | −19.00, −20.23 | −13.16, −15.02 |
+
+- **The frozen policy is not at a top.** A small step toward FRPN raises the score, for the
+  nearest only and for all three. The gain is inside the noise at β = 0.05, about 2.4 standard
+  errors at 0.10, and clear at 0.25.
+- **The score of the nearest rises up to β = 1.** Its catch rises from 0.21 to 0.84 and from 0.13
+  to 0.81.
+- **All three have a limit.** Their score is highest at β = 0.25–0.5 and falls after it.
+  `coll_pp` jumps from 0.10 to 0.40 between β = 0.25 and 0.50. At β = 1 the score is below the
+  learned one. So past this limit, the pursuers need the rule "go in only if I am the nearest".
+- **A `coll_pp` cost of 10, or γ = 0.998, removes the fall at β = 1.** γ = 0.995 does not.
+- **Limits.** One start time, one direction, mean actions, and the estimated value for the
+  pursuers that still fly.
+
+### Why the std falls
+
+`6fce56` was restored from its `latest.pkl`, at update 1907 and a std of 0.03, with its
+optimizer state. It then ran 4 updates on a copy of the code that saves the gradient of
+`log_std` at each minibatch. Nothing was written into the run.
+
+| epoch | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| gradient of the loss on `log_std` | −0.00089 | +0.00050 | +0.00099 | +0.00140 |
+
+- A positive gradient lowers the std. Each cell is the mean over the 4 actions and the 4 updates,
+  and its standard error is at most 0.00028.
+- **On new samples, the reward gives almost no pull on the std.** The entropy weight alone gives
+  −0.001, and epoch 1 gives −0.00089.
+- **The pull down comes in epochs 2–4**, which use the same samples again. Without the entropy
+  weight, the mean over the 4 epochs is about +0.0015. This test cannot tell if the cause is the
+  fit to the noise of the batch, or the clip.
+- **The gradient shows no shared direction.** The odd and the even minibatches gave actor
+  gradients with a cosine of −0.26 in epoch 1 and −0.65 in epochs 2–4. A negative cosine means
+  that the steps undo each other. We guess that the clip pulls the policy back, but we did not
+  test it.
+- **Limits.** One run, 4 updates, one std.
+
+### What this means
+
+- **The policy stops moving while its score can still rise.** The std and the lr fall together,
+  and the critic's lr falls with them. A model, not measured: the signal in the gradient scales
+  with the std, and the step with the lr, so the progress per update scales with 1 / update². By
+  this model, updates 1000–19000 add about as much as updates 500–1000. So more steps cannot help.
+- **The `gamma=0.995` runs fit this.** Their std fell to 0.02–0.05, with lr / std at 1.1–1.6e-3.
+- **A second limit sits higher up.** A shared step past β = 0.25–0.5 meets `coll_pp`.
+- **This goes against a decision.** [design_choices.md](../design_choices.md) says that PPO
+  shrinks the std once precision pays. At a std of 0.03, the reward gives no such pull.
+
+## Runs with `ent_coef=0.003`, 2026-11-05
+
+2 runs on MetaCentrum, commit `11324cb`: base `paths_3v1`, seeds 0 and 1, tanh,
+`--set gamma=0.99 --set normalize_obs=false --set ent_coef=0.003`, 5e8 steps. Only `ent_coef`
+differs from `2d0b98` and `6fce56`. Eval: 1024 episodes, mean actions, the last checkpoint, on
+`d05c85d`, which differs from `11324cb` only in `random_goals.py`. Training is the mean of the
+last 100 updates. The std is its final value for each action.
+
+- **Why.** In Why the learning freezes, the pull down on the std is about 0.0015, and the entropy
+  weight of 0.001 is smaller. A weight of 0.003 was to hold the std up, so that the policy keeps
+  moving.
+
+| run | `ent_coef` | seed | `caught_e` eval | `coll_pp` | `crash_p` | `OOB_p` | `time_limit` | time to catch | `distance` | `caught_e` training | std | explained variance |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `2d0b98` | 0.001 | 0 | 0.183 | 0.097 | 0.009 | 0.015 | 0.70 | 6.1 s | 5.2 m | 0.173 | 0.04–0.05 | 0.60 |
+| `2cda6a` | 0.003 | 0 | 0.006 | 0.282 | 0.479 | 0.000 | 0.23 | 2.1 s | 9.0 m | 0.040 | 328–18010 | 0.64 |
+| `6fce56` | 0.001 | 1 | 0.242 | 0.032 | 0.011 | 0.001 | 0.71 | 6.0 s | 4.5 m | 0.233 | 0.03 | 0.66 |
+| `503bac` | 0.003 | 1 | 0.027 | 0.228 | 0.281 | 0.005 | 0.46 | 4.1 s | 8.0 m | 0.047 | 124–679 | 0.62 |
+
+The mean std and the training catch over training:
+
+| update | 100 | 190 | 400 | 600 | 1000 | 1500 | 1890 |
+|---|---|---|---|---|---|---|---|
+| std, `2cda6a` | 1.35 | 1.78 | 3.2 | 5.9 | 31 | 213 | 1178 |
+| std, `503bac` | 1.38 | 1.96 | 3.0 | 3.3 | 5.2 | 41 | 198 |
+| `caught_e`, `2cda6a` | 0.05 | 0.06 | 0.09 | 0.14 | 0.05 | 0.05 | 0.03 |
+| `caught_e`, `503bac` | 0.05 | 0.07 | 0.11 | 0.21 | 0.14 | 0.04 | 0.05 |
+
+- **The std grew from the first updates, in both seeds, and blew up.** The adaptive lr rose to its
+  cap of 0.01 at about update 1000 and 1300.
+- **Up to update 600, the catch kept pace.** At a std of 3–6, the training catch was 0.14 and
+  0.21. The runs with 0.001 had 0.12–0.16 (seed 0) and 0.18–0.22 (seed 1) at the same update.
+  Then the catch fell to 0.04–0.05.
+- **The guess missed a known fact.** Past ±1, the clip hides the noise, so the reward does not
+  push a large std down (2026-11-01). In the FRPN test, more noise past σ = 1 even paid in 3v1.
+  The entropy weight is a constant push up, and the pull down looked constant too. So the std
+  either falls for ever (0.001) or grows for ever (0.003), and no `ent_coef` holds it. This rests
+  on two values.
+- **So this batch does not test the freeze.** The std never stayed at 0.1–0.5.
+- **Next, proposed, not yet picked:** hold the std at 0.3, with a `stop_gradient` on `log_std` and
+  `--set init_std=0.3`. In the FRPN test, a σ of 0.3 cost little (catch 0.49 to 0.47), and 1 cost
+  a lot (0.19).
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. 10 times the steps (2026-11-04) left the catch at 0.18–0.26: it goes flat by 1e9–2.5e9 steps, the std falls to 0.006, and the lr reaches its floor. The pursuers catch a `hover` no more often than a moving evader. `gamma=0.995` (2026-11-04) gave no gain: the catch is 0.16–0.18. Other options: start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.51 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. 10 times the steps (2026-11-04) left the catch at 0.18–0.26: it goes flat by 2.5e8–8e8 steps, the std falls to 0.006, and the lr reaches its floor. The pursuers catch a `hover` no more often than a moving evader. `gamma=0.995` (2026-11-04) gave no gain: the catch is 0.16–0.18. The freeze checks (2026-11-05): the frozen policy is not at a top, because small steps toward FRPN raise its score at γ = 0.99. The std falls as about c / update and the lr follows it, so the policy stops moving. `ent_coef=0.003` (2026-11-05) blew the std up. Proposed next: hold the std at 0.3. Other options: start from a trained 1v1 pursuer, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.51 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |

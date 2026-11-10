@@ -54,7 +54,7 @@ world frame, adds the distance to the opponent and the time, and scales every va
 
 Per-step terms, and one-off terms marked. Our weights are per second, and the code
 multiplies them by `policy_dt = 0.01`. Gavin's are per step at 100 Hz, so our chase
-weights equal his, except `coll_pp`. Roncero's and Němeček's are per step at 50 Hz. Sources for those
+weights equal his. Roncero's and Němeček's are per step at 50 Hz. Sources for those
 two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 
 | term | ours `chase` | ours `circle_swap` | quad-swarm | Gavin 1v1 | Gavin Nv1 | Roncero v3 | Němeček |
@@ -66,7 +66,7 @@ two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 | command | `cmd = 0.02·‖ω_cmd‖` | — | `effort = 0.05` | `λcmd = 2e-4·‖aω‖` | `λcmd = 2e-4·‖aω‖` | — | — |
 | command change | — | — | — | — | — | `κsm = 0.002`, on the change of the rate command | — |
 | near miss | — | `10.0·Σ max(1 − d/1.5, 0)` | `αrclose`, same shape, 10.0 | — | — | — | — |
-| contact | `coll_pp = 30.0` one-off, ends it; `coll_pe = 10.0`, soft | death, `25.0·N` one-off | elastic bounce, `1.0` | `λcoll = 0.1`, soft, no death | `λcollPP = 10.0`, `λcollPE = 0.1` | — | — |
+| contact | `coll_pp = 10.0` one-off, ends it; `coll_pe = 10.0`, soft | death, `25.0·N` one-off | elastic bounce, `1.0` | `λcoll = 0.1`, soft, no death | `λcollPP = 10.0`, `λcollPE = 0.1` | — | — |
 | upright | — | `−1.0·R₃₃` | `orient = 1.0·R₃₃` | — | — | — | — |
 | crash / out of bounds | `fail = 30.0` one-off | `25.0·N` one-off | `crash = 1.0` per step | `λfail = 30.0` | `λfail = 30.0` | `κb = 10.0`, to the one who left | the ground: `κg = 10.0` |
 | survival | `step = 4.0`: the evader earns it, the pursuer pays it | — | — | — | `λstep = 0.04`: the evader earns it, the pursuers pay it | `κs = 0.0025`, the evader earns it | `κs = 0.007`, the evader earns it |
@@ -200,7 +200,7 @@ Our per-step weights are Gavin's divided by `policy_dt`:
 | `coll_pe` | 10.0 | 0.1 | `λcollPE` |
 | `outside` | 0.0, and 57.0 in `open` and `nemecek` | 0.57 | none |
 | `catch` | 10.0 | not multiplied | `λcatch = 10.0` |
-| `coll_pp` | 30.0 | not multiplied | `λcollPP = 10.0` |
+| `coll_pp` | 10.0 | not multiplied | `λcollPP = 10.0` |
 | `fail` | 30.0 | not multiplied | `λfail = 30.0` |
 
 | term | ours | Gavin pursuer |
@@ -211,7 +211,7 @@ Our per-step weights are Gavin's divided by `policy_dt`:
 | velocity | none | none |
 | action difference | none | none |
 | `coll_pe` | 0.1 per step, both sides, soft | the same |
-| `coll_pp` | 30.0, ends it, **net counts too** | 10.0, ends it, bodies only |
+| `coll_pp` | 10.0, ends it, **net counts too** | 10.0, ends it, bodies only |
 | the evader near the bounds | none. In `open` and `nemecek`, `outside` beyond the box | `λbnd`, evader only, near the bounds |
 
 The episode ends:
