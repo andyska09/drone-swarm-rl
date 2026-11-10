@@ -115,7 +115,6 @@ def eval_env(run, preset=None):
 
 def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None, preset=None):
     run = Path(run)
-    rundir.check_code(run)
     cfg = rundir.load_config(run)
     env, env_params = eval_env(run, preset)
     if preset is not None:

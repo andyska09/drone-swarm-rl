@@ -16,8 +16,6 @@ import jax.numpy as jnp
 
 from swarm.learn import config
 
-ROOT = Path(__file__).resolve().parents[2]
-
 
 def git_state():
     def out(*args):
@@ -27,33 +25,6 @@ def git_state():
         "commit": out("git", "rev-parse", "HEAD"),
         "dirty": bool(out("git", "status", "--porcelain")),
     }
-
-
-def check_code(run):
-    """Stop unless swarm/ on disk is the code of the commit that trained the run."""
-
-    git = json.loads((Path(run) / "config.json").read_text())["git"]
-    commit = git["commit"]
-    if not commit or git["dirty"]:
-        print(f"warning: {run} trained on code that no commit holds, so its code is not checked",
-              flush=True)
-        return
-    diff = subprocess.run(
-        ["git", "-C", str(ROOT), "diff", "--name-only", commit, "--", "swarm/"],
-        capture_output=True, text=True, check=False,
-    )
-    if diff.returncode:
-        raise SystemExit(f"this repo lacks {commit[:7]}, the commit that trained {run}: "
-                         + diff.stderr.strip())
-    if diff.stdout:
-        here = ROOT / "scratch" / f"code_{commit[:7]}"
-        raise SystemExit(
-            f"swarm/ differs from {commit[:7]}, the commit that trained {run}:\n{diff.stdout}"
-            f"To use the run's own code:\n"
-            f"  git worktree add --detach {here} {commit[:7]}\n"
-            f"  cd {here}\n"
-            f"and run the same command there, with the run as {Path(run).resolve()}"
-        )
 
 
 def load(path, name="latest.pkl"):

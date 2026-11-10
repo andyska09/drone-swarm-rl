@@ -45,6 +45,10 @@ class EnvParams(core.Common):
 
     net_side: float = 1.0
     net_offset: float = 0.4
+    # With body_catch, a pursuer has no net: it catches the evader by touching it.
+    body_catch: bool = flax.struct.field(pytree_node=False, default=False)
+    # With net_kills, a net that touches another pursuer is a coll_pp.
+    net_kills: bool = flax.struct.field(pytree_node=False, default=True)
 
     # At the start, every two drones are this far apart. A drone farther than 1.54 m
     # from a pursuer cannot touch its net.
@@ -82,11 +86,13 @@ def net_centre(drone, params):
     return drone.x[pursuers] - _drop(params) * drone.R[pursuers, :, 2]
 
 
-def net_gap(drone, params):
-    """(P,): the distance from the evader to each pursuer's net centre."""
+def catch_gap(drone, params):
+    """(P,): the distance from the evader to each pursuer's net centre, or with
+    body_catch to the pursuer itself."""
 
-    _, evader = _sides(params)
-    return core.norm(drone.x[evader] - net_centre(drone, params))
+    pursuers, evader = _sides(params)
+    point = drone.x[pursuers] if params.body_catch else net_centre(drone, params)
+    return core.norm(drone.x[evader] - point)
 
 
 def net_frame(drone, params):
@@ -112,6 +118,8 @@ def in_net(drone, params):
 
 
 def is_caught(drone, params):
+    if params.body_catch:
+        return coll_pe(drone, params)
     _, evader = _sides(params)
     return in_net(drone, params)[:, evader]
 
@@ -162,15 +170,20 @@ def failed(drone, params):
 
 
 def coll_pp(drone, params):
-    """(N,): a pursuer against another pursuer, body or net. Ends the episode."""
+    """(N,): a pursuer against another pursuer, body on body, and with a net and net_kills
+    also a net on a body. Ends the episode."""
 
     _, evader = _sides(params)
     hit = core.hits(drone, params).at[evader].set(False).at[:, evader].set(False)
-    return jnp.any(hit, axis=-1) | net_collision(drone, params)
+    hit = jnp.any(hit, axis=-1)
+    if params.body_catch or not params.net_kills:
+        return hit
+    return hit | net_collision(drone, params)
 
 
 def coll_pe(drone, params):
-    """(P,): a pursuer body against the evader body. Costs, but does not end it."""
+    """(P,): a pursuer body against the evader body. It costs, and with body_catch it is
+    the capture."""
 
     pursuers, evader = _sides(params)
     return core.hits(drone, params)[pursuers, evader]
@@ -188,7 +201,7 @@ def scenery(state, params):
 
     del state
     pursuers, _ = _sides(params)
-    net = jnp.array([params.net_side, params.net_offset])
+    net = jnp.array([params.net_side, params.net_offset]) * (not params.body_catch)
     return {"net": jnp.zeros((params.n_drones, 2)).at[pursuers].set(net)}
 
 
@@ -197,7 +210,7 @@ def compute_reward(before, d, rate_ref, alive, fail, collide, caught, params):
 
     cfg = params.reward
     pursuers, evader = _sides(params)
-    closed = net_gap(before, params) - net_gap(d, params)
+    closed = catch_gap(before, params) - catch_gap(d, params)
     progress = jnp.zeros(params.n_drones).at[pursuers].set(cfg.progress * closed)
 
     # A pursuer-evader collision costs both sides the same.
@@ -310,11 +323,13 @@ def step(key, state, action, params):
             "time_to_catch": jnp.where(
                 caught, new_state.time * params.policy_dt, jnp.nan
             ),
-            "catch_offset": jnp.where(caught, jnp.min(core.norm(on_net)), jnp.nan),
+            "catch_offset": jnp.where(
+                caught & (not params.body_catch), jnp.min(core.norm(on_net)), jnp.nan
+            ),
         },
         "step": {
-            # The nearest pursuer's net to the evader, averaged over the chase.
-            "distance": jnp.min(net_gap(drone, params)),
+            # The nearest catch_gap, averaged over the chase.
+            "distance": jnp.min(catch_gap(drone, params)),
             "coll_pe": jnp.any(coll_pe(drone, params)),
         },
     }
@@ -465,6 +480,19 @@ PRESETS = (
         )
         for p in (1, 3)
         for sense in SENSES
+    }
+    | {
+        "paths_3v1_body": EnvParams(
+            roles=("pursuer",) * 3 + ("evader",),
+            piloted=("evader", "paths"),
+            body_catch=True,
+            reward=RewardConfig(coll_pe=0.0),
+        ),
+        "paths_3v1_netpass": EnvParams(
+            roles=("pursuer",) * 3 + ("evader",),
+            piloted=("evader", "paths"),
+            net_kills=False,
+        ),
     }
     # Both sides learn, and only the pursuer senses more.
     | {"_".join(("default", "p", *p)): EnvParams(sense_pursuer=p) for p in SENSES[1:]}
