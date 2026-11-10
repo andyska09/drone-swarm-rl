@@ -17,6 +17,14 @@ Only the named fields differ.
 | `chase_duel_s0_20260921-175411_a45f5b` | CTDE, `ac29531` | `swap_min=0` | 1525 |
 | `chase_duel_s0_20260922-094921_737629` | CTDE, `ac29531` | `swap_min=10` | 1525 |
 
+## Facts
+
+- Ours-vs-ours `caught` hides both sides: it read 0.48 with `ent_coef=0.01` while the pursuer scored 0.62 against the cascade; read the seat evals, not the self-play number. 2026-09-21 ([§](#what-it-points-to))
+- Swap OFF, the CTDE critic's evader learned to fly along the wall and take the pursuer down: `evader_died` 0.5898 → 0.0977, cascade pursuer crashes 0.0615 → 0.3174. 2026-09-22 ([§](#the-ctde-critic--two-runs))
+- CTDE critic at `ac29531` (clipped Gaussian, free `log_std`, 4e8 steps): better value, worse policy, `value_loss` 0.431 → 0.329, pursuer `caught` vs cascade 0.9609 → 0.7227. 2026-09-22 ([§](#but-the-critic-itself-got-better))
+- `ent_coef=0.01` did not transfer to a clipped Gaussian: entropy had no ceiling and ran 3.70 → 35.28, `std` 1636, and never turned. 2026-09-22 ([§](#mechanism-from-our-code))
+- The only published 1v1 in a big arena, 40 × 40 × 14, DRL vs DRL, catches in 6.62 s, right-censored at 10 s; only ours-vs-ours time compares. 2026-10-17 ([§](#ρ-the-score-the-swap-reads))
+
 ## Scores
 
 Every number is `_final` from `evals/`, 1024 episodes, the last checkpoint.

@@ -5,6 +5,17 @@ training and the hand-written opponents are in [task_chase.md](../tasks/task_cha
 This log holds only the base obs: the offset and the velocity of the other drone. A run in
 which a drone senses more is in [chase_modal_log.md](chase_modal_log.md).
 
+## Facts
+
+- Highest lower triangle so far: 0.91, `b9225b` (`nemecek`, `ent_coef` 0), with older evaders 0.95, diagonal 0.71 and last pair 0.51. 2026-10-15 ([§](#pool-training-results))
+- Two seeds (`b9225b`, `411ea3`) differ by 0.04 on the lower triangle and 0.12 on the diagonal, so a smaller gap between two one-seed runs can be luck. 2026-10-17 ([§](#what-the-runs-show))
+- A smaller box helps the pursuer: lower triangle 0.61 in `default` against 0.74 in `small`, 0.38 in `open` against 0.91 in `nemecek`. Part is an easier game, not better learning. 2026-10-15 ([§](#what-the-runs-show))
+- In `nemecek`, `pursuer_13` wins 0.88–0.98 against evaders 0 to 9 but 0.23–0.51 against `evader_13`. Trained on `evader_13` alone it wins 0.91, and falls to 0.41–0.56 against evaders 5 to 7. 2026-10-17 ([§](#what-the-runs-show))
+- Without the std reset, the pursuer's std falls from 0.59 to 0.03 and it stops learning after generation 7 (`937cda`, lower triangle 0.71). 2026-10-15 ([§](#what-the-runs-show))
+- `ent_coef` 0.01 breaks the std: 112 to 60784 under the clip, 371 to 942 under the squash. The other twelve `chase` runs end between 0.02 and 0.51. 2026-09-23 ([§](#design-decisions))
+- Longer phases do not help: with 100M steps per phase (`9a36ce`), the lower triangle (0.89) stays between the two seeds and the last pair falls to 0.23. 2026-10-17 ([§](#what-the-runs-show))
+- Input scaling gives no clear gain in `default`: lower triangle 0.61 and 0.67 with it, 0.66 and 0.59 without (seeds 0, 1). Diagonal and last pair are lower with it. 2026-11-04 ([§](#input-scaling-2026-11-04))
+
 ## Design decisions
 
 - **Pools replace the duel's swap** ([chase_duel_log.md](chase_duel_log.md)).

@@ -76,6 +76,7 @@ def main():
     args = p.parse_args()
 
     run = pathlib.Path(args.run)
+    rundir.check_code(run)
     cfg = rundir.load_config(run)
     env, env_params = evaluate.eval_env(run)
     pursuers, evaders = lineup(run, cfg, "pursuer"), lineup(run, cfg, "evader")

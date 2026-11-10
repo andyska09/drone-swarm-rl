@@ -3,6 +3,13 @@
 The runs of the tunnel task and their results. The spec is in
 [task_tunnel.md](../archive/task_tunnel.md).
 
+## Facts
+
+- `d_inf` training stopped improving after about 4e8 steps, at 35% success; eval from the far leg ends scored 0–0.5%: drones sped up and hit the first bend. ([§](#three-runs-of-1e9-steps))
+- Our drone needs 0.42 s to move 0.4 m to the side (CTBR, roll rate capped at 4 rad/s, height held). 2026-10-25 ([§](#sight))
+- A progress bonus paid per metre does not pay for speed, only the discount does: at `gamma` = 0.998, a metre one second later is worth 0.82. 2026-10-25 ([§](#reward))
+- Baselines: both drones as line followers score 19.6% success, 80.4% contact, 1.90 m/s; the cascade, at up to its 6 m/s cap, hits a wall in 59%. 2026-10-25 ([§](#baselines))
+
 ## The first CPU run
 
 `d_inf`, 3e7 steps, 1024 envs, the drones start in the legs only. The drones flew the

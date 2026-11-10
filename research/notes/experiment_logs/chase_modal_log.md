@@ -5,6 +5,19 @@ what it was, what it scored, and why the setup is as it is. The presets are in
 [task_chase.md](../tasks/task_chase.md). The runs with the base obs are in
 [chase_pools_log.md](chase_pools_log.md).
 
+## Facts
+
+- The number to beat in 3v1: eval `caught_e` 0.183 and 0.242 (`2d0b98`, `6fce56`; base `paths_3v1`, `gamma=0.99`, `normalize_obs=false`, 5e8 steps). FRPN catches 0.51. 2026-11-04 ([§](#long-runs-with-a-critic-input-for-each-drone-2026-11-04))
+- The critic input for each drone lifted eval `caught_e` from 0.01–0.04 to 0.10–0.11 with input scaling and 0.18–0.24 without; the std no longer blows up (0.03–0.10). 2026-11-04 ([§](#runs-with-a-critic-input-for-each-drone-2026-11-04))
+- 10 times the steps did not lift the catch (5e9 steps: 0.184 and 0.265). It goes flat early, so 5e8 steps are enough for a test. 2026-11-04 ([§](#long-runs-with-a-critic-input-for-each-drone-2026-11-04))
+- `gamma=0.995` gave no gain: eval `caught_e` 0.157 and 0.176, against 0.183 and 0.242 at `gamma=0.99`. 2026-11-04 ([§](#runs-with-gamma0995-2026-11-04))
+- No `ent_coef` holds the std (two values): at 0.001 it falls to 0.03–0.05; at 0.003 it blew up to 124–18010 and eval `caught_e` fell to 0.006–0.027. 2026-11-05 ([§](#runs-with-ent_coef0003-2026-11-05))
+- The std falls as about c / update, and the lr follows it (lr / std 1.1–1.7e-3) down to its floor, so the policy stops moving. 2026-11-05 ([§](#the-std-and-the-lr-over-training))
+- The frozen policy is not at a top: a β = 0.25 blend toward FRPN in all three lifts its score, −4.33 to −4.02 and −4.35 to −4.22. 2026-11-05 ([§](#flying-on-from-the-frozen-states))
+- At γ = 0.99, all three on FRPN score below the learned policy at `coll_pp` cost 30 (−5.63 against −4.33), above it at 10 (−3.05 against −4.27). 2026-11-05 ([§](#flying-on-from-the-frozen-states))
+- FRPN in 3v1 with action noise σ catches 0.49 at σ = 0, 0.47 at 0.3, and 0.19 at 1, where a new policy starts. 2026-11-02 ([§](#why-the-spread-grows-a-test-with-frpn))
+- A pursuer that senses more wins more against learned evaders: lower triangle 0.73 (attitude), 0.77 (rpm), 0.88 (both), against 0.61 for `9e4242`, one seed on older code. 2026-11-01 ([§](#the-pursuer-that-senses-more-2026-11-01))
+
 ## The question
 
 Three pursuers that share one policy hit each other often. chase_modal asks if a pursuer

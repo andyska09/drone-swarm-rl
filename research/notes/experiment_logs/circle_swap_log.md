@@ -6,6 +6,13 @@ in [task_circle_swap.md](../tasks/task_circle_swap.md).
 The spec of that time had a 10 m arena around (0, 0, 3). `own` had no wall distances and
 was 16 wide. A `neighbors` block of (N − 1, 6) held every other drone, with no role flag.
 
+## Facts
+
+- In `pair`, with `crash` a flat 10.0, a drone that could not reach its goal gained by dying, in 32 of 32 eval episodes. ([§](#the-first-pair-run))
+- The best `pair` checkpoint flipped drone 1 in 32 of 32 eval episodes: a flip cost only the one-off 10.0, and the episode was over anyway. ([§](#the-first-pair-run))
+- Trained with drones starting along world x, the `circle8` policy relied on the absolute heading: with drones facing the centre, episodes ended at step 75 with colliding pairs. ([§](#the-first-circle8-run))
+- `crash` grows with N: a drone 6 m from its goal pays 42 per episode, and at N = 8 four neighbours at 1.0 m add 93. 2026-10-25 ([§](#reasons-for-the-spec-2026-10-25))
+
 ## Why two presets
 
 N = 4 was skipped on purpose. N = 2 came first, to get the reward right cheaply, then

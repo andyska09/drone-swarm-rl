@@ -3,6 +3,15 @@
 The runs of the avoidance task, their results, and why the spec changed. The spec is in
 [task_avoidance.md](../tasks/task_avoidance.md).
 
+## Facts
+
+- With Other-Play the lanes are gone (own left in 37–64% of episodes); blind `d0` falls from 84–99% to 70% (5 m tube) and 54% (10 m). 2026-10-25 ([§](#other-play-runs-2026-10-25))
+- Other-Play does not stop the wait: `d_inf` s1 scores 97.9% in the 20 m eval, and every success has an arrival gap above 0.8 s. 2026-10-25 ([§](#other-play-runs-2026-10-25))
+- The wait pays because sight and contact skip an arrived drone: 1.6 s of waiting costs only the discount, about 27% of the +1. 2026-10-21 to 2026-10-25 ([§](#debug-runs-2026-10-21-to-2026-10-25))
+- 3 of 15 runs got stuck in the hover after the tube grew to 10 m (99.5% timeouts); a timeout pays 0, a death −1. 2026-10-21 to 2026-10-25 ([§](#debug-runs-2026-10-21-to-2026-10-25))
+- With Other-Play, `d0` never trained in a 20 m tube, so its 20 m eval reads 0–0.1% (99.5–99.9% wall), not the sensor. 2026-10-25 ([§](#other-play-runs-2026-10-25))
+- The same seed does not give the same run on the GPU: `d0` s0 reached 98.6% training success in its repeat, 84.2% in the debug run. 2026-10-25 ([§](#other-play-2026-10-25))
+
 ## Why the task exists, 2026-10-20
 
 The task replaces the tunnel ([task_tunnel.md](../archive/task_tunnel.md)). The tunnel runs hit
