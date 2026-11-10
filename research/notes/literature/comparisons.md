@@ -162,7 +162,7 @@ Training:
 | action noise | one learned std per action, then a clip | the network gives the mean and the std, then a tanh squash |
 | critic | one per role, with its own value for each drone | one per team, with the global state and the opponents' actions |
 | opponents | pools with Hedge, in generations | a pool with PFSP: 50 % of the episodes against the newest opponent, 50 % by the PFSP weights. A snapshot joins the pool past a score threshold |
-| a run against a fixed evader | `paths_3v1`, against `paths`. It catches about 0.03 | `noSP`, against APF. It catches 65.2 % of APF in 3v1 |
+| a run against a fixed evader | `paths_3v1`, against `paths` | `noSP`, against APF |
 
 The net:
 
