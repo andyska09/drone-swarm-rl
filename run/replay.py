@@ -1,4 +1,4 @@
-"""Browse every eval in the viewer: python run/replay.py"""
+"""Browse every eval in the viewer, and any two specs side by side: python run/replay.py"""
 
 import argparse
 import functools
@@ -33,11 +33,25 @@ def evals():
     return out
 
 
+def specs():
+    """Every task spec, then every paper spec."""
+
+    tasks = sorted(ROOT.glob("research/notes/tasks/task_*.md"))
+    papers = sorted(ROOT.glob("research/notes/literature/specs/*.md"))
+    return [
+        {"name": f.stem.removeprefix("task_"), "path": f.relative_to(ROOT).as_posix(),
+         "task": f in tasks}
+        for f in tasks + papers
+        if f.name != "README.md"
+    ]
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path != "/evals.json":
+        lists = {"/evals.json": evals, "/specs.json": specs}
+        if self.path not in lists:
             return super().do_GET()
-        body = json.dumps(evals()).encode()
+        body = json.dumps(lists[self.path]()).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -60,6 +74,7 @@ def main():
     url = f"http://localhost:{args.port}/tools/viewer/index.html"
     print(f"{len(found)} evals, newest {found[0]['path']}")
     print(f"{url}   (ctrl-c to stop)")
+    print(f"specs side by side: http://localhost:{args.port}/tools/specs/index.html")
     webbrowser.open(url)
 
     server = http.server.ThreadingHTTPServer(

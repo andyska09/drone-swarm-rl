@@ -104,7 +104,7 @@ pursuer cannot see which evader of the pool it flies against.
 
 ### Against the papers
 
-How the three setups differ: [comparisons.md](../literature/comparisons.md), Chase.
+How the three setups differ: [comparisons.md](../archive/comparisons.md), Chase.
 
 | | ours | [Roncero v3](../../papers/2506.02849v3.md) | [Němeček](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) |
 |---|---|---|---|

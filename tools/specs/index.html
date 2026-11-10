@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Specs side by side</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root { --ink: #1f2328; --muted: #656d76; --line: #d0d7de; --surface: #ffffff; --band: #f6f8fa; --link: #0969da; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #e6edf3; --muted: #8d96a0; --line: #30363d; --surface: #0d1117; --band: #161b22; --link: #4493f8; }
+  }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; color: var(--ink); background: var(--surface); }
+  header { position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: 1fr 1fr;
+           gap: 16px; padding: 12px 16px; background: var(--band); border-bottom: 1px solid var(--line); }
+  a { color: var(--link); }
+  select { width: 100%; font: inherit; padding: 4px; }
+  main { padding: 0 16px 48px; }
+  h2 { margin: 32px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .side { min-width: 0; overflow-x: auto; }
+  .default { opacity: 0.55; border-left: 3px solid var(--line); padding-left: 8px; margin-top: 8px; }
+  .label, .missing { color: var(--muted); }
+  .label { font-size: 12px; text-transform: uppercase; }
+  table { border-collapse: collapse; margin: 8px 0; }
+  th, td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  @media (max-width: 700px) { header, .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <select id="a"></select>
+  <select id="b"></select>
+</header>
+<main id="out"></main>
+<script>
+// The page lines up two specs by their ## headings. A task spec lists only what differs
+// from defaults.md, so under each of its sections the page shows the default in grey.
+const DEFAULTS = "research/notes/tasks/defaults.md";
+const ORDER = ["Setup", "Start", "Drone", "Observation", "Events", "Reward", "Metrics",
+               "Training", "Evaluation", "Presets"];
+
+function parse(text, path) {
+  const spec = { path, title: "", sections: new Map() };
+  let lines = [];
+  const intro = lines;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("# ") && !spec.title) spec.title = line.slice(2).trim();
+    else if (line.startsWith("## ")) spec.sections.set(line.slice(3).trim(), lines = []);
+    else lines.push(line);
+  }
+  spec.intro = intro.join("\n");
+  for (const [heading, body] of spec.sections) spec.sections.set(heading, body.join("\n").trim());
+  return spec;
+}
+
+async function load(path) {
+  return parse(await (await fetch("/" + path)).text(), path);
+}
+
+// What one side shows under a heading: its own text, then for a task spec the default.
+function parts(spec, heading, defaults) {
+  const own = spec.sections.get(heading);
+  const base = spec.task ? defaults.sections.get(heading) : undefined;
+  const shown = [];
+  if (own !== undefined && own !== "Default.") shown.push({ md: own, path: spec.path });
+  if (base !== undefined) shown.push({ md: base, path: DEFAULTS, isDefault: true });
+  return shown;
+}
+
+// marked would break the TeX, so the math is cut out first and put back as KaTeX.
+function render(md, path) {
+  const math = [];
+  const keep = (tex, display) => {
+    math.push(katex.renderToString(tex, { displayMode: display, throwOnError: false }));
+    return `@@MATH${math.length - 1}@@`;
+  };
+  md = md.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => keep(tex, true));
+  md = md.replace(/\$([^$\n]+?)\$/g, (_, tex) => keep(tex, false));
+  const div = document.createElement("div");
+  div.innerHTML = marked.parse(md).replace(/@@MATH(\d+)@@/g, (_, i) => math[i]);
+  const file = new URL("/" + path, location.origin);
+  for (const a of div.querySelectorAll("a[href]")) a.href = new URL(a.getAttribute("href"), file).href;
+  return div;
+}
+
+function side(shown) {
+  const div = document.createElement("div");
+  div.className = "side";
+  if (!shown.length) div.innerHTML = '<p class="missing">—</p>';
+  for (const part of shown) {
+    const body = render(part.md, part.path);
+    if (part.isDefault) {
+      body.className = "default";
+      body.insertAdjacentHTML("afterbegin", '<div class="label">default</div>');
+    }
+    div.append(body);
+  }
+  return div;
+}
+
+function row(out, heading, left, right) {
+  if (heading) out.insertAdjacentHTML("beforeend", `<h2>${heading}</h2>`);
+  const pair = document.createElement("div");
+  pair.className = "pair";
+  pair.append(side(left), side(right));
+  out.append(pair);
+}
+
+async function main() {
+  const list = await (await fetch("/specs.json")).json();
+  const [defaults, ...loaded] = await Promise.all([DEFAULTS, ...list.map(s => s.path)].map(load));
+  const specs = new Map(list.map((s, i) => [s.name, Object.assign(loaded[i], { task: s.task })]));
+  const names = [...specs.keys()];
+  const params = new URLSearchParams(location.search);
+  const first = { a: names.find(n => specs.get(n).task), b: names.find(n => !specs.get(n).task) };
+
+  const menus = {};
+  for (const id of ["a", "b"]) {
+    const menu = menus[id] = document.getElementById(id);
+    for (const name of names) menu.add(new Option(specs.get(name).title || name, name));
+    menu.value = specs.has(params.get(id)) ? params.get(id) : first[id] ?? names[0];
+    menu.onchange = show;
+  }
+
+  function show() {
+    history.replaceState(null, "", `?a=${menus.a.value}&b=${menus.b.value}`);
+    const a = specs.get(menus.a.value), b = specs.get(menus.b.value);
+    const out = document.getElementById("out");
+    out.replaceChildren();
+    row(out, "", [{ md: a.intro, path: a.path }], [{ md: b.intro, path: b.path }]);
+    for (const heading of new Set([...ORDER, ...a.sections.keys(), ...b.sections.keys()])) {
+      const left = parts(a, heading, defaults), right = parts(b, heading, defaults);
+      if (left.length || right.length) row(out, heading, left, right);
+    }
+  }
+  show();
+}
+
+main();
+</script>
+</body>
+</html>

@@ -33,8 +33,9 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
   the code. Write or change one by the [spec rules](research/notes/tasks/README.md).
 - The reasons, the history of the decisions, the run results and the open questions go
   to `research/notes/experiment_logs/<name>_log.md`, in the shape that its
-  [README](research/notes/experiment_logs/README.md) gives. Comparisons with papers go to
-  `research/notes/literature/comparisons.md`.
+  [README](research/notes/experiment_logs/README.md) gives. A paper's setup goes to a
+  paper spec in `research/notes/literature/specs/`, by its
+  [README](research/notes/literature/specs/README.md).
 - Everything stays under the repo root, `handoff.md` included. Scripts, probes and build
   artifacts go in `scratch/` (gitignored), never in `/tmp` or a session scratchpad.
 - Unpublished papers under `research/papers/` stay local, and `CLAUDE.local.md` names
@@ -88,7 +89,7 @@ python run/train.py --resume runs/<name>               # what it resumes: --help
 python run/matrix.py runs/<name>                       # every pursuer against every evader
 python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
 python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role's seat
-python run/replay.py                                   # serve + open the 3D viewer
+python run/replay.py                                   # serve + open the 3D viewer, and the spec page
 python run/plot.py runs/<name>/evals/latest            # time plots of one episode
 python run/compare.py runs/<a> runs/<b>                # evals and training curves side by side
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
@@ -175,9 +176,10 @@ Each file in `tests/` opens with a docstring that says what it checks.
 - `notes/` — working notes, Czech is fine. `design_choices.md` holds the shared design
   decisions and their reasons. `tasks/` holds the task specs: `defaults.md` for what
   every task shares, and `task_<name>.md` for one task. `experiment_logs/` holds the run
-  logs and the history of the decisions. `literature/` holds the literature reviews
-  and `comparisons.md`, which puts our setup beside the reference works. `learning/`
-  holds explainers of the theory, and `archive/` the notes about removed code.
+  logs and the history of the decisions. `literature/` holds the literature reviews,
+  and `literature/specs/` the paper specs, which `tools/specs/index.html` shows beside
+  our task specs. `learning/` holds explainers of the theory, and `archive/` the notes
+  that no longer hold.
 - `code_sources/` (GITIGNORED) — reference code, **not ours**:
   `mrs_multirotor_simulator/` (the C++ we reimplement), `PPO_example/` (the
   supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone),

@@ -1,5 +1,8 @@
 # Comparisons
 
+Frozen on 2026-11-10. The paper specs in [literature/specs/](../literature/specs/) and
+the spec page of `run/replay.py` replace this file.
+
 ## Observation layout: ours vs. the references
 
 Sources: [envs/__init__.py](../../../swarm/envs/__init__.py) `Obs`,
@@ -29,16 +32,6 @@ Sources: [envs/__init__.py](../../../swarm/envs/__init__.py) `Obs`,
 | obstacles | — | 9 SDF values | — | — | — | — |
 | action | CTBR | 4 rotor thrusts | CTBR | CTBR | CTBR | world acceleration + heading rate |
 
-We match Gavin **Nv1** almost exactly: body-frame self velocity, body-frame
-relative position and velocity for every other agent. The 1v1 paper puts the
-opponent in the **world** frame; the Nv1 paper, four months later, moved it to the
-body frame. Our extras over Nv1 are `ω` and the same-role flag. For the walls we use
-4 rays, where Nv1 uses `M`.
-
-Roncero is close to us too: the body frame for the velocities and the opponent, and
-`ω`. He gives the world position instead of wall distances. Němeček stays in the
-world frame, adds the distance to the opponent and the time, and scales every value.
-
 ### Normalization
 
 | | observation | reward |
@@ -53,8 +46,8 @@ world frame, adds the distance to the opponent and the time, and scales every va
 ## Reward layout
 
 Per-step terms, and one-off terms marked. Our weights are per second, and the code
-multiplies them by `policy_dt = 0.01`. Gavin's are per step at 100 Hz, so our chase
-weights equal his. Roncero's and Němeček's are per step at 50 Hz. Sources for those
+multiplies them by `policy_dt = 0.01`. Gavin's are per step at 100 Hz. Roncero's and
+Němeček's are per step at 50 Hz. Sources for those
 two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 
 | term | ours `chase` | ours `circle_swap` | quad-swarm | Gavin 1v1 | Gavin Nv1 | Roncero v3 | Němeček |
@@ -76,7 +69,7 @@ two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 
 The full chase reward, with every sign, is in [task_chase.md](../tasks/task_chase.md),
 Reward. The full reward-term survey, including Hwangbo, Molchanov, Eschmann,
-SimpleFlight and Swift, is in [reward_terms.md](reward_terms.md).
+SimpleFlight and Swift, is in [reward_terms.md](../literature/reward_terms.md).
 
 ## Chase
 
