@@ -152,6 +152,7 @@ Each other preset is one of these four, with these changes:
 | `paths_3v1_rpm` | `default` | 3 | rpm | none | paths |
 | `paths_3v1_attitude_rpm` | `default` | 3 | attitude, rpm | none | paths |
 | `paths_3v1_body` | `default` | 3 | none | none | paths |
+| `paths_3v1_netpass` | `default` | 3 | none | none | paths |
 | `default_p_attitude` | `default` | 1 | attitude | none | learns |
 | `default_p_rpm` | `default` | 1 | rpm | none | learns |
 | `default_p_attitude_rpm` | `default` | 1 | attitude, rpm | none | learns |
@@ -171,6 +172,8 @@ In `paths_3v1_body`, a pursuer catches the evader with its body:
 - A coll_pp is a pursuer that touches another pursuer.
 - $\lambda_{\text{PE}}$ = 0, and $g_p = \lVert p_e - p_p \rVert$.
 - `catch_offset` is NaN.
+
+In `paths_3v1_netpass`, a coll_pp is a touch between the bodies of two pursuers.
 
 ## Training
 

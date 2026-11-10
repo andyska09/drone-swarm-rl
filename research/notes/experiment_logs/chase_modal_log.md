@@ -15,6 +15,13 @@ what it was, what it scored, and why the setup is as it is. The presets are in
 - Every learned 3v1 policy holds its nets on a ring: 2.8–4.1, 4.3–6.4 and 5.7–8.6 m from the evader at 4–8 s. With a net 2–5 m away, it flies 2.1–3.8 m/s around the evader and 0.26–0.45 m/s toward it. FRPN closes at 4.8–6.6 m/s. 2026-11-10 ([§](#runs-with-the-progress-reward-2026-11-10))
 - The learned 3v1 catch does not depend on the evader's path (hover 0.16–0.26, figure-eight 0.18–0.28); FRPN catches 0.60 and 0.41. 2026-11-10 ([§](#runs-with-the-progress-reward-2026-11-10))
 - The learned `coll_pp` come a median 3.1–4.1 m from the evader, and the second-nearest pursuer is in 92–96 % of them. 2026-11-10 ([§](#runs-with-the-progress-reward-2026-11-10))
+- With the constant lr, `coll_pp` is 0.55–0.80 of the failures, near the evader (nearest net a median 1.9–2.1 m away). Against his APF evader, Gavin's learned pursuers die in 0.069–0.140 of the episodes, his FRPN in 0.394; ours die in 0.433–0.478, our FRPN in 0.476. 2026-11-10 ([§](#against-gavin-nv1-2026-11-10))
+- With the constant lr, the eval catch falls from the best checkpoint to the last (0.562 → 0.487, 0.597 → 0.499), while the KL rises from 0.006 to 0.022–0.023 and the clip fraction from 0.08 to 0.28–0.29. 2026-11-10 ([§](#the-failures-and-the-late-decline))
+- A constant lr of 5e-4 (`--set adaptive_lr=false --set lr=5e-4`) lifts the 3v1 catch from 0.212 to 0.498 (4096 episodes, one seed); the best checkpoint catches 0.562. The std stays at about 0.05. 2026-11-10 ([§](#runs-with-a-constant-lr-and-netpass-2026-11-10))
+- Training in `paths_3v1_netpass` lifts the catch to 0.388 with the adaptive lr (0.335 flown in `paths_3v1`), and to 0.509 with the constant lr (one seed each). 2026-11-10 ([§](#runs-with-a-constant-lr-and-netpass-2026-11-10))
+- With the same policies, removing the net kill lifts the catch by 0.034 and 0.028 (McNemar p < 1e-25); 0.74–0.75 of the saved episodes run to `time_limit`. 2026-11-10 ([§](#probes-on-the-trained-policies-2026-11-10))
+- The ring stays when the teammates are moved 15 m away in the input: nearest net 3.1–3.5 m at 4 s, catch 0.188–0.240. 2026-11-10 ([§](#probes-on-the-trained-policies-2026-11-10))
+- From the ring, closing at > 4 m/s gives a higher own return than moving away in all six runs (by 0.35–1.34), with 14–25 times the own catch within 1 s and at most +0.018 own `coll_pp`. 2026-11-10 ([§](#probes-on-the-trained-policies-2026-11-10))
 - A `coll_pp` cost of 10 did not lift the catch: eval `caught_e` 0.250 and 0.166, against 0.183 and 0.242 at 30. Eval `coll_pp` rose to 0.18 and 0.47. 2026-11-10 ([§](#runs-with-a-coll_pp-cost-of-10-2026-11-10))
 - No `ent_coef` holds the std (two values): at 0.001 it falls to 0.03–0.05; at 0.003 it blew up to 124–18010 and eval `caught_e` fell to 0.006–0.027. 2026-11-05 ([§](#runs-with-ent_coef0003-2026-11-05))
 - The std falls as about c / update, and the lr follows it (lr / std 1.1–1.7e-3) down to its floor, so the policy stops moving. 2026-11-05 ([§](#the-std-and-the-lr-over-training))
@@ -1030,11 +1037,322 @@ Under 30°: 0.09 and 0.06, 0.02–0.07, and 0.09.
   `coll_pp` a net touched a pursuer.
 - **One run, seed 0.** The user submits it, to see if the catch rises clearly.
 
+## Probes on the trained policies, 2026-11-10
+
+Three probes on the last checkpoints, with no new training: 4096 episodes, the eval seeds,
+mean actions, on `79e1f0e` with the presets `paths_3v1_body` and `paths_3v1_netpass` added.
+
+### The net kill
+
+`run/eval.py` flew each policy in `paths_3v1` and in `paths_3v1_netpass`, with the same keys.
+So each episode is the same in both up to its first net touch of a pursuer. FRPN flew the
+pursuers in the same episodes. "Saved" are the `coll_pp` episodes of `paths_3v1` that end
+in another way in `paths_3v1_netpass`.
+
+| policy | catch | `coll_pp` | `time_limit` | episodes to a catch / away from it | McNemar p | saved | saved, then catch / `time_limit` / `crash_p` / `OOB_p` | still `coll_pp` |
+|---|---|---|---|---|---|---|---|---|
+| `c6de8e` | 0.213 → 0.248 | 0.538 → 0.385 | 0.206 → 0.321 | 140 / 0 | 2.7e-32 | 627 | 0.223 / 0.753 / 0.019 / 0.005 | 1575 |
+| `398c2a` | 0.252 → 0.280 | 0.326 → 0.213 | 0.357 → 0.441 | 113 / 0 | 2.2e-26 | 464 | 0.244 / 0.737 / 0.006 / 0.013 | 873 |
+| FRPN | 0.524 → 0.562 | 0.322 → 0.276 | 0.000 → 0.001 | 154 / 0 | 2.3e-35 | 191 | 0.806 / 0.010 / 0.031 / 0.152 | 1129 |
+
+### Ghost teammates
+
+In each pursuer's actor input, the offsets of the two teammate slots moved to 15 m, along
+the same direction. Their velocities stayed. "All" changes the input of all three pursuers,
+"nearest" only of the pursuer nearest to the evader. The real teammates still flew.
+
+| policy | input | catch | `coll_pp` | `crash_p` | `OOB_p` | `time_limit` | nets at 4 s | closing at 1–2 / 2–3 / 3–5 m | closest net, no catch |
+|---|---|---|---|---|---|---|---|---|---|
+| `c6de8e` | real | 0.212 | 0.537 | 0.031 | 0.013 | 0.207 | 3.3 / 4.9 / 6.7 m | 0.34 / 0.28 / 0.42 m/s | 1.44 m |
+| `c6de8e` | all | 0.188 | 0.533 | 0.100 | 0.030 | 0.150 | 3.5 / 5.2 / 7.1 m | 0.38 / 0.40 / 0.56 m/s | 1.50 m |
+| `c6de8e` | nearest | 0.197 | 0.552 | 0.045 | 0.017 | 0.190 | 3.5 / 5.2 / 7.0 m | 0.39 / 0.34 / 0.50 m/s | 1.49 m |
+| `398c2a` | real | 0.253 | 0.324 | 0.030 | 0.034 | 0.358 | 3.0 / 4.6 / 6.2 m | 0.26 / 0.22 / 0.32 m/s | 1.24 m |
+| `398c2a` | all | 0.197 | 0.311 | 0.129 | 0.082 | 0.282 | 3.4 / 4.9 / 6.7 m | 0.34 / 0.30 / 0.45 m/s | 1.47 m |
+| `398c2a` | nearest | 0.240 | 0.342 | 0.057 | 0.047 | 0.314 | 3.1 / 4.7 / 6.3 m | 0.37 / 0.37 / 0.47 m/s | 1.29 m |
+
+### The payoff of closing in
+
+From the 4096-episode records of "Runs with the progress reward". A sample is a pursuer at
+every 10th step up to 6 s, alive, with its net 2–5 m from the evader, in an episode that
+goes on past that step. G is its own discounted return from that step, at γ = 0.99, with the
+run's own reward. Its standard error is 0.01–0.04. "Within 1 s" means that the episode ends
+within 100 steps: by a catch in this pursuer's net, or by a `coll_pp` with this pursuer in
+the pair.
+
+G, by the pursuer's closing speed on the evader (m/s):
+
+| run | < 0 | 0–0.5 | 0.5–1 | 1–2 | 2–4 | > 4 |
+|---|---|---|---|---|---|---|
+| `c6de8e` | 0.04 | 0.31 | 0.36 | 0.47 | 0.67 | 1.34 |
+| `398c2a` | 0.37 | 0.63 | 0.67 | 0.69 | 1.01 | 1.71 |
+| `a573b5` | −4.19 | −4.13 | −4.11 | −4.07 | −3.95 | −3.65 |
+| `052a62` | −4.30 | −4.31 | −4.24 | −4.18 | −4.20 | −3.95 |
+| `2d0b98` | −4.47 | −4.42 | −4.40 | −4.34 | −4.25 | −3.94 |
+| `6fce56` | −4.09 | −4.10 | −4.12 | −4.07 | −3.94 | −3.54 |
+
+This pursuer catches within 1 s:
+
+| run | < 0 | 0–0.5 | 0.5–1 | 1–2 | 2–4 | > 4 |
+|---|---|---|---|---|---|---|
+| `c6de8e` | 0.004 | 0.009 | 0.011 | 0.017 | 0.027 | 0.056 |
+| `398c2a` | 0.003 | 0.006 | 0.008 | 0.015 | 0.031 | 0.064 |
+| `a573b5` | 0.004 | 0.007 | 0.011 | 0.017 | 0.035 | 0.063 |
+| `052a62` | 0.002 | 0.005 | 0.009 | 0.014 | 0.024 | 0.050 |
+| `2d0b98` | 0.003 | 0.006 | 0.008 | 0.012 | 0.022 | 0.056 |
+| `6fce56` | 0.003 | 0.006 | 0.008 | 0.014 | 0.029 | 0.072 |
+
+This pursuer is in a `coll_pp` within 1 s:
+
+| run | < 0 | 0–0.5 | 0.5–1 | 1–2 | 2–4 | > 4 |
+|---|---|---|---|---|---|---|
+| `c6de8e` | 0.067 | 0.069 | 0.072 | 0.076 | 0.081 | 0.082 |
+| `398c2a` | 0.039 | 0.036 | 0.036 | 0.036 | 0.037 | 0.034 |
+| `a573b5` | 0.016 | 0.015 | 0.015 | 0.017 | 0.018 | 0.019 |
+| `052a62` | 0.050 | 0.055 | 0.057 | 0.056 | 0.062 | 0.068 |
+| `2d0b98` | 0.006 | 0.007 | 0.005 | 0.006 | 0.006 | 0.007 |
+| `6fce56` | 0.004 | 0.005 | 0.005 | 0.005 | 0.006 | 0.005 |
+
+On the hover path alone, G goes from < 0 to > 4 m/s as 0.07 → 1.20 (`c6de8e`), 0.54 → 1.72
+(`398c2a`), −4.22 → −3.85 (`a573b5`), −4.27 → −4.01 (`052a62`), −4.46 → −4.00 (`2d0b98`) and
+−4.12 → −3.79 (`6fce56`).
+
+- **Without the net kill, the same policies catch more,** by 0.034 and 0.028, and FRPN by
+  0.038. Every changed episode moved toward a catch.
+- **Most saved episodes of the learned policies run to the time limit:** 0.753 and 0.737 of
+  them, against 0.010 for FRPN. 1575 and 873 `coll_pp` episodes still end in a `coll_pp`.
+- **With ghost teammates, the ring stays.** The nearest net at 4 s is 3.1–3.5 m away, against
+  3.0 and 3.3 m. At 1–5 m the nets close at 0.30–0.56 m/s, against 0.22–0.42. The catch is
+  0.188–0.240, against 0.212 and 0.253. With "all", `crash_p` rises to 0.100 and 0.129.
+- **From the ring, a pursuer that closes at > 4 m/s has a higher G than one that moves away,**
+  in all six runs, by 0.35–1.34. On the hover path alone, by 0.26–1.18. In `052a62` and
+  `6fce56`, G does not rise over the bands below 1 m/s.
+- **Its own catch within 1 s is 14–25 times higher** at > 4 m/s than at < 0. Its own
+  `coll_pp` within 1 s differs by −0.005 to +0.018.
+- **Limits.** The payoff tables compare states inside the flights of each policy, with no
+  change of the action. The ghost input shows teammates at 15 m together with the evader at
+  about 3 m.
+
+## Four runs, 2026-11-10
+
+- **The user picked four seed-0 runs,** each with `--set gamma=0.99 --set normalize_obs=false`
+  and 5e8 steps:
+
+| | adaptive lr | lr 5e-4, constant |
+|---|---|---|
+| `paths_3v1` | `c6de8e` (done) | new |
+| `paths_3v1_netpass` | new | new |
+
+- **`paths_3v1_body`, seed 0, adaptive lr,** as in The body catch.
+- **`paths_3v1_netpass`:** a net that touches a pursuer is no `coll_pp`. A touch of two bodies
+  still is. The probes above measure the current policies only, so this tests what training
+  under the rule does.
+- **Why a constant lr.** Gavin et al. 2026 (1v1) train with a constant lr of 5e-4 (Table II).
+  Our adaptive lr fell to 3.9–4.4e-5 in `c6de8e` and `398c2a`. Gavin's reward (Nv1, Table I)
+  is our reward before the progress reward, term by term. His training differs from ours in
+  the lr, a tanh squash of the action, an entropy weight of 0.01, and 15 × 1 epochs and
+  minibatches, against our 4 × 32.
+
+## Runs with a constant lr and netpass, 2026-11-10
+
+3 runs on MetaCentrum, commit `fba6aec`, seed 0, tanh, `--set gamma=0.99 --set
+normalize_obs=false`, 5e8 steps, the progress reward:
+
+| run | preset | lr |
+|---|---|---|
+| `c6de8e` (before) | `paths_3v1` | adaptive |
+| `be848f` | `paths_3v1` | 5e-4, constant (`--set adaptive_lr=false --set lr=5e-4`) |
+| `4f3c3b` | `paths_3v1_netpass` | adaptive |
+| `d11920` | `paths_3v1_netpass` | 5e-4, constant |
+
+Eval on `fba6aec`: 1024 episodes, mean actions, the run's own preset, the last checkpoint
+unless a table says otherwise. The behaviour tables come from 4096 episodes, as in "Runs with
+the progress reward". The body run was not submitted. Two attention runs (`b087ac`, `da9e33`)
+were copied while still training, and they are left out.
+
+The training catch and the std, the mean of each 200 updates:
+
+| updates | 1–200 | 201–400 | 401–600 | 601–800 | 801–1000 | 1001–1200 | 1201–1400 | 1401–1600 | 1601–1800 | 1801–1907 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| catch, `c6de8e` | 0.13 | 0.19 | 0.21 | 0.22 | 0.21 | 0.21 | 0.21 | 0.20 | 0.21 | 0.20 |
+| catch, `be848f` | 0.24 | 0.47 | 0.47 | 0.45 | 0.47 | 0.55 | 0.58 | 0.56 | 0.51 | 0.50 |
+| catch, `4f3c3b` | 0.15 | 0.29 | 0.35 | 0.35 | 0.36 | 0.36 | 0.37 | 0.37 | 0.37 | 0.37 |
+| catch, `d11920` | 0.30 | 0.57 | 0.61 | 0.62 | 0.62 | 0.60 | 0.57 | 0.57 | 0.56 | 0.53 |
+| std, `c6de8e` | 0.835 | 0.434 | 0.174 | 0.089 | 0.055 | 0.041 | 0.033 | 0.027 | 0.023 | 0.020 |
+| std, `be848f` | 0.669 | 0.256 | 0.136 | 0.094 | 0.078 | 0.066 | 0.059 | 0.054 | 0.051 | 0.050 |
+| std, `4f3c3b` | 0.816 | 0.370 | 0.154 | 0.081 | 0.050 | 0.035 | 0.027 | 0.022 | 0.019 | 0.017 |
+| std, `d11920` | 0.677 | 0.276 | 0.143 | 0.093 | 0.073 | 0.063 | 0.056 | 0.052 | 0.051 | 0.050 |
+
+Over updates 1001–1907, the mean of:
+
+| run | `lr_p` | `approx_kl_p` | `clipfrac_p` | explained variance |
+|---|---|---|---|---|
+| `c6de8e` | 7.0e-5 | 0.020 | 0.26 | 0.54 |
+| `be848f` | 5e-4 | 0.022 | 0.28 | 0.77 |
+| `4f3c3b` | 7.1e-5 | 0.021 | 0.26 | 0.59 |
+| `d11920` | 5e-4 | 0.023 | 0.29 | 0.75 |
+
+Eval at four checkpoints, 1024 episodes:
+
+| checkpoint | 400 | 900 | 1300 | 1907 |
+|---|---|---|---|---|
+| `be848f` catch | 0.512 | 0.492 | 0.562 | 0.487 |
+| `be848f` `coll_pp` | 0.283 | 0.397 | 0.292 | 0.280 |
+| `d11920` catch | 0.592 | 0.597 | 0.573 | 0.499 |
+| `d11920` `coll_pp` | 0.334 | 0.349 | 0.369 | 0.387 |
+
+The outcomes, 4096 episodes, with the 95 % Wilson interval of the catch:
+
+| run | catch | `coll_pp` | `crash_p` | `OOB_p` | `time_limit` | median time to catch |
+|---|---|---|---|---|---|---|
+| `c6de8e` | 0.212 [0.200, 0.225] | 0.537 | 0.031 | 0.013 | 0.207 | 4.2 s |
+| `be848f` | 0.498 [0.482, 0.513] | 0.278 | 0.062 | 0.093 | 0.069 | 4.1 s |
+| `4f3c3b` | 0.388 [0.373, 0.403] | 0.348 | 0.013 | 0.052 | 0.199 | 5.0 s |
+| `d11920` | 0.509 [0.493, 0.524] | 0.392 | 0.022 | 0.064 | 0.013 | 3.2 s |
+| FRPN | 0.524 [0.509, 0.539] | 0.322 | 0.012 | 0.142 | 0.000 | 1.5 s |
+
+The netpass runs flown in `paths_3v1`, 1024 episodes: `4f3c3b` catches 0.335 with `coll_pp`
+0.481, and `d11920` catches 0.396 with `coll_pp` 0.513.
+
+The catch by the evader's path:
+
+| path | `c6de8e` | `be848f` | `4f3c3b` | `d11920` | FRPN |
+|---|---|---|---|---|---|
+| hover | 0.210 | 0.511 | 0.379 | 0.528 | 0.603 |
+| circle | 0.211 | 0.501 | 0.364 | 0.506 | 0.559 |
+| figure-eight | 0.216 | 0.481 | 0.421 | 0.493 | 0.413 |
+
+The ends per second, among the episodes still running, in each bin from 2 s to 10 s: catch
+0.035–0.045 (`c6de8e`), 0.105–0.147 (`be848f`), 0.045–0.091 (`4f3c3b`), 0.136–0.208
+(`d11920`) and 0.15–0.42 (FRPN).
+
+The behaviour:
+
+| | `c6de8e` | `be848f` | `4f3c3b` | `d11920` | FRPN |
+|---|---|---|---|---|---|
+| nets at 4 s, median (m) | 3.3 / 4.9 / 6.7 | 2.1 / 3.6 / 5.6 | 2.7 / 4.0 / 5.5 | 1.9 / 3.0 / 4.4 | 2.4 / 3.9 / 6.0 |
+| nets at 8 s, median (m) | 3.4 / 4.9 / 6.6 | 1.9 / 3.5 / 5.7 | 2.5 / 3.8 / 5.1 | 1.8 / 2.7 / 4.0 | — |
+| closing at 1–2 / 2–3 / 3–5 m (m/s) | 0.34 / 0.28 / 0.42 | 0.44 / 0.45 / 0.69 | 0.38 / 0.40 / 0.60 | 0.46 / 0.59 / 1.14 | 4.79 / 5.82 / 6.63 |
+| closing at 5–8 / 8–12 / 12–40 m (m/s) | 0.85 / 2.77 / 5.96 | 1.40 / 4.20 / 5.66 | 1.26 / 4.00 / 5.82 | 3.67 / 7.69 / 7.04 | 7.70 / 8.19 / 6.21 |
+| net 2–5 m away: toward / around the evader (m/s) | 0.45 / 3.72 | 0.71 / 2.81 | 0.54 / 3.47 | 0.94 / 3.53 | 6.60 / 2.78 |
+| pursuer speed, median / top 10 % (m/s) | 5.43 / 9.98 | 5.26 / 10.70 | 5.32 / 8.96 | 6.52 / 12.69 | 9.34 / 12.70 |
+| height over the evader, net within 3 m, q10 / q50 / q90 (m) | −1.36 / 0.19 / 1.89 | −0.67 / 0.60 / 1.69 | −0.81 / 0.77 / 2.25 | −0.66 / 0.57 / 1.66 | −0.21 / 0.60 / 1.39 |
+| no catch: closest net, median; share within 1 m | 1.44 m; 0.25 | 1.12 m; 0.41 | 1.06 m; 0.44 | 1.08 m; 0.44 | 0.90 m; 0.62 |
+| `coll_pp`: nearest net to the evader, median; share under 2 m | 3.60 m; 0.14 | 2.10 m; 0.46 | 2.70 m; 0.26 | 1.90 m; 0.55 | 1.32 m; 0.74 |
+| `coll_pp`: ranks 1+2 / 2+3 / 1+3 | 0.57 / 0.35 / 0.08 | 0.68 / 0.26 / 0.06 | 0.52 / 0.36 / 0.12 | 0.63 / 0.28 / 0.10 | 0.85 / 0.11 / 0.04 |
+| angle of the two nearest at the evader, median | 74° | 89° | 75° | 80° | 78° |
+
+The payoff of closing in from the ring, as in "Probes on the trained policies":
+
+| run | G, < 0 | 0–0.5 | 0.5–1 | 1–2 | 2–4 | > 4 m/s | own catch within 1 s, < 0 / > 4 | own `coll_pp` within 1 s, < 0 / > 4 |
+|---|---|---|---|---|---|---|---|---|
+| `be848f` | 2.21 | 2.92 | 3.01 | 3.02 | 3.10 | 3.05 | 0.011 / 0.089 | 0.045 / 0.067 |
+| `4f3c3b` | 0.89 | 1.17 | 1.13 | 1.33 | 1.57 | 2.22 | 0.007 / 0.069 | 0.043 / 0.045 |
+| `d11920` | 3.03 | 3.71 | 3.75 | 3.76 | 3.78 | 3.67 | 0.019 / 0.091 | 0.073 / 0.112 |
+
+- **The constant lr more than doubles the catch on `paths_3v1`:** 0.498 against 0.212, in
+  4096 episodes. The six adaptive-lr policies of "Runs with the progress reward" caught
+  0.175–0.253.
+- **With the constant lr, the std stays at about 0.05.** With the adaptive lr it falls to
+  0.017–0.020. The training catch rose by update 400 (0.47 and 0.57), peaked at 0.58 and
+  0.62, and ended at 0.50 and 0.53.
+- **The best checkpoints catch more than the last.** `be848f` catches 0.562 at update 1300,
+  and `d11920` 0.597 at update 900, against 0.487 and 0.499 at 1907.
+- **netpass with the adaptive lr catches 0.388,** against 0.212 for `c6de8e`. Flown in
+  `paths_3v1`, it catches 0.335.
+- **With the constant lr, netpass changes the catch little:** 0.509 against 0.498. Flown in
+  `paths_3v1`, `d11920` catches 0.396.
+- **The ring moved in.** At 4 s the nearest net is 2.1 m (`be848f`) and 1.9 m (`d11920`) from
+  the evader, against 3.3 m. At 3–5 m the nets close at 0.69 and 1.14 m/s, against 0.42.
+- **The height over the evader is near FRPN's.** The median is 0.57–0.60 m, against 0.19 m
+  for `c6de8e` and 0.60 m for FRPN.
+- **The hits moved toward the evader.** At a `coll_pp`, the nearest net is a median 1.9–2.1 m
+  away, against 3.6 m.
+- **The learned catch still does not depend much on the path.** With the constant lr: hover
+  0.51–0.53, figure-eight 0.48–0.49. FRPN: 0.60 and 0.41.
+- **With the constant lr, G no longer rises above 0.5 m/s of closing:** 2.92–3.10 and
+  3.67–3.78. In `4f3c3b` it still rises, from 0.89 to 2.22.
+- **Limits.** One seed for each new run. The two seeds of one setup differed by 0.04–0.07 in
+  the catch before.
+
+### The failures and the late decline
+
+The episodes with no catch, last checkpoint, 4096 episodes. A death is a `coll_pp`, an OOB or
+a crash.
+
+| run | no catch | `coll_pp` | `OOB_p` | `crash_p` | `time_limit` | deaths | `coll_pp` share of the deaths |
+|---|---|---|---|---|---|---|---|
+| `c6de8e` | 0.788 | 0.537 | 0.013 | 0.031 | 0.207 | 0.581 | 0.92 |
+| `be848f` | 0.502 | 0.278 | 0.093 | 0.062 | 0.069 | 0.433 | 0.64 |
+| `4f3c3b` | 0.612 | 0.348 | 0.052 | 0.013 | 0.199 | 0.413 | 0.84 |
+| `d11920` | 0.491 | 0.392 | 0.064 | 0.022 | 0.013 | 0.478 | 0.82 |
+
+The std, the KL and the clip fraction over training, the mean of each range:
+
+| updates | 1–100 | 101–200 | 201–500 | 501–1000 | 1001–1907 |
+|---|---|---|---|---|---|
+| std, `be848f` | 0.840 | 0.499 | 0.221 | 0.093 | 0.057 |
+| std, `d11920` | 0.838 | 0.516 | 0.238 | 0.091 | 0.055 |
+| `approx_kl_p`, `be848f` | 0.0065 | 0.0088 | 0.0132 | 0.0187 | 0.0224 |
+| `approx_kl_p`, `d11920` | 0.0064 | 0.0082 | 0.0120 | 0.0189 | 0.0232 |
+| `approx_kl_p`, `c6de8e` | 0.0143 | 0.0174 | 0.0179 | 0.0197 | 0.0201 |
+| `clipfrac_p`, `be848f` | 0.080 | 0.119 | 0.183 | 0.248 | 0.283 |
+| `clipfrac_p`, `d11920` | 0.079 | 0.109 | 0.166 | 0.249 | 0.290 |
+| `clipfrac_p`, `c6de8e` | 0.197 | 0.232 | 0.235 | 0.253 | 0.256 |
+
+- **`coll_pp` is the largest failure in all four runs:** 0.55 and 0.80 of the episodes with no
+  catch under the constant lr, and 0.64–0.92 of the deaths.
+- **Under the constant lr, the hits come near the evader.** The nearest net is a median 1.9–2.1
+  m away at a hit, and the two nearest pursuers are the pair in 0.63–0.68 of them.
+- **The eval catch fell from the best checkpoint to the last:** 0.562 → 0.487 (`be848f`, update
+  1300 → 1907) and 0.597 → 0.499 (`d11920`, update 900 → 1907). With the two evals taken as
+  independent samples of 1024 episodes, that is z = 3.4 and 4.5.
+- **Over the same run, the KL rose from 0.006 to 0.022–0.023, and the clip fraction from 0.08
+  to 0.28–0.29,** while the std fell from 0.84 to 0.06. With the adaptive lr, the KL stayed at
+  0.014–0.020.
+
+## Against Gavin Nv1, 2026-11-10
+
+His Table II, the pursuers against the APF evader, beside ours against `paths` (4096
+episodes). His pursuer deaths are his pursuer crashes plus his double crashes. His `coll_pp`
+ends the episode and costs 10, as ours, and only a body hit counts (§IV-C). His `noSP`
+pursuers train with MAPPO against the fixed APF evader, with no pool (§V-B).
+
+| pursuers | evader | catch | pursuer deaths | evader crash | evader free at the end |
+|---|---|---|---|---|---|
+| his FRPN | APF | 0.550 | 0.394 | 0.055 | 0.001 |
+| his `noSP` | APF | 0.652 | 0.140 | 0.151 | 0.057 |
+| his PFSP-CTBR | APF | 0.881 | 0.069 | 0.049 | 0.002 |
+| our FRPN | `paths` | 0.524 | 0.476 | 0.000 | 0.000 |
+| `be848f` (lr 5e-4) | `paths` | 0.498 | 0.433 | 0.000 | 0.069 |
+| `d11920` (netpass, lr 5e-4) | `paths` | 0.509 | 0.478 | 0.000 | 0.013 |
+
+His training beside ours. The Nv1 paper publishes no PPO settings, so the lr, the entropy
+weight and the update come from his 1v1 paper (Table II).
+
+| | Gavin | `be848f` |
+|---|---|---|
+| lr | 5e-4, constant | 5e-4, constant |
+| action distribution | Gaussian, then a tanh squash | Gaussian, then a clip |
+| entropy weight | 0.01 | 0.001 |
+| update | 15 epochs × 1 batch, 128-step rollouts | 4 epochs × 32 minibatches, 64-step rollouts |
+| activation | ReLU | tanh |
+| steps | 5e9 for each side | 5e8 |
+| the evader | learns, in a pool; it stays in a 12 × 12 × 6 m box in the centre | `paths`, fixed |
+| reward | Table I | the progress reward; before it, his Table I term by term |
+
+- **FRPN catches about as often in both setups:** 0.550 against his evader and 0.524 against
+  ours.
+- **His learned pursuers die less than his FRPN:** 0.140 (`noSP`) and 0.069 (PFSP-CTBR),
+  against 0.394. Ours die about as often as our FRPN: 0.433 and 0.478, against 0.476.
+- **His `noSP` catches 0.102 more than his FRPN, with no pool.** Ours catches 0.015–0.026 less
+  than our FRPN.
+- **His APF evader crashes in 0.049–0.151 of the episodes.** The `paths` evader never crashes.
+
 ## Open
 
 | question | state |
 |---|---|
-| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. 10 times the steps (2026-11-04) left the catch at 0.18–0.26: it goes flat by 2.5e8–8e8 steps, the std falls to 0.006, and the lr reaches its floor. The pursuers catch a `hover` no more often than a moving evader. `gamma=0.995` (2026-11-04) gave no gain: the catch is 0.16–0.18. The freeze checks (2026-11-05): the frozen policy is not at a top, because small steps toward FRPN raise its score at γ = 0.99. The std falls as about c / update and the lr follows it, so the policy stops moving. `ent_coef=0.003` (2026-11-05) blew the std up. A `coll_pp` cost of 10 (2026-11-10) left the catch at 0.17–0.25, and the hits rose. The progress reward (2026-11-10) left the catch at 0.21–0.25 and raised the hits to 0.32–0.54. All six policies hold their nets 2.8–8.6 m from the evader and fly around it. Next: the body catch (2026-11-10). Other options: hold the std at 0.3, or a fixed lr of 5e-4 as in Gavin's 1v1 paper. FRPN catches 0.44–0.51 in 3v1, so the task can be done |
+| why 3v1 does not learn | with the Gaussian, the spread grows in every 3v1 run with both fixes, also with `ent_coef=0`. The FRPN test points to noise that keeps the pursuers apart. The Beta (2026-11-03) kept the spread small and the pursuers alive, but they held back about 8 m from the evader and caught as rarely. The code is back on the Gaussian. Input scaling (2026-11-04) did not change the catch, and the spread grew more. ReLU (2026-11-04) stopped the blow-up, but the pursuers held still and caught less. The critic input for each drone (2026-11-04) stopped the blow-up and lifted the catch to 0.10–0.24, the best without scaling. The pursuers still stop 3–5 m short in most episodes. 10 times the steps (2026-11-04) left the catch at 0.18–0.26: it goes flat by 2.5e8–8e8 steps, the std falls to 0.006, and the lr reaches its floor. The pursuers catch a `hover` no more often than a moving evader. `gamma=0.995` (2026-11-04) gave no gain: the catch is 0.16–0.18. The freeze checks (2026-11-05): the frozen policy is not at a top, because small steps toward FRPN raise its score at γ = 0.99. The std falls as about c / update and the lr follows it, so the policy stops moving. `ent_coef=0.003` (2026-11-05) blew the std up. A `coll_pp` cost of 10 (2026-11-10) left the catch at 0.17–0.25, and the hits rose. The progress reward (2026-11-10) left the catch at 0.21–0.25 and raised the hits to 0.32–0.54. All six policies hold their nets 2.8–8.6 m from the evader and fly around it. The probes (2026-11-10): without the net kill the same policies catch 0.03 more, the ring stays with ghost teammates, and closing in from the ring gives a higher own return. A constant lr of 5e-4 (2026-11-10) lifted the catch to 0.498, and 0.562 at the best checkpoint, with one seed. netpass lifted it to 0.388 with the adaptive lr. With the constant lr, `coll_pp` is the largest failure (0.55–0.80 of the episodes with no catch), and the catch falls after its best checkpoint. Not run yet: the body catch. Other option: hold the std at 0.3. FRPN catches 0.44–0.51 in 3v1, so the task can be done |
 | a sensed block in 1v1 | a hint of faster catches. More seeds, or the time to catch at a fixed `caught_e`, can tell it from faster learning |
 | the sensing steps in 3v1 | cannot be read until 3v1 learns |
 | does a pursuer that senses more beat learned evaders more often | yes, in the 6 runs of `default_p_*`. The base `9e4242` is one seed on older code |
