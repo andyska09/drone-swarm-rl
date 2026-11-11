@@ -119,6 +119,9 @@ class Perceiver(nn.Module):
         out = nn.MultiHeadDotProductAttention(self.heads, qkv_features=width)(
             jnp.broadcast_to(q, lead + q.shape), tokens
         )
+        # Nothing else bounds the output. Without the norm it grows until it saturates
+        # the first layer of the trunk, which then no longer reads its other inputs.
+        out = nn.LayerNorm(use_bias=False, use_scale=False)(out)
         return out.reshape(lead + (-1,))
 
 
