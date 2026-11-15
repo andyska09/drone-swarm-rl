@@ -17,4 +17,8 @@ timeout 300 "$PYTHON" -c "import jax; print(jax.devices())"
 
 "$PYTHON" run/train.py "$@"
 
+# train.py ends with the line "wrote <run folder>", and submit.py sends it to this log.
+RUN=$(grep '^wrote ' "logs/$SLURM_JOB_ID.out" | tail -n 1 | cut -d ' ' -f 2)
+"$PYTHON" run/eval.py "$RUN" --episodes 4096
+
 echo "=== done $(date) ==="
