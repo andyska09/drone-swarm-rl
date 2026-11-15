@@ -1,6 +1,7 @@
 # Running training on RCI
 
-`submit.py` sends one `sbatch` per job, and `job.sh` runs `run/train.py` on a GPU node.
+`submit.py` sends one `sbatch` per job, and `job.sh` runs `run/train.py` on a GPU node,
+then `run/eval.py` on that run with 4096 episodes.
 Every job writes straight into `runs/` in the repo on `/mnt/personal`, so there is no
 copy-back step on the cluster.
 
