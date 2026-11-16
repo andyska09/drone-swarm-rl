@@ -1,10 +1,9 @@
-#!/bin/bash -l
+#!/bin/bash
 # SLURM job for one run/train.py call. Submit with submit.py, which sets every
 # resource on the sbatch line and passes the train.py arguments to this script.
 # Results go straight into runs/ in the repo on /mnt/personal.
 
-# The python of the venv needs this module at run time. ml exists only in a login
-# shell, so line 1 has -l.
+# The python of the venv needs this module at run time.
 ml Python/3.12.3-GCCcore-13.3.0
 set -euo pipefail
 
