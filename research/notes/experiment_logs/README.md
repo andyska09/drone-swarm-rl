@@ -1,26 +1,50 @@
 # Experiment logs
 
-One log for each line of work, `<name>_log.md`: why the setup is as it is, what each run
-scored, and the open questions. What a task is now lives in its spec in
-[tasks/](../tasks/).
+One file for each experiment, in a folder for its line of work: `<line>/<name>.md`. An
+experiment is one question and the runs that answer it. `run/sweep.py` and
+`tools/rci/sweeps/` call the same thing a sweep.
 
-## Facts
+The name is a number and some words, `02_lr_ent`. The same name marks the runs,
+`runs/<name>/`, and the batch script, `tools/rci/sweeps/<name>.sh`.
 
-Under its title and first paragraph, each log holds a `## Facts` list: every lesson that
-still holds, one line each, with its date and a link to the section that shows it. Read
-it before you pick the next run. When a result changes a fact, change its line or delete
-it.
+A file holds the design, the tables, and short lines that state what a table shows. What
+we do next goes into the question of the next experiment.
 
-## An entry
+Write every file in the
+[simple-english](../../../.claude/output-styles/simple-english.md) output style.
 
-One `## <what>, <date>` section for each batch of runs or each check, in four parts:
+## The design
 
-1. **Setup**: what ran, and how it differs from the entry before: the commit, the preset,
-   the `--set` values, the steps and the seeds.
-2. **Results**: a table.
-3. **What it shows**: only what the numbers in the table show.
-This 4. step is only done after a discussion with the user. He is the one that has the final word.
-4. **Decision**: what we do next because of it, and the questions it leaves open.
+The top of the file. Write it with the user (preferably use /grilling), before the run:
 
-Each claim in an entry rests on a number in its table. A guess stays in the chat, and the
-plan goes to `handoff.md`.
+```markdown
+# 02_lr_ent
+
+**Question:** Which `lr` and `ent_coef` give the highest catch in `paths_3v1`?
+**Differs from** `01_base_seeds`: `lr` 2.5e-4, 5e-4, 1e-3, 2e-3 × `ent_coef` 0.001, 0.003, 0.01, 0.03. Seeds 0 and 1.
+**Runs:** RCI, `tools/rci/sweeps/02_lr_ent.sh`, 32 jobs.
+```
+
+- The exact configs live in the batch script, or in the command on the **Runs** line for a
+  single run. The file points to them.
+- Each config trains into `--out runs/<name>/<label>`, one run per seed. The label names
+  the values that differ from the base.
+- A batch script on RCI holds 40 jobs at most.
+
+The design is done when the user pushes the file and the batch script. The push is the
+approval.
+
+## The results
+
+Under `## Results`, after the run:
+
+1. The table that `python run/sweep.py runs/<name>` prints, as it is.
+2. At most 3 lines. Each line states only what the table shows.
+
+An analysis that the user asks for adds one table, under one line that says what it
+measures. Every table in a file is one that the design or the user asked for.
+
+## The old logs
+
+The `<name>_log.md` files in this folder are from before 2026-11-16. They stay as they
+are. Their `## Facts` lists still hold what those runs showed.

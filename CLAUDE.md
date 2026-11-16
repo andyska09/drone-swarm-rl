@@ -31,8 +31,8 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - Keep diffs small. I want to read a change and know what it does.
 - **Task specs** in `research/notes/tasks/` say what each task is now: the model, not
   the code. Write or change one by the [spec rules](research/notes/tasks/README.md).
-- The reasons, the history of the decisions, the run results and the open questions go
-  to `research/notes/experiment_logs/<name>_log.md`, in the shape that its
+- The design and the results of each experiment go to one file in
+  `research/notes/experiment_logs/`, in the shape that its
   [README](research/notes/experiment_logs/README.md) gives. A paper's setup goes to a
   paper spec in `research/notes/literature/specs/`, by its
   [README](research/notes/literature/specs/README.md).
@@ -57,15 +57,12 @@ A research workspace for multi-robot / swarm RL. Our own code lives in `swarm/`;
 `research/` holds notes, papers, and the reference codebases we learn from but do
 not edit.
 
-**The deliverable is a JAX multirotor simulator** fast enough to train swarm
-policies on thousands of parallel environments — written from scratch. What
-it is for: **decentralized swarm interception** — N drones catching one agile
+What it is for: **decentralized swarm interception** — N drones catching one agile
 evader, each seeing only itself, its neighbours and the target, with no
 communication between drones.
 
-The work cycle for a task: write it in `swarm/envs/`, fly it with the cascade to
-prove it is possible at all, train a policy with `run/train.py`, score both in the
-same seat with `run/eval.py`, then watch it in `run/replay.py`.
+The work cycle for a task: write it in `swarm/envs/`, train a policy with `run/train.py`, score in the
+same seat with `run/eval.py`, then watch it in `run/replay.py`. Usually this also encompasses running different kinds of experiments and modifications to the envs or train parameters and setup. 
 
 Physics and control-stack reference: [ctu-mrs/mrs_multirotor_simulator](https://github.com/ctu-mrs/mrs_multirotor_simulator)
 — `multirotor_model.hpp` (state + ODE) and `uav_system.hpp` (the six-controller
@@ -87,11 +84,12 @@ python run/train.py --task circle_swap --preset pair --set gamma=0.99  # any Tra
 python run/train.py --task chase --preset default --set gamma=0.99 --set generations=13 --steps 1.4e9  # pools
 python run/train.py --resume runs/<name>               # what it resumes: --help
 python run/matrix.py runs/<name>                       # every pursuer against every evader
-python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/
+python run/eval.py runs/<name>                         # -> runs/<name>/evals/latest/, or evals/<role>_<who>/ with a --seat or a preset's pilot
 python run/eval.py runs/<name> --seat drone cascade   # the cascade in one role's seat
-python run/replay.py                                   # serve + open the 3D viewer, and the spec page
-python run/plot.py runs/<name>/evals/latest            # time plots of one episode
+python run/replay.py                                   # serve + open the 3D viewer, the spec page and the training curves
+python run/plot.py runs/<name>/evals/<eval>            # time plots of one episode
 python run/compare.py runs/<a> runs/<b>                # evals and training curves side by side
+python run/sweep.py runs/<name>                        # the table of an experiment, one row per config
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 python3 tools/metacentrum/submit.py --walltime 1:00:00 -- --task chase --preset default --set generations=13 --steps 1.4e9  # on MetaCentrum: tools/metacentrum/metacentrum.md. 1 h is enough for a 1.4e9 pool run: always give --walltime 1:00:00
 python3 tools/rci/submit.py --walltime 1:00:00 -- ...  # the same on RCI: tools/rci/rci.md
@@ -175,8 +173,8 @@ Each file in `tests/` opens with a docstring that says what it checks.
 
 - `notes/` — working notes, Czech is fine. `design_choices.md` holds the shared design
   decisions and their reasons. `tasks/` holds the task specs: `defaults.md` for what
-  every task shares, and `task_<name>.md` for one task. `experiment_logs/` holds the run
-  logs and the history of the decisions. `literature/` holds the literature reviews,
+  every task shares, and `task_<name>.md` for one task. `experiment_logs/` holds the
+  experiments, one file each. `literature/` holds the literature reviews,
   and `literature/specs/` the paper specs, which `tools/specs/index.html` shows beside
   our task specs. `learning/` holds explainers of the theory, and `archive/` the notes
   that no longer hold.
