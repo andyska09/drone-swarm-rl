@@ -47,3 +47,9 @@ The base value is bold. "Tried" means in 3v1.
 | train in `paths_3v1_netpass`, eval in `paths_3v1` | the log | no |
 | `paths_3v1_body`, the body catch | the log | no |
 | the best MLP setup with `net=attention` | you | no |
+
+### Added 2026-11-16, from the sweep rules
+
+- The other eval numbers are context only: `coll_pp`, `death_rate_p`, and the peak of the training curve.
+- The MLP comes first. Then the best setup runs with `net=attention`.
+- The grid of step 2 can get more knobs after we talk.
