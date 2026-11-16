@@ -155,7 +155,7 @@ last ~2 years, small and directly relevant).
 
 ### 3.1 MARL machinery you will need
 
-- **Yu et al. 2021, *The Surprising Effectiveness of PPO in Cooperative
+- **Yu et al. 2022, *The Surprising Effectiveness of PPO in Cooperative
   Multi-Agent Games* (MAPPO)** — [arXiv:2103.01955](https://arxiv.org/abs/2103.01955)
   Shared-parameter PPO with a centralised critic beats off-policy MARL on the
   standard benchmarks with almost no tuning. Practical consequence: **plain PPO is
