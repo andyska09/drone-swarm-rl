@@ -15,16 +15,12 @@ from matplotlib.colors import LinearSegmentedColormap
 
 from swarm.learn import evaluate, pool, rundir
 
-# The test-only baselines, played after each pool's seed.
 BASELINES = {"pursuer": ["cascade"], "evader": ["apf", "cascade"]}
-# A blue ramp from light to dark, and the figure's surface and ink.
 RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 SURFACE, INK, MUTED = "#fcfcfb", "#0b0b0b", "#52514e"
 
 
 def lineup(run, cfg, side):
-    """The seed, the baselines, then each generation the run has finished."""
-
     trained = pool.members(side, cfg.generations + 1)[1:]
     return [pool.SEEDS[side], *BASELINES[side]] + [
         name for name in trained if (run / "pool" / f"{name}.pkl").exists()
@@ -33,7 +29,8 @@ def lineup(run, cfg, side):
 
 def draw(rates, pursuers, evaders, out):
     fig, ax = plt.subplots(
-        figsize=(0.6 * len(evaders) + 2.5, 0.45 * len(pursuers) + 1.6), facecolor=SURFACE
+        figsize=(0.6 * len(evaders) + 2.5, 0.45 * len(pursuers) + 1.6),
+        facecolor=SURFACE,
     )
     ax.set_facecolor(SURFACE)
     mesh = ax.pcolormesh(
@@ -45,10 +42,15 @@ def draw(rates, pursuers, evaders, out):
         linewidth=2,
     )
     for i, j in np.ndindex(rates.shape):
-        # White on the dark half of the ramp, dark ink on the light half.
-        ax.text(j + 0.5, i + 0.5, f"{rates[i, j]:.2f}", ha="center", va="center",
-                fontsize=8, color="#ffffff" if rates[i, j] > 0.6 else INK)
-    # A wider gap sets the seed and the baselines apart from the generations.
+        ax.text(
+            j + 0.5,
+            i + 0.5,
+            f"{rates[i, j]:.2f}",
+            ha="center",
+            va="center",
+            fontsize=8,
+            color="#ffffff" if rates[i, j] > 0.6 else INK,
+        )
     ax.axhline(1 + len(BASELINES["pursuer"]), color=SURFACE, linewidth=6)
     ax.axvline(1 + len(BASELINES["evader"]), color=SURFACE, linewidth=6)
 
@@ -91,7 +93,9 @@ def main():
     def win_rate(pursuer, evader):
         seated = (("pursuer", pursuer), ("evader", evader))
         pilots = {side: name if name in env.PILOTS else None for side, name in seated}
-        weights = {side: nets[side, name] for side, name in seated if (side, name) in nets}
+        weights = {
+            side: nets[side, name] for side, name in seated if (side, name) in nets
+        }
         return matches("pursuer", pilots, weights)
 
     rates = []

@@ -1,5 +1,3 @@
-"""Measure a run: python run/eval.py runs/<name> --episodes 1024 [--seat evader apf]"""
-
 import argparse
 import pathlib
 import sys
