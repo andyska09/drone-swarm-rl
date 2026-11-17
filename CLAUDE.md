@@ -41,6 +41,7 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - Unpublished papers under `research/papers/` stay local, and `CLAUDE.local.md` names
   them. Never commit one, never `git add -f` one, and never quote, summarise or name one
   in a tracked file, this one included.
+- After a change, run only the tests of the changed file. Run the full suite when I ask.
 
 ### Code and tests
 
