@@ -13,10 +13,7 @@
     - better verification process/loop?
     
 
-## Not decided yet
+## todos
 
-- Env values in a grid get a new flag, `--set-env`. It goes through your code review first.
-- The seeds per config, and the values of the grid. They wait for the first batch.
-- If `job.sh` loads `ml` on its own. For now I submit from a login shell.
 - The changes in `run/replay.py` and the dashboard for the deeper folders.
 - How the code handles a drone whose state turns NaN. Now each task has its own NaN check, and `ppo.py` hides a NaN value in the bootstrap with `isfinite`. A fix in `fly` with a flag for each task was too complicated, and I took it back. It needs a better design first.
