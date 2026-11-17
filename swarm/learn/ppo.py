@@ -1,5 +1,3 @@
-"""PPO with separate weights per role and one compiled rollout and training update."""
-
 import math
 
 import flax.linen as nn
@@ -22,9 +20,6 @@ LR_MIN, LR_MAX = 1e-5, 1e-2
 
 
 def adapt_lr(lr, kl):
-    """Divide the lr by 1.5 when the KL is over twice the target, and multiply it by
-    1.5 when the KL is under half of it."""
-
     return jnp.select(
         [kl > 2.0 * KL_TARGET, (kl > 0.0) & (kl < 0.5 * KL_TARGET)],
         [jnp.maximum(lr / 1.5, LR_MIN), jnp.minimum(lr * 1.5, LR_MAX)],
@@ -53,8 +48,6 @@ def _trunk(x, hidden, activation):
 
 
 class Actor(nn.Module):
-    """What flies. Local observations only, so it can run on a drone."""
-
     num_actions: int
     hidden: tuple = (256, 256)
     activation: str = "tanh"
@@ -88,9 +81,6 @@ class Critic(nn.Module):
 
 
 def _join(parts, attention, activation):
-    """A network's one input: its flat input, or with `attention` the parts of
-    `attention_input`, the teammates through a Perceiver."""
-
     if not attention:
         (x,) = parts
         return x
@@ -99,9 +89,6 @@ def _join(parts, attention, activation):
 
 
 class Perceiver(nn.Module):
-    """A set of tokens, (..., k, w), in any order and of any k, to one vector of a
-    fixed width: learned queries attend to the tokens. No token gives zeros."""
-
     activation: str = "tanh"
     queries: int = 4
     heads: int = 4
@@ -113,14 +100,11 @@ class Perceiver(nn.Module):
         lead = tokens.shape[:-2]
         if tokens.shape[-2] == 0:
             return jnp.zeros(lead + (self.queries * width,))
-        # The inputs come unscaled, in metres and m/s, so a bounded layer comes first.
         tokens = _trunk(tokens, (width,), self.activation)
         q = self.param("queries", nn.initializers.normal(1.0), (self.queries, width))
         out = nn.MultiHeadDotProductAttention(self.heads, qkv_features=width)(
             jnp.broadcast_to(q, lead + q.shape), tokens
         )
-        # Nothing else bounds the output. Without the norm it grows until it saturates
-        # the first layer of the trunk, which then no longer reads its other inputs.
         out = nn.LayerNorm(use_bias=False, use_scale=False)(out)
         return out.reshape(lead + (-1,))
 
@@ -143,9 +127,6 @@ def entropy(std):
 
 
 def column(role, name, slices):
-    """Metric column per role, by the role's first letter: `return_p`. A one-role task
-    keeps `return`."""
-
     if len(slices) == 1:
         return name
     if len({r[0] for r in slices}) < len(slices):
@@ -154,17 +135,12 @@ def column(role, name, slices):
 
 
 def by_role(name, x, slices, per_drone):
-    """One column for a scene fact, one per role for anything with a drone axis."""
-
     if not per_drone:
         return {name: x}
     return {column(r, name, slices): x[..., d].mean(-1) for r, d in slices.items()}
 
 
 def mean_defined(x, weight):
-    """The mean of x where weight > 0. A NaN says an entry has no value, so it is
-    dropped, not counted. NaN if no entry is left."""
-
     weight = weight * jnp.isfinite(x)
     n = weight.sum()
     total = jnp.sum(jnp.where(weight > 0, x, 0.0))
@@ -172,13 +148,6 @@ def mean_defined(x, weight):
 
 
 def episode_metrics(info, end, steps, slices, lead):
-    """Every metric that training and eval report.
-
-    A metric with `lead` axes, the steps, is a scene fact. One more axis is a drone
-    axis: it splits into one column per role, `<name>_<r>`. An `end` metric is read at
-    the steps that `end` marks, where an episode ends, and a NaN leaves that episode out.
-    A `step` metric is averaged over the steps, each weighed by `steps`."""
-
     def split(name, x):
         return by_role(name, x.astype(float), slices, x.ndim > lead)
 
@@ -203,15 +172,10 @@ def _mean(x, mask):
 
 
 def hold(training, stepped, old):
-    """The stepped state if this role is training, the old one if it is frozen."""
-
     return jax.tree.map(lambda a, b: jnp.where(training, a, b), stepped, old)
 
 
 def normalize_by_role(adv, mask, slices):
-    """Centre and scale each role on its own. A pursuer and an evader have
-    opposite signs and different sizes, so one shared scale flattens both."""
-
     out = jnp.zeros_like(adv)
     for drones in slices.values():
         a, m = adv[..., drones], mask[..., drones]
@@ -230,9 +194,6 @@ def make_net(cfg, env):
 
 
 def sides(drones, n):
-    """Columns out of n drones for the drones of one role: the drones of the other roles,
-    and each drone's teammates, (len(drones), len(drones) - 1)."""
-
     mine = np.asarray(drones)
     rivals = np.setdiff1d(np.arange(n), mine)
     mates = [[j for j in mine if j != i] for i in mine]
@@ -240,17 +201,10 @@ def sides(drones, n):
 
 
 def repeat_rows(x, n):
-    """(..., N, w) to (..., n, N, w): one copy for each of n drones."""
-
     return jnp.broadcast_to(x[..., None, :, :], x.shape[:-2] + (n,) + x.shape[-2:])
 
 
 def attention_input(obs, role, drones, action=None):
-    """What an attention network of `role` reads: the own block, the drones of the other
-    roles in one block, and each drone's teammates as a set. With `action` it is the
-    critic's input: each drone also carries its state in the world frame, and each drone
-    of another role its action this step."""
-
     n = len(drones)
     rivals, mates = sides(drones, obs.world.shape[-2])
     own, pairs = obs.own[role], obs.pairs[role]
@@ -267,8 +221,6 @@ def attention_input(obs, role, drones, action=None):
 
 
 def opponent_slices(roles):
-    """Every drone whose role is not mine. Teammates are left out."""
-
     return {
         role: jnp.array([i for i, r in enumerate(roles) if r != role], dtype=jnp.int32)
         for role in dict.fromkeys(roles)
@@ -276,24 +228,17 @@ def opponent_slices(roles):
 
 
 def opp_actions(action, opponents):
-    """The opponents' actions this step, flat."""
-
     a = jnp.take(action, opponents, axis=-2)
     return a.reshape(a.shape[:-2] + (-1,))
 
 
 def critic_input(scene, opp_action, own):
-    """The scene and the opponents' actions, then each drone's own actor input."""
-
     x = jnp.concatenate([scene, opp_action], axis=-1)
     x = jnp.broadcast_to(x[..., None, :], own.shape[:-1] + x.shape[-1:])
     return jnp.concatenate([x, own], axis=-1)
 
 
 def with_scale(variables, x):
-    """A network's variables and a scale for its input x. The scale sits with the weights,
-    so whatever saves or flies a network takes its scale too."""
-
     return {**variables, "scale": {"input": vecenv.normalizer(x.shape[-1])}}
 
 
@@ -302,15 +247,11 @@ def scaled(variables, x):
 
 
 def rescale(variables, x):
-    """The network, with its scale moved by the inputs x."""
-
     moved = vecenv.welford(variables["scale"]["input"], x.reshape(-1, x.shape[-1]))
     return {**variables, "scale": {"input": moved}}
 
 
 def make_actor(net, slices):
-    """Apply each role's actor and return outputs in drone order."""
-
     def apply(params, obs):
         n = sum(x.shape[-2] for x in obs.actor.values())
         lead = obs.critic.shape[:-1] + (n,)
@@ -331,8 +272,6 @@ def make_actor(net, slices):
 
 
 def make_critic(net, slices, opponents):
-    """Apply each role's critic. `action` is every drone's action this step."""
-
     def apply(params, obs, action):
         value = jnp.zeros(action.shape[:-1])
         for role, drones in slices.items():
@@ -353,7 +292,7 @@ def make_critic(net, slices, opponents):
 @flax.struct.dataclass
 class Transition:
     obs: envs.Obs
-    draw: jnp.ndarray  # before the clip, which the log-prob needs
+    draw: jnp.ndarray
     action: jnp.ndarray
     log_prob: jnp.ndarray
     value: jnp.ndarray
@@ -364,23 +303,15 @@ class Transition:
 
 @flax.struct.dataclass
 class Learner:
-    """One learner's part of an update, besides the weights: its envs, the roles that
-    take a step, and the pool that flies its rivals, or None. `side` is the role it
-    trains, or None when every role learns."""
-
     vec: vecenv.VecState
     obs: envs.Obs
     key: jnp.ndarray
-    # {role: bool}, traced, so freezing a role needs no second compile.
     train: dict
     pool: tuple = None
     side: str = flax.struct.field(pytree_node=False, default=None)
 
 
 def make(cfg, env, env_params, pool_seat=None):
-    """`pool_seat` is a `seats.pool_seat`. It flies its rows over what the actors draw,
-    with the pool that the learner carries."""
-
     assert cfg.num_updates > 0, "total_timesteps < num_envs * num_steps"
     assert (cfg.num_envs * cfg.num_steps) % cfg.num_minibatches == 0
     if cfg.net == "attention" and cfg.normalize_obs:
@@ -423,7 +354,6 @@ def make(cfg, env, env_params, pool_seat=None):
             role: TrainState.create(
                 apply_fn=None,
                 params=params(role, k),
-                # The lr sits in the optimizer state, so each role carries its own.
                 tx=optax.inject_hyperparams(
                     lambda learning_rate: optax.chain(
                         optax.clip_by_global_norm(cfg.max_grad_norm),
@@ -441,7 +371,6 @@ def make(cfg, env, env_params, pool_seat=None):
     def update(ts, learner):
         vec, obs, key = learner.vec, learner.obs, learner.key
         train, pool = learner.train, learner.pool
-        # 1 for each drone whose role takes a step: only these rows enter the loss.
         learns = jnp.stack([jnp.asarray(train[r]) for r in env_params.roles]).astype(float)
         start = None if pool_seat is None else lambda state: pool_start(state, pool)
 
@@ -455,8 +384,6 @@ def make(cfg, env, env_params, pool_seat=None):
             return action, draw, mean, std, seat
 
         def value_at(ts, state, obs, seat, key):
-            """No action exists at this state yet, so draw one."""
-
             return critic(weights(ts), obs, act(ts, state, obs, seat, key)[0])
 
         def rollout(carry, _):
@@ -467,9 +394,6 @@ def make(cfg, env, env_params, pool_seat=None):
             next_obs, vec, reward, done, info = vecenv.step(
                 vec.replace(seat=seat), action, env, env_params, cfg, learns, start
             )
-            # Bootstrap truncations from the final observation before the scene resets.
-            # A diverged drone makes v_final NaN, also for a survivor that sees it, and
-            # NaN * 0 is NaN, so select instead.
             v_final = value_at(
                 ts, info.pop("final_state"), info.pop("final_obs"), seat, k_final
             )
@@ -532,7 +456,6 @@ def make(cfg, env, env_params, pool_seat=None):
                     value = critic(params, tr.obs, tr.action)
                     ratio = jnp.exp(log_prob(tr.draw, mean, std) - tr.log_prob)
 
-                    # Per drone, so the same numbers can be reported per role.
                     clipped = -jnp.minimum(
                         ratio * a_n,
                         jnp.clip(ratio, 1 - cfg.clip_eps, 1 + cfg.clip_eps) * a_n,
@@ -566,8 +489,6 @@ def make(cfg, env, env_params, pool_seat=None):
                         t = with_lr(t, lr)
                     return t.apply_gradients(grads=grads[role])
 
-                # Selecting the whole TrainState freezes the Adam moments, the lr and
-                # the step count too, not only the weights.
                 return {
                     role: hold(train[role], step(role, t), t) for role, t in ts.items()
                 }, stats
@@ -584,7 +505,6 @@ def make(cfg, env, env_params, pool_seat=None):
             }
             return hold(train[role], t.replace(params=nets), t)
 
-        # After the epochs, so the rollout and the loss read the same inputs.
         if cfg.normalize_obs:
             ts = {role: rescaled(role, t) for role, t in ts.items()}
 
@@ -593,8 +513,6 @@ def make(cfg, env, env_params, pool_seat=None):
             info, done, jnp.ones_like(done), slices, lead=2
         )
 
-        # Per role: the two sides of a game have opposite signs, so one pooled
-        # variance rewards a critic that has only learned which role it is.
         for role, drones in slices.items():
             target, value = targets[..., drones], traj.value[..., drones]
             var_y = jnp.var(target)

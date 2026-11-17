@@ -1,5 +1,3 @@
-"""Check that PPO updates are repeatable and that env metrics reach the caller."""
-
 import sys
 from pathlib import Path
 
@@ -12,13 +10,12 @@ from swarm import envs
 from swarm.learn import config, ppo
 
 
-def train(updates, seed=0):
+def train(updates, seed=0, **overrides):
     cfg = config.TrainConfig(
         task="circle_swap", preset="pair", seed=seed, num_envs=128, num_steps=32,
-        total_timesteps=300_000, num_minibatches=4,
+        total_timesteps=300_000, num_minibatches=4, **overrides,
     )
     env, env_params = envs.make(cfg.task, cfg.preset)
-    # Short episodes so some finish inside a rollout and the per-episode metrics exist.
     env_params = env_params.replace(max_steps=100)
     init, update = ppo.make(cfg, env, env_params)
 
@@ -41,11 +38,12 @@ def test_metrics_carry_the_env_measurements():
     assert set(metrics) >= {"return", "ep_length", "death_rate", "explained_var", "approx_kl"}
 
 
-def test_metrics_split_by_role_and_leave_out_undefined_episodes():
-    """The rules that training and eval share, on two episodes of two pursuers and an
-    evader: a drone metric splits by role, a scene metric keeps its name, and an
-    episode whose value is NaN is left out of the mean."""
+def test_an_update_that_cannot_move_measures_no_policy_change():
+    metrics = train(1, lr=0.0)[0]
+    assert abs(float(metrics["approx_kl"])) < 1e-6
 
+
+def test_metrics_split_by_role_and_leave_out_undefined_episodes():
     info = {
         "ep_length": jnp.array([10, 20]),
         "ep_return": jnp.array([[1.0, 3.0, -2.0], [5.0, 7.0, -6.0]]),
@@ -57,7 +55,6 @@ def test_metrics_split_by_role_and_leave_out_undefined_episodes():
         "step": {},
     }
     slices = envs.role_slices(("pursuer", "pursuer", "evader"))
-    # One row per episode, read at its end.
     metrics = ppo.episode_metrics(info, jnp.ones(2), jnp.ones(2), slices, lead=1)
 
     assert set(metrics) == {
@@ -71,8 +68,6 @@ def test_metrics_split_by_role_and_leave_out_undefined_episodes():
 
 
 def test_a_frozen_role_does_not_move():
-    """A pool learner trains one side, and its `train` freezes the other side."""
-
     cfg = config.TrainConfig(
         task="chase",
         preset="default",
