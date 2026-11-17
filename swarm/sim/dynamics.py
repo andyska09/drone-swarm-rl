@@ -1,5 +1,3 @@
-"""Quadrotor plant. It must match the C++ goldens in tests/golden."""
-
 import flax.struct
 import jax
 import jax.numpy as jnp
@@ -28,16 +26,14 @@ class Params:
 
 @flax.struct.dataclass
 class State:
-    x: jnp.ndarray  # world position (3,)
-    v: jnp.ndarray  # world velocity (3,)
-    R: jnp.ndarray  # body -> world rotation (3, 3)
-    omega: jnp.ndarray  # body angular rate (3,)
-    rpm: jnp.ndarray  # motor speeds (4,)
+    x: jnp.ndarray
+    v: jnp.ndarray
+    R: jnp.ndarray
+    omega: jnp.ndarray
+    rpm: jnp.ndarray
 
 
 def rest_state(rpm=0.0):
-    """At the origin, level, motionless, all motors at `rpm`."""
-
     return State(
         x=jnp.zeros(3),
         v=jnp.zeros(3),
@@ -48,8 +44,6 @@ def rest_state(rpm=0.0):
 
 
 def default_params(**overrides):
-    """x500 quadrotor, with the values in tests/golden/params.txt."""
-
     mass = 2.0
     kf = 0.00000027087
     km = 0.07
@@ -67,8 +61,6 @@ def default_params(**overrides):
         )
     )
 
-    # rows: roll, pitch, yaw, thrust. Maps squared motor RPM to torque and thrust.
-    # 0.707, not 1/sqrt(2): the goldens use 0.707.
     allocation_matrix = jnp.array(
         [
             [-0.707, 0.707, 0.707, -0.707],
@@ -107,8 +99,6 @@ def default_params(**overrides):
 
 
 def orthonormalize(R):
-    """R·L⁻ᵀ, where L is the Cholesky factor of RᵀR, so the result is orthonormal."""
-
     L = jnp.linalg.cholesky(R.T @ R)
     return jax.scipy.linalg.solve_triangular(L, R.T, lower=True).T
 
@@ -124,15 +114,12 @@ def skew(w):
 
 
 def derivative(state, params):
-    """Time derivative of the 18 rigid-body states. `rpm` is deliberately not integrated."""
-
     R = orthonormalize(state.R)
 
     wrench = params.allocation_matrix @ state.rpm**2
     torque, thrust = wrench[:3], wrench[3]
 
-    # +eps only so the gradient stays finite at v = 0; it shifts |v| by <1e-14.
-    speed = jnp.sqrt(jnp.sum(state.v**2) + 1e-12)
+    speed = jnp.linalg.norm(state.v)
     drag = params.air_resistance_coeff * jnp.pi * params.arm_length**2 * speed * state.v
 
     gravity = jnp.array([0.0, 0.0, -params.g])
@@ -159,11 +146,6 @@ def advance(state, slope, h):
 
 
 def step(state, throttle, params, dt):
-    """One RK4 step, then re-orthonormalize, then the motor lag. That order.
-
-    `rpm` survives the integration untouched because `derivative` returns zero for
-    it, so the motors hold one speed for the whole step."""
-
     k1 = derivative(state, params)
     k2 = derivative(advance(state, k1, dt / 2), params)
     k3 = derivative(advance(state, k2, dt / 2), params)
