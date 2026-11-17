@@ -2,6 +2,7 @@
 
 A task spec, `task_<name>.md`, says what the task is now: the model, not the code.
 `defaults.md` holds what every task shares, and it is the template.
+`env_contract.md` says what a task file holds in code. The spec rules do not cover it.
 
 ## Spec rules
 

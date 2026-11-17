@@ -109,9 +109,9 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
 - `sim/guidance.py` — the guidance laws behind chase's pilots: FRPN, APF and the flown
   paths. Each one gives a world acceleration.
 - `envs/` — one file per task, plain functions, no gymnax; auto-reset belongs to the
-  trainer. **The env contract** every task file meets is in the docstrings of
-  `envs/__init__.py`: what a task file holds, the obs, the end flags and the metrics.
-  Read it before writing a task. Every task carries a drone axis, `N = 1` included, and
+  trainer. **The env contract** every task file meets is in
+  [env_contract.md](research/notes/tasks/env_contract.md): what a task file holds, the
+  obs, the end flags and the metrics. Read it before writing a task. Every task carries a drone axis, `N = 1` included, and
   each has a spec in `research/notes/tasks/task_<name>.md`.
 - **`envs/core.py` holds everything the tasks share**: `Common` (the `EnvParams`
   fields every task has, which each task's `EnvParams` inherits), and the helpers for
@@ -130,9 +130,8 @@ Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets b
   `pytree_node=False`; its length is the drone count, and `role_slices` in
   `envs/__init__.py` gives each distinct name in it its drones. `learn/ppo.py` gives each
   name its own set of weights.
-- `learn/` — our PPO and the training loop. Each module's docstring says what it holds.
-  `ppo.py` and `vecenv.py` know nothing about drones: they take an env *module* and one
-  network per role.
+- `learn/` — our PPO and the training loop. `ppo.py` and `vecenv.py` know nothing about
+  drones: they take an env *module* and one network per role.
 - **Every role is its own learner.** One `TrainState` per role, so gradient
   clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
   mix two sides of a game. `cfg.generations` above 0 trains chase with pools; the
@@ -167,7 +166,8 @@ transposed allocation matrix or a missing `ω × Jω` sails through it. Only
 
 ## Tests
 
-Each file in `tests/` opens with a docstring that says what it checks.
+`tests/test_conventions.py` checks the code conventions. Now it holds one: no comments
+and no docstrings.
 
 ## research/ and the reference code
 
