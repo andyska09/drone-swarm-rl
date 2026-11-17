@@ -1,5 +1,3 @@
-"""The controller cascade: position -> velocity -> acceleration -> attitude -> rate -> mixer. It must match the C++ goldens in tests/golden. Only the heading (not heading-rate) branch is here; that is the one the position command flows through."""
-
 import flax.struct
 import jax.numpy as jnp
 
@@ -24,17 +22,13 @@ def pid_init(n=3):
 
 
 def pid_update(pid, error, gains, dt, measurement=None):
-    """By default D reacts to the error, as the goldens need. Pass `measurement` and D
-    reacts to that instead, so a reference that jumps causes no spike."""
-
     tracked = error if measurement is None else measurement
     sign = 1.0 if measurement is None else -1.0
     difference = sign * (tracked - pid.last_error) / dt
 
     total = gains.kp * error + gains.kd * difference + gains.ki * pid.integral
 
-    clamped = jnp.clip(total, -gains.saturation, gains.saturation)
-    out = jnp.where(gains.saturation > 0, clamped, total)
+    out = jnp.clip(total, -gains.saturation, gains.saturation)
 
     winding = (gains.antiwindup > 0) & (jnp.abs(out) < gains.antiwindup)
     integral = jnp.where(winding, pid.integral + error * dt, pid.integral)
@@ -68,16 +62,7 @@ def velocity_controller(state, velocity_ref, pid, gains, dt):
     return pid_update(pid, velocity_ref - state.v, gains, dt)
 
 
-def acceleration_controller(state, acceleration_ref, heading, params):
-    """Desired force to (orientation, throttle). No PID — pure geometry.
-
-    The throttle is derived from the force projected on the *current* body z, and
-    its square root is unguarded, as the goldens need: an inverted drone gives NaN."""
-
-    fd = (acceleration_ref + jnp.array([0.0, 0.0, params.g])) * params.mass
-    body_z = fd / jnp.linalg.norm(fd)
-
-    # Oblique projection of the desired heading onto the plane normal to body z.
+def heading_on_tilted_plane(body_z, heading):
     complement = jnp.eye(3) - jnp.outer(body_z, body_z)
     square = complement[:2, :2]
     projector = (
@@ -87,11 +72,17 @@ def acceleration_controller(state, acceleration_ref, heading, params):
     )
 
     body_x = projector @ jnp.array([jnp.cos(heading), jnp.sin(heading), 0.0])
-    body_x = body_x / jnp.linalg.norm(body_x)
+    return body_x / jnp.linalg.norm(body_x)
+
+
+def acceleration_controller(state, acceleration_ref, heading, params):
+    fd = (acceleration_ref + jnp.array([0.0, 0.0, params.g])) * params.mass
+    body_z = fd / jnp.linalg.norm(fd)
+    body_x = heading_on_tilted_plane(body_z, heading)
     body_y = jnp.cross(body_z, body_x)
     body_y = body_y / jnp.linalg.norm(body_y)
 
-    thrust = fd @ state.R[:, 2]
+    thrust = jnp.maximum(fd @ state.R[:, 2], 0.0)
     throttle = (jnp.sqrt(thrust / (params.kf * params.n_motors)) - params.min_rpm) / (
         params.max_rpm - params.min_rpm
     )
@@ -113,13 +104,12 @@ def attitude_controller(state, orientation_ref, pid, gains, dt):
 
 
 def rate_gains(params, kp=4.0, kd=0.04, ki=0.0):
-    # saturation < 0 disables the clamp, so the mixer is what bounds the output.
     j = jnp.diag(params.J)
     return Gains(
         kp=kp * j,
         kd=kd * j,
         ki=ki * j,
-        saturation=jnp.full(3, -1.0),
+        saturation=jnp.full(3, jnp.inf),
         antiwindup=jnp.full(3, 1.0),
     )
 
@@ -146,7 +136,6 @@ def mixer(control_group, allocation_inv):
 
     throttle, mean, top = control_group[3], motors.mean(), motors.max()
 
-    # The rescale rebuilds from the control group, so it drops the shift above.
     scale = throttle / jnp.where(mean == 0.0, 1.0, mean)
     rescaled = allocation_inv @ (control_group * jnp.array([scale, scale, scale, 1.0]))
     divided = motors / jnp.where(top > 0.0, top, 1.0)
@@ -169,9 +158,6 @@ def cascade_init():
 
 
 def cascade_outer(state, position_ref, heading, pids, gains, params, dt):
-    """The four rungs above the rate loop. Their output pair is a CTBR command, so
-    this is also how the cascade flies an env whose action is CTBR."""
-
     pos, vel, att = gains[0], gains[1], gains[2]
     pos_pid, vel_pid, att_pid, rate_pid = pids
 
@@ -184,8 +170,6 @@ def cascade_outer(state, position_ref, heading, pids, gains, params, dt):
 
 
 def cascade_step(state, position_ref, heading, pids, gains, params, dt):
-    """Position reference to four motor throttles, through all six rungs."""
-
     (throttle, rate_ref), pids = cascade_outer(
         state, position_ref, heading, pids, gains, params, dt
     )

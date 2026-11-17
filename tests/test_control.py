@@ -1,6 +1,3 @@
-"""The closed rate loop must reproduce the C++ reference, and the mixer must agree
-with MRS's normalized allocation."""
-
 import sys
 from pathlib import Path
 
@@ -149,7 +146,6 @@ def test_mixer_shifts_negative_motors_up():
 
 
 def test_pid_kicks_on_the_first_step():
-    # last_error starts at zero, so a step reference gives a derivative of error/dt.
     gains = c.Gains(kp=jnp.full(3, 2.0), kd=jnp.full(3, 0.5), ki=jnp.zeros(3),
                     saturation=-1.0, antiwindup=1.0)
     out, pid = c.pid_update(c.pid_init(), jnp.ones(3), gains, DT)
@@ -221,3 +217,11 @@ def test_hovers_from_a_perturbed_start():
 
     assert float(jnp.linalg.norm(traj.x[-1])) < 0.02
     assert float(jnp.linalg.norm(traj.v[-1])) < 0.01
+
+
+def test_upside_down_drone_asks_for_no_thrust():
+    p = d.default_params()
+    flipped = d.rest_state(0.0).replace(R=jnp.diag(jnp.array([1.0, -1.0, -1.0])))
+    _, throttle = c.acceleration_controller(flipped, jnp.zeros(3), 0.0, p)
+
+    assert float(throttle) <= 0.0

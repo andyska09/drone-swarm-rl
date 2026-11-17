@@ -1,5 +1,3 @@
-"""The pieces every task shares: params, the action, the plant loop, the obs blocks."""
-
 import dataclasses
 
 import flax.struct
@@ -13,14 +11,10 @@ from swarm.sim import control, dynamics, guidance
 
 @dataclasses.dataclass(frozen=True)
 class Common:
-    """Every task's EnvParams inherits this and adds only the fields it owns."""
-
     model: dynamics.Params = flax.struct.field(default_factory=dynamics.default_params)
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("drone",))
     n_neighbors: int = flax.struct.field(pytree_node=False, default=6)
-    # (role, pilot): this pilot from the task's PILOTS flies the role in training, and only
-    # the other roles learn.
     piloted: tuple = flax.struct.field(pytree_node=False, default=())
 
     sim_dt: float = 0.005
@@ -38,7 +32,6 @@ class Common:
     start_tilt: float = 0.2
     random_yaw: bool = flax.struct.field(pytree_node=False, default=True)
 
-    # Two drones collide when their propeller tips touch: arm + prop + arm + prop.
     collision_dist: float = 0.8
 
     @property
@@ -47,8 +40,6 @@ class Common:
 
     @property
     def n_visible(self):
-        """Slots in the `others` block, capped at n_neighbors."""
-
         return min(self.n_neighbors, len(self.roles) - 1)
 
     @property
@@ -73,8 +64,6 @@ def rate_scale(params):
 
 
 def action_to_command(action, params):
-    """CTBR action in [-1,1] to a throttle in [0,1] and body rates in rad/s."""
-
     return 0.5 * (action[..., 0] + 1.0), action[..., 1:] * rate_scale(params)
 
 
@@ -86,22 +75,16 @@ def command_to_action(throttle, rate_ref, params):
 
 
 def per_row(tree, n):
-    """The tree repeated for n drones."""
-
     return jax.tree.map(lambda x: jnp.broadcast_to(x, (n,) + x.shape), tree)
 
 
 def select_rows(pick, a, b):
-    """The tree a on the drones that `pick` marks, and the tree b on the others."""
-
     return jax.tree.map(
         lambda x, y: jnp.where(jnp.expand_dims(pick, tuple(range(1, x.ndim))), x, y), a, b
     )
 
 
 def cascade(drones, points, pids, params):
-    """The action of the full cascade that flies each drone to its point."""
-
     gains = control.cascade_gains(params.model)
 
     def one(drone, point, pid):
@@ -114,8 +97,6 @@ def cascade(drones, points, pids, params):
 
 
 def cascade_pilot(params, rows, goal):
-    """A pilot: the cascade flies each drone of `rows` to its point, `goal(state)`."""
-
     def act(state, obs, pids):
         del obs
         return cascade(jax.tree.map(lambda a: a[rows], state.drone), goal(state), pids, params)
@@ -124,9 +105,6 @@ def cascade_pilot(params, rows, goal):
 
 
 def accelerate(drones, a, pids, params):
-    """The action that gives each drone its world acceleration `a`, through the
-    cascade's acceleration and attitude levels."""
-
     model, dt = params.model, params.policy_dt
     gains = control.attitude_gains(max_rate_yaw=params.max_rate_yaw)
 
@@ -135,8 +113,6 @@ def accelerate(drones, a, pids, params):
         orientation, throttle = control.acceleration_controller(
             drone, guidance.drone_limit(a, model), heading, model
         )
-        # A negative thrust gives a NaN throttle, so use 0.
-        throttle = jnp.where(jnp.isnan(throttle), 0.0, throttle)
         rate, pid = control.attitude_controller(drone, orientation, pid, gains, dt)
         return command_to_action(throttle, rate, params), pid
 
@@ -144,9 +120,6 @@ def accelerate(drones, a, pids, params):
 
 
 def fly(drone, pid, action, params):
-    """One policy step of the rate loop and the plant. A reward can charge for
-    the commanded rates, so they come back too."""
-
     throttle, rate_ref = action_to_command(jnp.clip(action, -1.0, 1.0), params)
     gains = control.cascade_gains(params.model)
     rate_gains, allocation, dt = gains[3], gains[4], params.sim_dt
@@ -183,13 +156,10 @@ def box_dist(offset, R, half):
 
 
 def wall_dist(drone, params):
-    """Distance to the arena wall along four axis. Parallel to the world floor."""
-
     return box_dist(drone.x - jnp.asarray(params.center), drone.R, half(params))
 
 
 def own_obs(drone, walls):
-    # Height is a scalar, so it carries no frame and keeps the body-frame symmetry.
     return jnp.concatenate(
         [
             to_body(drone.R, drone.v),
@@ -203,15 +173,11 @@ def own_obs(drone, walls):
 
 
 def world(drone):
-    """(N, 18): the exact state of each drone in the world frame."""
-
     n = drone.x.shape[0]
     return jnp.concatenate([drone.x, drone.v, drone.R.reshape(n, 9), drone.omega], axis=-1)
 
 
 def scene_obs(drone):
-    """The exact state (one vector) of every drone in world frame."""
-
     return world(drone).reshape(-1)
 
 
@@ -222,32 +188,22 @@ def target_obs(drone, x, v=0.0):
 
 
 def pair_dist(x):
-    """Drone-to-drone distances, diagonal at infinity so nobody is their own neighbour."""
-
     d = norm(x[None, :, :] - x[:, None, :])
     return jnp.where(jnp.eye(x.shape[0], dtype=bool), jnp.inf, d)
 
 
 def first_apart(draws, spacing):
-    """The first of `draws`, (k, N, 3), that keeps every two drones `spacing` apart."""
-
     apart = jax.vmap(lambda x: jnp.min(pair_dist(x)))(draws) >= spacing
     return draws[jnp.argmax(apart)]
 
 
 def same_role(roles):
-    """(N, N, 1): 1 where drone j shares the role of drone i."""
-
     r = np.array(roles)
     same = (r[:, None] == r[None, :]) & ~np.eye(len(roles), dtype=bool)
     return same.astype(float)[..., None]
 
 
 def pairs(drone, params, sense=()):
-    """(N, N, 6 + s): row i, column j is drone j in the body frame of drone i: the offset
-    and the velocity, then the s columns that `sense` names: "attitude", the R of drone
-    j in the body frame (9), and "rpm", its motor speeds over max_rpm (4)."""
-
     n = drone.x.shape[0]
     rel = lambda a: jnp.einsum("nji,nkj->nki", drone.R, a[None, :, :] - a[:, None, :])
     sensed = {
@@ -260,19 +216,7 @@ def pairs(drone, params, sense=()):
 
 
 def others(drone, params, seen, sense=()):
-    """(N, (8 + s)K): the first K drones that each drone sees. The drones of another
-    role come first, then those of its own role, each nearest first. So in chase a
-    pursuer always finds the evader in slot 0.
-
-    Each slot holds the offset and the velocity in the body frame, then 1 if that drone
-    shares the role, then the s columns of `pairs`. Then come K 0/1 flags for the filled
-    slots. An empty slot is all zeros. `seen` is (N, N), or True when every drone sees
-    every other.
-    """
-
     dist = jnp.where(seen, pair_dist(drone.x), jnp.inf)
-    # lexsort reads its keys from the last: the seen drones (and not the drone itself)
-    # first, then another role before its own, then the nearest.
     keys = (dist, same_role(params.roles)[..., 0], jnp.isinf(dist))
     idx = jnp.lexsort(keys)[:, : params.n_visible]
     near = jnp.take_along_axis(dist, idx, axis=1)
@@ -287,14 +231,10 @@ def others(drone, params, seen, sense=()):
 
 
 def by_role(x, roles):
-    """Split x, one row per drone, into one matrix per role, in drone order."""
-
     return {role: x[drones] for role, drones in role_slices(roles).items()}
 
 
 def body_radius(params):
-    """The ball that wraps one drone: centre to the tip of a propeller."""
-
     return params.model.arm_length + params.model.prop_radius
 
 
@@ -310,8 +250,6 @@ def out_of_arena(drone, params):
 
 
 def lost(drone, params):
-    """Out of the arena, through the floor, or upside down."""
-
     return (
         out_of_arena(drone, params)
         | (drone.x[:, 2] < 0.0)
@@ -320,8 +258,6 @@ def lost(drone, params):
 
 
 def is_dead(drone, params):
-    """The default rule. A task with different terminations writes its own."""
-
     return lost(drone, params) | jnp.any(hits(drone, params), axis=-1)
 
 
