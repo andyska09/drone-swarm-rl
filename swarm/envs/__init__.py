@@ -14,10 +14,7 @@ class Obs:
 
 
 def role_slices(roles):
-    return {
-        name: jnp.array([i for i, r in enumerate(roles) if r == name])
-        for name in dict.fromkeys(roles)
-    }
+    return {name: jnp.array([i for i, r in enumerate(roles) if r == name]) for name in dict.fromkeys(roles)}
 
 
 def make(task, preset):

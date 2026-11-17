@@ -104,9 +104,7 @@ def get_obs(state, params):
         R=F @ d.R * flip[:, None, :],
         omega=flip[:, 1:2] * flip * d.omega,
     )
-    walls = core.box_dist(
-        p * flip, flip[:, :, None] * R * flip[:, None, :], half(state, params)
-    )
+    walls = core.box_dist(p * flip, flip[:, :, None] * R * flip[:, None, :], half(state, params))
     mirrored = d.replace(R=d.R * flip[:, None, :])
     actor = jnp.concatenate(
         [
@@ -128,9 +126,7 @@ def reference(state, params):
 
 
 def scenery(state, params):
-    corners = jnp.array(
-        [[-1.0, -1.0, -1.0], [1.0, -1.0, -1.0], [1.0, 1.0, -1.0], [-1.0, 1.0, -1.0]]
-    )
+    corners = jnp.array([[-1.0, -1.0, -1.0], [1.0, -1.0, -1.0], [1.0, 1.0, -1.0], [-1.0, 1.0, -1.0]])
     return {
         "walls": to_world(corners * half(state, params), state.heading, params),
         "wall_height": jnp.asarray(params.width),
@@ -154,9 +150,7 @@ def reset(key, params):
     length = jnp.asarray(params.length, float)
     end = 0.5 * length - params.start_gap
     along = jnp.where(jnp.arange(n) % 2 == 0, -end, end)
-    across = jax.random.uniform(
-        k_across, (n, 2), minval=-0.5 * params.start_box, maxval=0.5 * params.start_box
-    )
+    across = jax.random.uniform(k_across, (n, 2), minval=-0.5 * params.start_box, maxval=0.5 * params.start_box)
     start = to_world(jnp.concatenate([along[:, None], across], axis=-1), heading, params)
     drone = core.spawn(k_spawn, start, params)
     mapped = jnp.arange(n) % 2 == 1
@@ -187,9 +181,7 @@ def step(key, state, action, params):
     p = to_tube(drone.x, state.heading, params)
 
     room = half(state, params) - core.body_radius(params)
-    wall = flying & (
-        jnp.any(jnp.abs(p) > room, axis=-1) | ~jnp.all(jnp.isfinite(p), axis=-1)
-    )
+    wall = flying & (jnp.any(jnp.abs(p) > room, axis=-1) | ~jnp.all(jnp.isfinite(p), axis=-1))
     both = flying[:, None] & flying[None, :]
     contact = jnp.any(core.hits(drone, params) & both, axis=-1)
     died = wall | contact
@@ -206,9 +198,7 @@ def step(key, state, action, params):
         arrived=arrived,
         arrive_time=jnp.where(arrive, seconds, state.arrive_time),
         time=time,
-        closest=jnp.minimum(
-            state.closest, jnp.min(jnp.where(both, core.pair_dist(drone.x), jnp.inf))
-        ),
+        closest=jnp.minimum(state.closest, jnp.min(jnp.where(both, core.pair_dist(drone.x), jnp.inf))),
     )
 
     reward = compute_reward(arrive, died, params)
@@ -242,9 +232,7 @@ def eval_params(params):
 def curriculum(params, metrics):
     settled = abs(metrics["length"] - params.length) < 1e-3
     if settled and metrics["success"] > params.grow_at and params.length < params.length_max:
-        return params.replace(
-            length=min(params.length + params.length_step, params.length_max)
-        )
+        return params.replace(length=min(params.length + params.length_step, params.length_max))
     return None
 
 

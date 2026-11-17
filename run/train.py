@@ -21,12 +21,10 @@ def main():
     p.add_argument("--preset")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--total-timesteps", "--steps", type=lambda value: int(float(value)))
-    p.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
-                   help="any other TrainConfig field")
+    p.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="any other TrainConfig field")
     p.add_argument("--out", default="runs")
     p.add_argument("--wandb", action="store_true")
-    p.add_argument("--resume", metavar="RUN",
-                   help="run a run on from its last checkpoint; every other flag is ignored")
+    p.add_argument("--resume", metavar="RUN", help="run a run on from its last checkpoint; every other flag is ignored")
     args = p.parse_args()
 
     if args.resume:

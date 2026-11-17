@@ -26,14 +26,19 @@ def load(path, episode, drone):
     cut = lambda name: np.asarray(traj[name])[episode, :k, drone]
     throttle, rate_ref = core.action_to_command(cut("action"), params)
 
-    return header, params, k, {
-        "x": cut("x"),
-        "omega": cut("omega"),
-        "rpm": cut("rpm"),
-        "throttle": np.asarray(throttle),
-        "rate_ref": np.asarray(rate_ref),
-        "goal": cut("goal"),
-    }
+    return (
+        header,
+        params,
+        k,
+        {
+            "x": cut("x"),
+            "omega": cut("omega"),
+            "rpm": cut("rpm"),
+            "throttle": np.asarray(throttle),
+            "rate_ref": np.asarray(rate_ref),
+            "goal": cut("goal"),
+        },
+    )
 
 
 def draw(header, params, t, d):

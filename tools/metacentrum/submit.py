@@ -26,12 +26,22 @@ def job_name(train):
 
 
 def submit(a, train):
-    cmd = ["qsub", "-N", job_name(train),
-           "-l", f"select=1:ncpus={a.ncpus}:ngpus=1:mem={a.mem}:gpu_cap={a.gpu_cap}",
-           "-l", f"walltime={a.walltime}",
-           "-j", "oe", "-o", f"{ROOT}/logs/",
-           "-v", f"ROOT={ROOT},ARGS='{' '.join(train)}'",
-           str(JOB)]
+    cmd = [
+        "qsub",
+        "-N",
+        job_name(train),
+        "-l",
+        f"select=1:ncpus={a.ncpus}:ngpus=1:mem={a.mem}:gpu_cap={a.gpu_cap}",
+        "-l",
+        f"walltime={a.walltime}",
+        "-j",
+        "oe",
+        "-o",
+        f"{ROOT}/logs/",
+        "-v",
+        f"ROOT={ROOT},ARGS='{' '.join(train)}'",
+        str(JOB),
+    ]
     if a.dry_run:
         print("DRY RUN:", " ".join(cmd))
         return
@@ -54,7 +64,7 @@ def main():
     p.add_argument("--gpu-cap", default="compute_80", dest="gpu_cap")
     p.add_argument("--dry-run", action="store_true", dest="dry_run")
     a = p.parse_args(argv[:cut])
-    train = argv[cut + 1:]
+    train = argv[cut + 1 :]
     if not train:
         p.error("give the train.py arguments after --")
 

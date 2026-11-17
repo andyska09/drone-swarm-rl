@@ -12,8 +12,7 @@ from swarm import envs
 from swarm.envs import avoidance, chase
 from swarm.learn import config, evaluate, runner
 
-OUTCOMES = ("caught_e", "fail_pe", "crash_p", "OOB_p", "coll_pp",
-            "crash_e", "OOB_e", "time_limit")
+OUTCOMES = ("caught_e", "fail_pe", "crash_p", "OOB_p", "coll_pp", "crash_e", "OOB_e", "time_limit")
 
 
 def fixed_match(seats, params=chase.PRESETS["default"], episodes=64):
@@ -32,17 +31,22 @@ def fixed_match(seats, params=chase.PRESETS["default"], episodes=64):
 
 def small(**overrides):
     return config.TrainConfig(
-        task="circle_swap", preset="pair", num_envs=8, num_steps=8, total_timesteps=8 * 8 * 4,
-        num_minibatches=2, checkpoint_every=2, log_every=100, **overrides
+        task="circle_swap",
+        preset="pair",
+        num_envs=8,
+        num_steps=8,
+        total_timesteps=8 * 8 * 4,
+        num_minibatches=2,
+        checkpoint_every=2,
+        log_every=100,
+        **overrides,
     )
 
 
 def test_cascade_in_both_seats_needs_no_weights(tmp_path):
     _, params = envs.make("chase", "default")
     path = runner.new_run(config.TrainConfig(task="chase", preset="default"), params, tmp_path)
-    out, summary = evaluate.evaluate(
-        path, episodes=32, seats=[("pursuer", "cascade"), ("evader", "cascade")]
-    )
+    out, summary = evaluate.evaluate(path, episodes=32, seats=[("pursuer", "cascade"), ("evader", "cascade")])
 
     caught = summary["caught_e"]
     assert caught > 0.9, f"the cascade caught the cascade in only {caught:.2f} of episodes"

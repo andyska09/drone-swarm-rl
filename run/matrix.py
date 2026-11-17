@@ -18,9 +18,7 @@ SURFACE, INK, MUTED = "#fcfcfb", "#0b0b0b", "#52514e"
 
 def lineup(run, cfg, side):
     trained = pool.members(side, cfg.generations + 1)[1:]
-    return [pool.SEEDS[side], *BASELINES[side]] + [
-        name for name in trained if (run / "pool" / f"{name}.pkl").exists()
-    ]
+    return [pool.SEEDS[side], *BASELINES[side]] + [name for name in trained if (run / "pool" / f"{name}.pkl").exists()]
 
 
 def draw(rates, pursuers, evaders, out):
@@ -89,9 +87,7 @@ def main():
     def win_rate(pursuer, evader):
         seated = (("pursuer", pursuer), ("evader", evader))
         pilots = {side: name if name in env.PILOTS else None for side, name in seated}
-        weights = {
-            side: nets[side, name] for side, name in seated if (side, name) in nets
-        }
+        weights = {side: nets[side, name] for side, name in seated if (side, name) in nets}
         return matches("pursuer", pilots, weights)
 
     rates = []

@@ -21,9 +21,7 @@ def our_files():
 def comment_lines(source):
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     return [
-        t.start[0]
-        for t in tokens
-        if t.type == tokenize.COMMENT and not (t.start[0] == 1 and t.string.startswith("#!"))
+        t.start[0] for t in tokens if t.type == tokenize.COMMENT and not (t.start[0] == 1 and t.string.startswith("#!"))
     ]
 
 

@@ -65,11 +65,7 @@ def velocity_controller(state, velocity_ref, pid, gains, dt):
 def heading_on_tilted_plane(body_z, heading):
     complement = jnp.eye(3) - jnp.outer(body_z, body_z)
     square = complement[:2, :2]
-    projector = (
-        complement[:, :2]
-        @ (jnp.linalg.inv(square.T @ square) @ square.T)
-        @ jnp.eye(3)[:2]
-    )
+    projector = complement[:, :2] @ (jnp.linalg.inv(square.T @ square) @ square.T) @ jnp.eye(3)[:2]
 
     body_x = projector @ jnp.array([jnp.cos(heading), jnp.sin(heading), 0.0])
     return body_x / jnp.linalg.norm(body_x)
@@ -83,19 +79,13 @@ def acceleration_controller(state, acceleration_ref, heading, params):
     body_y = body_y / jnp.linalg.norm(body_y)
 
     thrust = jnp.maximum(fd @ state.R[:, 2], 0.0)
-    throttle = (jnp.sqrt(thrust / (params.kf * params.n_motors)) - params.min_rpm) / (
-        params.max_rpm - params.min_rpm
-    )
+    throttle = (jnp.sqrt(thrust / (params.kf * params.n_motors)) - params.min_rpm) / (params.max_rpm - params.min_rpm)
 
     return jnp.column_stack([body_x, body_y, body_z]), throttle
 
 
-def attitude_gains(
-    kp=6.0, kd=0.05, ki=0.01, max_rate_roll_pitch=10.0, max_rate_yaw=1.0
-):
-    return _gains(
-        kp, kd, ki, [max_rate_roll_pitch, max_rate_roll_pitch, max_rate_yaw], 0.1
-    )
+def attitude_gains(kp=6.0, kd=0.05, ki=0.01, max_rate_roll_pitch=10.0, max_rate_yaw=1.0):
+    return _gains(kp, kd, ki, [max_rate_roll_pitch, max_rate_roll_pitch, max_rate_yaw], 0.1)
 
 
 def attitude_controller(state, orientation_ref, pid, gains, dt):
@@ -170,9 +160,7 @@ def cascade_outer(state, position_ref, heading, pids, gains, params, dt):
 
 
 def cascade_step(state, position_ref, heading, pids, gains, params, dt):
-    (throttle, rate_ref), pids = cascade_outer(
-        state, position_ref, heading, pids, gains, params, dt
-    )
+    (throttle, rate_ref), pids = cascade_outer(state, position_ref, heading, pids, gains, params, dt)
     group, rate_pid = rate_controller(state, rate_ref, throttle, pids[3], gains[3], dt)
 
     return mixer(group, gains[4]), pids[:3] + (rate_pid,)

@@ -90,9 +90,7 @@ def compute_reward(state, drone, died, params):
 def reset(key, params):
     n = params.n_drones
     k_start, k_spawn, k_goal, k_state = jax.random.split(key, 4)
-    draws = jax.vmap(in_box, in_axes=(0, None, None))(
-        jax.random.split(k_start, START_DRAWS), n, params
-    )
+    draws = jax.vmap(in_box, in_axes=(0, None, None))(jax.random.split(k_start, START_DRAWS), n, params)
     drone = core.spawn(k_spawn, core.first_apart(draws, params.spacing), params)
 
     state = EnvState(
@@ -116,9 +114,7 @@ def step(key, state, action, params):
     contact = jnp.any(core.hits(flown, params) & both, axis=-1)
     died = contact | (state.alive & core.lost(flown, params))
     alive = state.alive & ~died
-    drone, rate_pid = core.select_rows(
-        alive, (flown, flown_pid), (state.drone, state.rate_pid)
-    )
+    drone, rate_pid = core.select_rows(alive, (flown, flown_pid), (state.drone, state.rate_pid))
 
     reach = alive & (core.norm(state.goal - drone.x) < params.goal_radius)
     k_state, k_goal = jax.random.split(state.key)
@@ -126,15 +122,11 @@ def step(key, state, action, params):
         drone=drone,
         rate_pid=rate_pid,
         key=k_state,
-        goal=jnp.where(
-            reach[:, None], in_box(k_goal, params.n_drones, params), state.goal
-        ),
+        goal=jnp.where(reach[:, None], in_box(k_goal, params.n_drones, params), state.goal),
         alive=alive,
         reached=state.reached + reach,
         contact=state.contact | contact,
-        closest=jnp.minimum(
-            state.closest, jnp.min(jnp.where(both, core.pair_dist(flown.x), jnp.inf))
-        ),
+        closest=jnp.minimum(state.closest, jnp.min(jnp.where(both, core.pair_dist(flown.x), jnp.inf))),
     )
 
     info = {

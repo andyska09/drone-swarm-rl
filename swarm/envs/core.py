@@ -68,9 +68,7 @@ def action_to_command(action, params):
 
 
 def command_to_action(throttle, rate_ref, params):
-    action = jnp.concatenate(
-        [jnp.atleast_1d(2.0 * throttle - 1.0), rate_ref / rate_scale(params)]
-    )
+    action = jnp.concatenate([jnp.atleast_1d(2.0 * throttle - 1.0), rate_ref / rate_scale(params)])
     return jnp.clip(action, -1.0, 1.0)
 
 
@@ -79,18 +77,14 @@ def per_row(tree, n):
 
 
 def select_rows(pick, a, b):
-    return jax.tree.map(
-        lambda x, y: jnp.where(jnp.expand_dims(pick, tuple(range(1, x.ndim))), x, y), a, b
-    )
+    return jax.tree.map(lambda x, y: jnp.where(jnp.expand_dims(pick, tuple(range(1, x.ndim))), x, y), a, b)
 
 
 def cascade(drones, points, pids, params):
     gains = control.cascade_gains(params.model)
 
     def one(drone, point, pid):
-        (throttle, rate_ref), pid = control.cascade_outer(
-            drone, point, 0.0, pid, gains, params.model, params.policy_dt
-        )
+        (throttle, rate_ref), pid = control.cascade_outer(drone, point, 0.0, pid, gains, params.model, params.policy_dt)
         return command_to_action(throttle, rate_ref, params), pid
 
     return jax.vmap(one)(drones, points, pids)
@@ -110,9 +104,7 @@ def accelerate(drones, a, pids, params):
 
     def one(drone, a, pid):
         heading = jnp.arctan2(drone.R[1, 0], drone.R[0, 0])
-        orientation, throttle = control.acceleration_controller(
-            drone, guidance.drone_limit(a, model), heading, model
-        )
+        orientation, throttle = control.acceleration_controller(drone, guidance.drone_limit(a, model), heading, model)
         rate, pid = control.attitude_controller(drone, orientation, pid, gains, dt)
         return command_to_action(throttle, rate, params), pid
 
@@ -128,9 +120,7 @@ def fly(drone, pid, action, params):
         drone, pid = carry
 
         def one(d, r, t, p):
-            group, p = control.rate_controller(
-                d, r, t, p, rate_gains, dt, d_on_measurement=True
-            )
+            group, p = control.rate_controller(d, r, t, p, rate_gains, dt, d_on_measurement=True)
             return (
                 dynamics.step(d, control.mixer(group, allocation), params.model, dt),
                 p,
@@ -138,17 +128,13 @@ def fly(drone, pid, action, params):
 
         return jax.vmap(one)(drone, rate_ref, throttle, pid), None
 
-    (drone, pid), _ = jax.lax.scan(
-        substep, (drone, pid), None, length=params.steps_per_action
-    )
+    (drone, pid), _ = jax.lax.scan(substep, (drone, pid), None, length=params.steps_per_action)
     return drone, pid, rate_ref
 
 
 def box_dist(offset, R, half):
     nose, left = R[:, :2, 0], R[:, :2, 1]
-    level = jnp.where(
-        norm(nose)[:, None] > 1e-3, nose, jnp.stack([left[:, 1], -left[:, 0]], -1)
-    )
+    level = jnp.where(norm(nose)[:, None] > 1e-3, nose, jnp.stack([left[:, 1], -left[:, 0]], -1))
     d = level / norm(level)[:, None]
     side = jnp.stack([-d[:, 1], d[:, 0]], -1)
     u = jnp.stack([d, -d, side, -side], axis=1)
@@ -182,9 +168,7 @@ def scene_obs(drone):
 
 
 def target_obs(drone, x, v=0.0):
-    return jnp.concatenate(
-        [to_body(drone.R, x - drone.x), to_body(drone.R, v - drone.v)], axis=-1
-    )
+    return jnp.concatenate([to_body(drone.R, x - drone.x), to_body(drone.R, v - drone.v)], axis=-1)
 
 
 def pair_dist(x):
@@ -210,9 +194,7 @@ def pairs(drone, params, sense=()):
         "attitude": jnp.einsum("nji,kjl->nkil", drone.R, drone.R).reshape(n, n, 9),
         "rpm": jnp.broadcast_to(drone.rpm / params.model.max_rpm, (n, n, 4)),
     }
-    return jnp.concatenate(
-        [rel(drone.x), rel(drone.v), *(sensed[s] for s in sense)], axis=-1
-    )
+    return jnp.concatenate([rel(drone.x), rel(drone.v), *(sensed[s] for s in sense)], axis=-1)
 
 
 def others(drone, params, seen, sense=()):
@@ -222,9 +204,7 @@ def others(drone, params, seen, sense=()):
     near = jnp.take_along_axis(dist, idx, axis=1)
     take = lambda a: jnp.take_along_axis(a, idx[..., None], axis=1)
     sensed = take(pairs(drone, params, sense))
-    slots = jnp.concatenate(
-        [sensed[..., :6], take(same_role(params.roles)), sensed[..., 6:]], axis=-1
-    )
+    slots = jnp.concatenate([sensed[..., :6], take(same_role(params.roles)), sensed[..., 6:]], axis=-1)
     filled = jnp.isfinite(near).astype(slots.dtype)
     flat = (slots * filled[..., None]).reshape(slots.shape[0], -1)
     return jnp.concatenate([flat, filled], axis=-1)
@@ -244,17 +224,11 @@ def hits(drone, params):
 
 def out_of_arena(drone, params):
     off = jnp.abs(drone.x - jnp.asarray(params.center))
-    return jnp.any(off > half(params), axis=-1) | ~jnp.all(
-        jnp.isfinite(drone.x), axis=-1
-    )
+    return jnp.any(off > half(params), axis=-1) | ~jnp.all(jnp.isfinite(drone.x), axis=-1)
 
 
 def lost(drone, params):
-    return (
-        out_of_arena(drone, params)
-        | (drone.x[:, 2] < 0.0)
-        | (drone.R[:, 2, 2] < 0.0)
-    )
+    return out_of_arena(drone, params) | (drone.x[:, 2] < 0.0) | (drone.R[:, 2, 2] < 0.0)
 
 
 def is_dead(drone, params):
@@ -278,15 +252,11 @@ def _attitude(key, heading, max_tilt):
 def spawn(key, x, params):
     k_vel, k_att, k_yaw = jax.random.split(key, 3)
     n = x.shape[0]
-    hover_rpm = jnp.sqrt(
-        params.model.mass * params.model.g / (params.model.n_motors * params.model.kf)
-    )
+    hover_rpm = jnp.sqrt(params.model.mass * params.model.g / (params.model.n_motors * params.model.kf))
     heading = jax.random.uniform(k_yaw, (n,), maxval=2.0 * jnp.pi)
     return dynamics.State(
         x=x,
-        v=jax.random.uniform(
-            k_vel, (n, 3), minval=-params.start_vel_range, maxval=params.start_vel_range
-        ),
+        v=jax.random.uniform(k_vel, (n, 3), minval=-params.start_vel_range, maxval=params.start_vel_range),
         R=jax.vmap(_attitude, in_axes=(0, 0, None))(
             jax.random.split(k_att, n),
             heading if params.random_yaw else jnp.zeros(n),

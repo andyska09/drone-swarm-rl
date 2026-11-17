@@ -53,8 +53,19 @@ def test_params_match_reference():
     ref = dict(line.split() for line in (GOLDEN / "params.txt").read_text().splitlines())
 
     assert p.n_motors == int(ref["n_motors"])
-    for name in ("mass", "g", "kf", "km", "prop_radius", "arm_length", "body_height",
-                 "motor_time_constant", "min_rpm", "max_rpm", "air_resistance_coeff"):
+    for name in (
+        "mass",
+        "g",
+        "kf",
+        "km",
+        "prop_radius",
+        "arm_length",
+        "body_height",
+        "motor_time_constant",
+        "min_rpm",
+        "max_rpm",
+        "air_resistance_coeff",
+    ):
         assert float(getattr(p, name)) == float(ref[name]), name
 
     for i in range(3):
@@ -159,18 +170,14 @@ def test_vmap_matches_python_loop():
 
     stacked = jax.tree.map(lambda *a: jnp.stack(a), *states)
     batched = jax.vmap(d.step, in_axes=(0, 0, None, None))(stacked, cmds, p, DT)
-    looped = jax.tree.map(
-        lambda *a: jnp.stack(a), *[d.step(s, u, p, DT) for s, u in zip(states, cmds)]
-    )
+    looped = jax.tree.map(lambda *a: jnp.stack(a), *[d.step(s, u, p, DT) for s, u in zip(states, cmds)])
 
     for a, b in zip(jax.tree.leaves(batched), jax.tree.leaves(looped)):
         np.testing.assert_allclose(np.asarray(a), np.asarray(b), atol=1e-12, rtol=0)
 
 
 def test_float32_tracks_float64():
-    out = subprocess.run(
-        [sys.executable, __file__], cwd=ROOT, capture_output=True, text=True, check=True
-    )
+    out = subprocess.run([sys.executable, __file__], cwd=ROOT, capture_output=True, text=True, check=True)
     got = np.array([float(t) for t in out.stdout.split()])
 
     rows = load("spin_down")

@@ -63,9 +63,7 @@ def test_an_arrived_drone_is_paid_once_freezes_and_cannot_be_touched():
     assert not bool(done), "the other drone still flies"
 
     frozen = state.drone.x[0]
-    state = state.replace(
-        drone=state.drone.replace(x=state.drone.x.at[1].set(frozen + jnp.array([0.0, 0.3, 0.0])))
-    )
+    state = state.replace(drone=state.drone.replace(x=state.drone.x.at[1].set(frozen + jnp.array([0.0, 0.3, 0.0]))))
     full = jnp.ones((2, avoidance.NUM_ACTIONS))
     _, state, reward, _, info = step(KEY, state, full, PARAMS)
     assert jnp.array_equal(state.drone.x[0], frozen), "an arrived drone moved"

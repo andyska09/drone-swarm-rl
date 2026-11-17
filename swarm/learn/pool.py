@@ -105,9 +105,7 @@ def opponents(path, generation, side, ts, win_rate):
     weights = hedge(rates)
 
     member = blocks(weights)
-    actors = [jax.tree.map(jnp.zeros_like, ts[rival].params["actor"])] + [
-        nets[name]["actor"] for name in names[1:]
-    ]
+    actors = [jax.tree.map(jnp.zeros_like, ts[rival].params["actor"])] + [nets[name]["actor"] for name in names[1:]]
     stacked = jax.tree.map(lambda *a: jnp.stack(a), *[actors[m] for m in member])
     rows = [
         {"generation": generation, "training": side, "member": n, "win_rate": w, "weight": p}
@@ -150,10 +148,7 @@ class Phases:
             rundir.say(
                 path,
                 f"generation {generation}: the {side} learns against "
-                + ", ".join(
-                    f"{r['member']} (won {r['win_rate']:.2f}, weight {r['weight']:.2f})"
-                    for r in rows
-                ),
+                + ", ".join(f"{r['member']} (won {r['win_rate']:.2f}, weight {r['weight']:.2f})" for r in rows),
             )
 
             key, k_reset, k_learn = jax.random.split(key, 3)

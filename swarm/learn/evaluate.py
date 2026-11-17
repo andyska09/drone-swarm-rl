@@ -59,9 +59,7 @@ def rollout(key, env, env_params, act, start):
     def body(c, t):
         state, obs, carry, done = c
         action, carry = act(state, obs, carry)
-        next_obs, next_state, reward, ended, info = env.step(
-            key, state, action, env_params
-        )
+        next_obs, next_state, reward, ended, info = env.step(key, state, action, env_params)
         _, info = vecenv.at_limit(info, ended, t == env_params.max_steps - 1)
         state = _hold(done, next_state, state)
         obs = _hold(done, next_obs, obs)
@@ -75,9 +73,7 @@ def rollout(key, env, env_params, act, start):
             live,
         )
 
-    _, out = jax.lax.scan(
-        body, (state, obs, carry, jnp.bool_(False)), jnp.arange(env_params.max_steps)
-    )
+    _, out = jax.lax.scan(body, (state, obs, carry, jnp.bool_(False)), jnp.arange(env_params.max_steps))
     return out
 
 
@@ -155,19 +151,14 @@ def save_replay(out, cfg, env, env_params, act, start, keys):
     drone, action, goal, live = jax.jit(jax.vmap(trace))(keys)
     scenery = {}
     if hasattr(env, "scenery"):
-        scenery = jax.vmap(
-            lambda k: env.scenery(env.reset(k, env_params)[1], env_params)
-        )(keys)
+        scenery = jax.vmap(lambda k: env.scenery(env.reset(k, env_params)[1], env_params))(keys)
     np.savez(
         out / "trajectory.npz",
         goal=np.asarray(goal),
         live=np.asarray(live),
         action=np.asarray(action),
         **{k: np.asarray(v) for k, v in scenery.items()},
-        **{
-            f.name: np.asarray(getattr(drone, f.name))
-            for f in drone.__dataclass_fields__.values()
-        },
+        **{f.name: np.asarray(getattr(drone, f.name)) for f in drone.__dataclass_fields__.values()},
     )
     (out / "header.json").write_text(
         json.dumps(

@@ -14,9 +14,7 @@ import numpy as np
 from swarm import envs
 from swarm.learn import pool, ppo, rundir, seats, vecenv
 
-LEARNER_STATS = (
-    "policy_loss", "value_loss", "entropy", "clipfrac", "approx_kl", "explained_var"
-)
+LEARNER_STATS = ("policy_loss", "value_loss", "entropy", "clipfrac", "approx_kl", "explained_var")
 
 
 @dataclasses.dataclass
@@ -90,9 +88,7 @@ def new_run(cfg, env_params, root="runs"):
 
     path = Path(root) / f"{cfg.task}_{cfg.preset}_s{cfg.seed}_{stamp}_{digest}"
     (path / "checkpoints").mkdir(parents=True)
-    (path / "config.json").write_text(
-        json.dumps({**spec, "git": rundir.git_state()}, indent=2, sort_keys=True)
-    )
+    (path / "config.json").write_text(json.dumps({**spec, "git": rundir.git_state()}, indent=2, sort_keys=True))
     return path
 
 
@@ -162,10 +158,7 @@ def _per_phase(cfg, phases):
 
 
 def _updates(cfg, env, env_params, phases):
-    return {
-        side: ppo.make(cfg, env, env_params, phases.rival_seat(env_params, side))[1]
-        for side in phases.sides
-    }
+    return {side: ppo.make(cfg, env, env_params, phases.rival_seat(env_params, side))[1] for side in phases.sides}
 
 
 def train(cfg, root="runs", use_wandb=False):

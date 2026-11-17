@@ -32,12 +32,18 @@ def partition(walltime):
 
 
 def submit(a, train):
-    cmd = ["sbatch", f"--job-name={job_name(train)}",
-           f"--partition={partition(a.walltime)}",
-           "--gres=gpu:a100:1", f"--cpus-per-task={a.ncpus}", f"--mem={a.mem}",
-           f"--time={a.walltime}",
-           f"--chdir={ROOT}", f"--output={ROOT}/logs/%j.out",
-           str(JOB)] + train
+    cmd = [
+        "sbatch",
+        f"--job-name={job_name(train)}",
+        f"--partition={partition(a.walltime)}",
+        "--gres=gpu:a100:1",
+        f"--cpus-per-task={a.ncpus}",
+        f"--mem={a.mem}",
+        f"--time={a.walltime}",
+        f"--chdir={ROOT}",
+        f"--output={ROOT}/logs/%j.out",
+        str(JOB),
+    ] + train
     if a.dry_run:
         print("DRY RUN:", " ".join(cmd))
         return
@@ -55,7 +61,7 @@ def main():
     p.add_argument("--walltime", default="12:00:00")
     p.add_argument("--dry-run", action="store_true", dest="dry_run")
     a = p.parse_args(argv[:cut])
-    train = argv[cut + 1:]
+    train = argv[cut + 1 :]
     if not train:
         p.error("give the train.py arguments after --")
 

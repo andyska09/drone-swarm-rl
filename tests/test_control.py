@@ -19,8 +19,13 @@ TOL = 1e-9
 
 def state_cols(n_cmd):
     o = 1 + n_cmd
-    return {"x": slice(o, o + 3), "v": slice(o + 3, o + 6), "R": slice(o + 6, o + 15),
-            "omega": slice(o + 15, o + 18), "rpm": slice(o + 18, o + 22)}
+    return {
+        "x": slice(o, o + 3),
+        "v": slice(o + 3, o + 6),
+        "R": slice(o + 6, o + 15),
+        "omega": slice(o + 15, o + 18),
+        "rpm": slice(o + 18, o + 22),
+    }
 
 
 def assert_matches(traj, rows, cols):
@@ -108,8 +113,7 @@ def test_matches_attitude_step_golden():
     rows = np.genfromtxt(GOLDEN / "attitude_step.csv", delimiter=",", skip_header=1)
     orientation_ref, throttle = jnp.asarray(rows[0, 1:10]).reshape(3, 3), rows[0, 10]
 
-    traj = attitude_rollout(d.rest_state(0.0), orientation_ref, throttle,
-                            d.default_params(), len(rows) - 1)
+    traj = attitude_rollout(d.rest_state(0.0), orientation_ref, throttle, d.default_params(), len(rows) - 1)
     assert_matches(traj, rows, state_cols(10))
 
 
@@ -146,8 +150,7 @@ def test_mixer_shifts_negative_motors_up():
 
 
 def test_pid_kicks_on_the_first_step():
-    gains = c.Gains(kp=jnp.full(3, 2.0), kd=jnp.full(3, 0.5), ki=jnp.zeros(3),
-                    saturation=jnp.inf, antiwindup=1.0)
+    gains = c.Gains(kp=jnp.full(3, 2.0), kd=jnp.full(3, 0.5), ki=jnp.zeros(3), saturation=jnp.inf, antiwindup=1.0)
     out, pid = c.pid_update(c.pid_init(), jnp.ones(3), gains, DT)
 
     assert float(out[0]) == pytest.approx(2.0 + 0.5 / DT)
@@ -183,8 +186,7 @@ def test_matches_velocity_step_golden():
     rows = np.genfromtxt(GOLDEN / "velocity_step.csv", delimiter=",", skip_header=1)
     velocity_ref, heading = jnp.asarray(rows[0, 1:4]), rows[0, 4]
 
-    traj = velocity_rollout(d.rest_state(0.0), velocity_ref, heading,
-                            d.default_params(), len(rows) - 1)
+    traj = velocity_rollout(d.rest_state(0.0), velocity_ref, heading, d.default_params(), len(rows) - 1)
     assert_matches(traj, rows, state_cols(4))
 
 
@@ -192,8 +194,7 @@ def test_matches_position_step_golden():
     rows = np.genfromtxt(GOLDEN / "position_step.csv", delimiter=",", skip_header=1)
     position_ref, heading = jnp.asarray(rows[0, 1:4]), rows[0, 4]
 
-    traj = position_rollout(d.rest_state(0.0), position_ref, heading,
-                            d.default_params(), len(rows) - 1)
+    traj = position_rollout(d.rest_state(0.0), position_ref, heading, d.default_params(), len(rows) - 1)
     assert_matches(traj, rows, state_cols(4))
 
 

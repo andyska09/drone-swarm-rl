@@ -26,8 +26,7 @@ def rollout(env, params, key, actions):
 
 def same_shapes(a, b):
     return jax.tree.structure(a) == jax.tree.structure(b) and all(
-        (x.shape, x.dtype) == (y.shape, y.dtype)
-        for x, y in zip(jax.tree.leaves(a), jax.tree.leaves(b))
+        (x.shape, x.dtype) == (y.shape, y.dtype) for x, y in zip(jax.tree.leaves(a), jax.tree.leaves(b))
     )
 
 
@@ -46,9 +45,7 @@ def test_the_task_keeps_the_contract(task, preset):
     assert all(info[f].shape == (n,) for f in ("alive", "flying", "bootstrap"))
 
     keys = jax.random.split(key, EPISODES)
-    actions = jax.random.uniform(
-        key, (EPISODES, params.max_steps, n, env.NUM_ACTIONS), minval=-1.0, maxval=1.0
-    )
+    actions = jax.random.uniform(key, (EPISODES, params.max_steps, n, env.NUM_ACTIONS), minval=-1.0, maxval=1.0)
     batch = jax.jit(jax.vmap(lambda k, a: rollout(env, params, k, a)))(keys, actions)
     one = jax.jit(lambda k, a: rollout(env, params, k, a[:COMPARED]))
     for i in range(EPISODES):

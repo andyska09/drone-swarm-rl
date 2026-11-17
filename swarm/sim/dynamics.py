@@ -127,9 +127,7 @@ def derivative(state, params):
 
     omega_dot = jnp.linalg.solve(
         params.J,
-        torque
-        - jnp.cross(state.omega, params.J @ state.omega)
-        + params.external_moment,
+        torque - jnp.cross(state.omega, params.J @ state.omega) + params.external_moment,
     )
 
     return State(

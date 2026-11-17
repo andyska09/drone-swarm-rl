@@ -31,11 +31,7 @@ def welford(n, batch):
     batch_mean, batch_var, batch_count = batch.mean(0), batch.var(0), batch.shape[0]
     delta = batch_mean - n.mean
     total = n.count + batch_count
-    m2 = (
-        n.var * n.count
-        + batch_var * batch_count
-        + delta**2 * n.count * batch_count / total
-    )
+    m2 = n.var * n.count + batch_var * batch_count + delta**2 * n.count * batch_count / total
     return Normalizer(n.mean + delta * batch_count / total, m2 / total, total)
 
 
@@ -45,9 +41,7 @@ def normalized(n, x):
 
 
 def select(pick, a, b):
-    return jax.tree.map(
-        lambda x, y: jnp.where(pick.reshape((-1,) + (1,) * (x.ndim - 1)), x, y), a, b
-    )
+    return jax.tree.map(lambda x, y: jnp.where(pick.reshape((-1,) + (1,) * (x.ndim - 1)), x, y), a, b)
 
 
 def at_limit(info, ended, reached):
@@ -57,9 +51,7 @@ def at_limit(info, ended, reached):
 
 def reset(key, env, params, cfg, start=None):
     key, k, k_time = jax.random.split(key, 3)
-    obs, env_state = jax.vmap(env.reset, in_axes=(0, None))(
-        jax.random.split(k, cfg.num_envs), params
-    )
+    obs, env_state = jax.vmap(env.reset, in_axes=(0, None))(jax.random.split(k, cfg.num_envs), params)
 
     limit = params.max_steps - jax.random.randint(k_time, (cfg.num_envs,), 0, params.max_steps)
     seat = None
@@ -101,9 +93,7 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
     info["ep_return"] = vec.ep_return + reward
     info["ep_length"] = ep_length
 
-    fresh_obs, fresh_state = jax.vmap(env.reset, in_axes=(0, None))(
-        jax.random.split(k_reset, n), params
-    )
+    fresh_obs, fresh_state = jax.vmap(env.reset, in_axes=(0, None))(jax.random.split(k_reset, n), params)
     seat = vec.seat
     if start is not None:
         fresh_state, fresh_seat = start(fresh_state)

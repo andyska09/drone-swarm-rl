@@ -48,8 +48,7 @@ def specs():
     tasks = sorted(ROOT.glob("research/notes/tasks/task_*.md"))
     papers = sorted(ROOT.glob("research/notes/literature/specs/*.md"))
     return [
-        {"name": f.stem.removeprefix("task_"), "path": f.relative_to(ROOT).as_posix(),
-         "task": f in tasks}
+        {"name": f.stem.removeprefix("task_"), "path": f.relative_to(ROOT).as_posix(), "task": f in tasks}
         for f in tasks + papers
         if f.name != "README.md"
     ]
@@ -87,9 +86,7 @@ def main():
     print(f"training curves: http://localhost:{args.port}/tools/dashboard/index.html")
     webbrowser.open(url)
 
-    server = http.server.ThreadingHTTPServer(
-        ("127.0.0.1", args.port), functools.partial(Handler, directory=str(ROOT))
-    )
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), functools.partial(Handler, directory=str(ROOT)))
     try:
         server.serve_forever()
     except KeyboardInterrupt:

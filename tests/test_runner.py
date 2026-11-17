@@ -15,8 +15,15 @@ from swarm.learn import config, pool, runner
 
 def small(**overrides):
     return config.TrainConfig(
-        task="circle_swap", preset="pair", num_envs=8, num_steps=8, total_timesteps=8 * 8 * 4,
-        num_minibatches=2, checkpoint_every=2, log_every=100, **overrides
+        task="circle_swap",
+        preset="pair",
+        num_envs=8,
+        num_steps=8,
+        total_timesteps=8 * 8 * 4,
+        num_minibatches=2,
+        checkpoint_every=2,
+        log_every=100,
+        **overrides
     )
 
 
@@ -59,8 +66,15 @@ def test_a_resumed_run_trains_on_exactly(tmp_path, monkeypatch, kind):
     cfg = dataclasses.replace(small(), checkpoint_every=1)
     if pooled:
         cfg = config.TrainConfig(
-            task="chase", preset="default", num_envs=64, num_steps=8, num_minibatches=2,
-            total_timesteps=8 * 64 * 8, generations=1, checkpoint_every=1, log_every=100,
+            task="chase",
+            preset="default",
+            num_envs=64,
+            num_steps=8,
+            num_minibatches=2,
+            total_timesteps=8 * 64 * 8,
+            generations=1,
+            checkpoint_every=1,
+            log_every=100,
         )
         monkeypatch.setattr(pool, "HEDGE_EPISODES", 4)
     if kind == "curriculum":

@@ -74,9 +74,7 @@ def catch_gap(drone, params):
 
 def net_frame(drone, params):
     pursuers, _ = _sides(params)
-    p = jnp.einsum(
-        "pji,pkj->pki", drone.R[pursuers], drone.x - drone.x[pursuers][:, None]
-    )
+    p = jnp.einsum("pji,pkj->pki", drone.R[pursuers], drone.x - drone.x[pursuers][:, None])
     return p.at[..., 2].add(_drop(params))
 
 
@@ -107,18 +105,14 @@ def get_obs(state, params):
     sense = {"pursuer": params.sense_pursuer, "evader": params.sense_evader}
     slices = role_slices(params.roles)
     actor = {
-        role: jnp.concatenate([own, core.others(d, params, True, sense[role])], -1)[
-            rows
-        ]
+        role: jnp.concatenate([own, core.others(d, params, True, sense[role])], -1)[rows]
         for role, rows in slices.items()
     }
     return Obs(
         actor=actor,
         critic=core.scene_obs(d),
         own={role: own[rows] for role, rows in slices.items()},
-        pairs={
-            role: core.pairs(d, params, sense[role])[rows] for role, rows in slices.items()
-        },
+        pairs={role: core.pairs(d, params, sense[role])[rows] for role, rows in slices.items()},
         world=core.world(d),
     )
 
@@ -196,9 +190,7 @@ def _waypoint(key, x, params):
 def _starts(key, x, free, params):
     centre = jnp.asarray(params.center)
     limit = core.half(params) - params.margin
-    draws = centre + jax.random.uniform(
-        key, (16,) + x.shape, minval=-limit, maxval=limit
-    )
+    draws = centre + jax.random.uniform(key, (16,) + x.shape, minval=-limit, maxval=limit)
     return core.first_apart(jnp.where(free[:, None], draws, x), params.spacing)
 
 
@@ -237,9 +229,7 @@ def step(key, state, action, params):
         time=state.time + 1,
     )
 
-    reward = compute_reward(
-        state.drone, drone, rate_ref, state.alive, fail, collide, caught, params
-    )
+    reward = compute_reward(state.drone, drone, rate_ref, state.alive, fail, collide, caught, params)
     done = caught | ~jnp.all(alive)
 
     crash = fail & crashed(drone, params)
@@ -260,12 +250,8 @@ def step(key, state, action, params):
             "coll_pp": fail_p & ~crash_p & ~oob_p & ~fail_e,
             "crash_e": crash[evader] & ~fail_p,
             "OOB_e": oob[evader] & ~fail_p,
-            "time_to_catch": jnp.where(
-                caught, new_state.time * params.policy_dt, jnp.nan
-            ),
-            "catch_offset": jnp.where(
-                caught & (not params.body_catch), jnp.min(core.norm(on_net)), jnp.nan
-            ),
+            "time_to_catch": jnp.where(caught, new_state.time * params.policy_dt, jnp.nan),
+            "catch_offset": jnp.where(caught & (not params.body_catch), jnp.min(core.norm(on_net)), jnp.nan),
         },
         "step": {
             "distance": jnp.min(catch_gap(drone, params)),
@@ -351,9 +337,7 @@ def paths(params, rows):
             shape = jax.random.randint(jax.random.fold_in(k, 1), (), 0, len(PATHS))
             path = drawn[0]
             for i, other in enumerate(drawn[1:], 1):
-                path = jax.tree.map(
-                    lambda a, b: jnp.where(shape == i, b, a), path, other
-                )
+                path = jax.tree.map(lambda a, b: jnp.where(shape == i, b, a), path, other)
             return path | {"shape": shape}
 
         k_paths, k_place = jax.random.split(state.key)
@@ -419,9 +403,7 @@ PRESETS = (
     }
     | {"_".join(("default", "p", *p)): EnvParams(sense_pursuer=p) for p in SENSES[1:]}
     | {
-        "_".join(("nemecek", "p", *p, "e", *e)): NEMECEK.replace(
-            sense_pursuer=p, sense_evader=e
-        )
+        "_".join(("nemecek", "p", *p, "e", *e)): NEMECEK.replace(sense_pursuer=p, sense_evader=e)
         for p in SENSES[1:]
         for e in SENSES[1:]
     }

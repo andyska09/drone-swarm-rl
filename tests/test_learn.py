@@ -12,8 +12,14 @@ from swarm.learn import config, ppo, vecenv
 
 def train(updates, seed=0, **overrides):
     cfg = config.TrainConfig(
-        task="circle_swap", preset="pair", seed=seed, num_envs=128, num_steps=32,
-        total_timesteps=300_000, num_minibatches=4, **overrides,
+        task="circle_swap",
+        preset="pair",
+        seed=seed,
+        num_envs=128,
+        num_steps=32,
+        total_timesteps=300_000,
+        num_minibatches=4,
+        **overrides,
     )
     env, env_params = envs.make(cfg.task, cfg.preset)
     env_params = env_params.replace(max_steps=100)
@@ -64,8 +70,14 @@ def test_metrics_split_by_role_and_leave_out_undefined_episodes():
     metrics = ppo.episode_metrics(info, jnp.ones(2), jnp.ones(2), slices, lead=1)
 
     assert set(metrics) == {
-        "ep_length", "return_p", "return_e", "death_rate_p",
-        "death_rate_e", "caught", "offset_p", "offset_e",
+        "ep_length",
+        "return_p",
+        "return_e",
+        "death_rate_p",
+        "death_rate_e",
+        "caught",
+        "offset_p",
+        "offset_e",
     }
     assert float(metrics["return_p"]) == 4.0 and float(metrics["return_e"]) == -4.0
     assert float(metrics["caught"]) == 0.5

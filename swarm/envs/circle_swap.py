@@ -60,9 +60,7 @@ def reference(state, params):
 
 def compute_reward(state, alive, died, params):
     cfg, d = params.reward, state.drone
-    close = jnp.sum(
-        jnp.maximum(1.0 - core.pair_dist(d.x) / params.close_dist, 0.0), axis=-1
-    )
+    close = jnp.sum(jnp.maximum(1.0 - core.pair_dist(d.x) / params.close_dist, 0.0), axis=-1)
     cost = (
         cfg.distance * core.norm(state.goal - d.x)
         + cfg.spin * core.norm(d.omega)
@@ -78,9 +76,7 @@ def reset(key, params):
     center = jnp.asarray(params.center)
 
     angle = 2.0 * jnp.pi * jnp.arange(n) / n
-    ring = params.radius * jnp.stack(
-        [jnp.cos(angle), jnp.sin(angle), jnp.zeros(n)], axis=-1
-    )
+    ring = params.radius * jnp.stack([jnp.cos(angle), jnp.sin(angle), jnp.zeros(n)], axis=-1)
 
     drone = core.spawn(key, center + ring, params)
     state = EnvState(

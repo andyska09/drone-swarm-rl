@@ -48,7 +48,8 @@ def print_curve(run):
         rows = [{k: number(v) for k, v in row.items()} for row in csv.DictReader(f)]
 
     learners = [
-        k[len("entropy"):] for k in runner.progress_columns(rows[0], ("entropy",))
+        k[len("entropy") :]
+        for k in runner.progress_columns(rows[0], ("entropy",))
         if any(not math.isnan(row[k]) for row in rows)
     ]
     columns = ["update", "steps"]

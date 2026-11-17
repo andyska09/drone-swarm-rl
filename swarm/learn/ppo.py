@@ -33,17 +33,13 @@ def lr_of(t):
 
 def with_lr(t, lr):
     state = t.opt_state
-    return t.replace(
-        opt_state=state._replace(hyperparams={**state.hyperparams, "learning_rate": lr})
-    )
+    return t.replace(opt_state=state._replace(hyperparams={**state.hyperparams, "learning_rate": lr}))
 
 
 def _trunk(x, hidden, activation):
     act = nn.tanh if activation == "tanh" else nn.relu
     for h in hidden:
-        x = act(
-            nn.Dense(h, kernel_init=orthogonal(jnp.sqrt(2)), bias_init=constant(0.0))(x)
-        )
+        x = act(nn.Dense(h, kernel_init=orthogonal(jnp.sqrt(2)), bias_init=constant(0.0))(x))
     return x
 
 
@@ -58,12 +54,8 @@ class Actor(nn.Module):
     def __call__(self, *parts):
         x = _join(parts, self.attention, self.activation)
         x = _trunk(x, self.hidden, self.activation)
-        mean = nn.Dense(
-            self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(x)
-        log_std = self.param(
-            "log_std", constant(math.log(self.init_std)), (self.num_actions,)
-        )
+        mean = nn.Dense(self.num_actions, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
+        log_std = self.param("log_std", constant(math.log(self.init_std)), (self.num_actions,))
         return mean, jnp.broadcast_to(jnp.exp(log_std), mean.shape)
 
 
@@ -188,9 +180,9 @@ def make_net(cfg, env):
     if cfg.net not in ("mlp", "attention"):
         raise ValueError(f"net is 'mlp' or 'attention', not {cfg.net!r}")
     attention = cfg.net == "attention"
-    return Actor(
-        env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_std, attention
-    ), Critic(cfg.hidden, cfg.activation, attention)
+    return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_std, attention), Critic(
+        cfg.hidden, cfg.activation, attention
+    )
 
 
 def sides(drones, n):
@@ -213,17 +205,14 @@ def attention_input(obs, role, drones, action=None):
     else:
         own = jnp.concatenate([own, obs.world[..., drones, :]], -1)
         pairs = jnp.concatenate([pairs, repeat_rows(obs.world, n)], -1)
-        rival = jnp.concatenate(
-            [pairs[..., rivals, :], repeat_rows(action, n)[..., rivals, :]], -1
-        )
+        rival = jnp.concatenate([pairs[..., rivals, :], repeat_rows(action, n)[..., rivals, :]], -1)
     rows = np.arange(n)[:, None]
     return own, rival.reshape(rival.shape[:-2] + (-1,)), pairs[..., rows, mates, :]
 
 
 def opponent_slices(roles):
     return {
-        role: jnp.array([i for i, r in enumerate(roles) if r != role], dtype=jnp.int32)
-        for role in dict.fromkeys(roles)
+        role: jnp.array([i for i, r in enumerate(roles) if r != role], dtype=jnp.int32) for role in dict.fromkeys(roles)
     }
 
 
@@ -394,9 +383,7 @@ def make(cfg, env, env_params, pool_seat=None):
             next_obs, vec, reward, done, info = vecenv.step(
                 vec.replace(seat=seat), action, env, env_params, cfg, learns, start
             )
-            v_final = value_at(
-                ts, info.pop("final_state"), info.pop("final_obs"), seat, k_final
-            )
+            v_final = value_at(ts, info.pop("final_state"), info.pop("final_obs"), seat, k_final)
             bootstrap = (info["bootstrap"] > 0) & jnp.isfinite(v_final)
             transition = Transition(
                 obs,
@@ -410,9 +397,7 @@ def make(cfg, env, env_params, pool_seat=None):
             )
             return (ts, vec, next_obs, key), (transition, info)
 
-        (ts, vec, obs, key), (traj, info) = lax.scan(
-            rollout, (ts, vec, obs, key), None, length=cfg.num_steps
-        )
+        (ts, vec, obs, key), (traj, info) = lax.scan(rollout, (ts, vec, obs, key), None, length=cfg.num_steps)
 
         key, k_last = jax.random.split(key)
         last_value = value_at(ts, vec.env, obs, vec.seat, k_last)
@@ -441,9 +426,7 @@ def make(cfg, env, env_params, pool_seat=None):
                 (traj, adv, targets),
             )
             minibatches = jax.tree.map(
-                lambda x: x.reshape(
-                    (cfg.num_minibatches, cfg.minibatch_size) + x.shape[1:]
-                ),
+                lambda x: x.reshape((cfg.num_minibatches, cfg.minibatch_size) + x.shape[1:]),
                 flat,
             )
 
@@ -489,9 +472,7 @@ def make(cfg, env, env_params, pool_seat=None):
                         t = with_lr(t, lr)
                     return t.apply_gradients(grads=grads[role])
 
-                return {
-                    role: hold(train[role], step(role, t), t) for role, t in ts.items()
-                }, stats
+                return {role: hold(train[role], step(role, t), t) for role, t in ts.items()}, stats
 
             ts, stats = lax.scan(minibatch, ts, minibatches)
             return (ts, key), stats
@@ -509,9 +490,7 @@ def make(cfg, env, env_params, pool_seat=None):
             ts = {role: rescaled(role, t) for role, t in ts.items()}
 
         done = info["done"]
-        metrics = {"episodes": done.sum()} | episode_metrics(
-            info, done, jnp.ones_like(done), slices, lead=2
-        )
+        metrics = {"episodes": done.sum()} | episode_metrics(info, done, jnp.ones_like(done), slices, lead=2)
 
         for role, drones in slices.items():
             target, value = targets[..., drones], traj.value[..., drones]
