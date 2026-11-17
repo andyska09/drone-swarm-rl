@@ -161,8 +161,9 @@ def _updates(cfg, env, env_params, phases):
     return {side: ppo.make(cfg, env, env_params, phases.rival_seat(env_params, side))[1] for side in phases.sides}
 
 
-def train(cfg, root="runs", use_wandb=False):
-    env, env_params = envs.make(cfg.task, cfg.preset)
+def train(cfg, root="runs", use_wandb=False, env_params=None):
+    env, preset = envs.make(cfg.task, cfg.preset)
+    env_params = preset if env_params is None else env_params
     phases = _phases(cfg, env, env_params)
     path = new_run(cfg, env_params, root)
     ts, learner = ppo.make(cfg, env, env_params)[0](jax.random.PRNGKey(cfg.seed))
