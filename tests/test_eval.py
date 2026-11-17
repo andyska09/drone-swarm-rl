@@ -1,5 +1,3 @@
-"""Check what eval writes, and that hand-written seats score their known numbers."""
-
 import json
 import sys
 from pathlib import Path
@@ -19,8 +17,6 @@ OUTCOMES = ("caught_e", "fail_pe", "crash_p", "OOB_p", "coll_pp",
 
 
 def fixed_match(seats, params=chase.PRESETS["default"], episodes=64):
-    """Hand-written pilots in both chase seats, so no run and no weights."""
-
     env = chase
     cfg = config.TrainConfig(task="chase", preset="default")
     act, start, _ = evaluate.make_policy(cfg, env, params, None, "latest", seats)
@@ -42,8 +38,6 @@ def small(**overrides):
 
 
 def test_cascade_in_both_seats_needs_no_weights(tmp_path):
-    """A seat that names a pilot loads no weights, so the run needs only its config."""
-
     _, params = envs.make("chase", "default")
     path = runner.new_run(config.TrainConfig(task="chase", preset="default"), params, tmp_path)
     out, summary = evaluate.evaluate(
@@ -56,9 +50,6 @@ def test_cascade_in_both_seats_needs_no_weights(tmp_path):
 
 
 def test_eval_flies_the_recorded_env_or_another_preset(tmp_path):
-    """Eval, the matrix and the plots all build their env this way."""
-
-    # No preset has this arena, so it can only come from the run's config.json.
     recorded = chase.PRESETS["default"].replace(arena=(30.0, 30.0, 16.0))
     run = runner.new_run(config.TrainConfig(task="chase", preset="default"), recorded, tmp_path)
     assert evaluate.eval_env(run)[1].arena == (30.0, 30.0, 16.0)
@@ -79,7 +70,6 @@ def test_eval_writes_what_the_viewer_needs(tmp_path):
     traj = np.load(out / "trajectory.npz")
     assert traj["x"].shape == (evaluate.TRAJECTORIES, 700, 2, 3)
     assert traj["R"].shape == (evaluate.TRAJECTORIES, 700, 2, 3, 3)
-    # The goal is recorded per step, because a chase target moves.
     assert traj["goal"].shape == (evaluate.TRAJECTORIES, 700, 2, 3)
 
     header = json.loads((out / "header.json").read_text())
@@ -90,12 +80,9 @@ def test_eval_writes_what_the_viewer_needs(tmp_path):
 
 
 def test_a_dead_episode_stops_counting(tmp_path):
-    """No auto-reset: a crash ends the episode and the held tail must not score."""
-
     path, _ = runner.train(small(), root=tmp_path)
     out, _ = evaluate.evaluate(path, episodes=64)
 
-    # One death ends a circle_swap episode, so a crash shows as a death rate above 0.
     episodes = np.load(out / "episodes.npz")
     died = episodes["death_rate"] > 0.0
     assert died.any(), "an untrained policy never crashed"

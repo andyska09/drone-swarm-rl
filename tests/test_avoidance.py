@@ -1,6 +1,3 @@
-"""Check the rules of avoidance: walls, contact, arrival, the 10 s rule, sight, and the
-Other-Play map."""
-
 import sys
 from pathlib import Path
 
@@ -24,8 +21,6 @@ def actor_input(obs, drone):
 
 
 def scene(x, params=PARAMS):
-    """The 5 m tube along the world x axis, the drones at x in the tube frame, no map."""
-
     _, state = avoidance.reset(KEY, params)
     middle = avoidance.middle(params)
     return state.replace(
@@ -38,14 +33,11 @@ def scene(x, params=PARAMS):
 
 
 def once(x):
-    """One step with the motors near hover, from the drones at x."""
-
     _, state, reward, done, info = step(KEY, scene(x), STILL, PARAMS)
     return state, reward, done, info
 
 
 def test_a_drone_whose_ball_meets_a_wall_dies_and_ends_the_episode():
-    # The side wall is 1.5 m from the middle, so a 0.4 m ball touches it from 1.1 m on.
     _, _, done, info = once([[-1.5, 1.0, 0.0], [1.5, 0.0, 0.0]])
     assert not bool(done) and bool(jnp.all(info["alive"])), "a drone 0.5 m from the wall died"
 
@@ -66,7 +58,6 @@ def test_contact_kills_both_drones():
 
 
 def test_an_arrived_drone_is_paid_once_freezes_and_cannot_be_touched():
-    # Drone 0 is 0.5 m short of its goal, so it arrives in this step.
     state, reward, done, info = once([[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     assert list(reward) == [1.0, 0.0] and list(info["flying"]) == [False, True]
     assert not bool(done), "the other drone still flies"
@@ -83,7 +74,6 @@ def test_an_arrived_drone_is_paid_once_freezes_and_cannot_be_touched():
 
 
 def test_the_timeout_ends_the_episode():
-    # Between steps 19 and 20, so a rounding error cannot move the end.
     params = PARAMS.replace(timeout=0.195)
 
     def body(state, _):
@@ -112,8 +102,6 @@ def test_a_drone_sees_another_only_in_range_and_in_flight():
 
 
 def test_the_cascade_flies_a_mapped_drone_on_the_same_path():
-    """The cascade reads the true world, so drone 1's map must not change any flight."""
-
     act, start = avoidance.PILOTS["cascade"](PARAMS, jnp.arange(2))
 
     def path(mirror, turn):
@@ -125,14 +113,10 @@ def test_the_cascade_flies_a_mapped_drone_on_the_same_path():
 
 
 def test_the_other_play_map_is_a_symmetry():
-    """Drone 1 sees and acts through the map F = R_z(turn) S. The same flight in the
-    world seen through F, where nobody has a map, gives drone 1 the same input."""
-
     turn, S = 2.3, jnp.diag(jnp.array([1.0, -1.0, 1.0]))
     _, state = avoidance.reset(jax.random.PRNGKey(1), PARAMS)
     state = state.replace(mirror=jnp.array([False, True]), turn=jnp.array([0.0, turn]))
 
-    # At the start the rates are 0 and every motor turns at hover, so only x, v and R move.
     F = core.yaw(turn) @ S
     d = state.drone
     image = state.replace(
@@ -145,7 +129,6 @@ def test_the_other_play_map_is_a_symmetry():
 
     actions = jax.random.uniform(KEY, (200, 2, 4), minval=-0.3, maxval=0.3)
     actions = actions.at[..., 0].add(-0.07)
-    # Drone 0 has no map, so its image flies the mirrored roll and yaw.
     mirrored = actions.at[:, 0].multiply(jnp.array([1.0, -1.0, 1.0, -1.0]))
 
     def fly(state, actions):

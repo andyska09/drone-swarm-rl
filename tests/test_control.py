@@ -147,7 +147,7 @@ def test_mixer_shifts_negative_motors_up():
 
 def test_pid_kicks_on_the_first_step():
     gains = c.Gains(kp=jnp.full(3, 2.0), kd=jnp.full(3, 0.5), ki=jnp.zeros(3),
-                    saturation=-1.0, antiwindup=1.0)
+                    saturation=jnp.inf, antiwindup=1.0)
     out, pid = c.pid_update(c.pid_init(), jnp.ones(3), gains, DT)
 
     assert float(out[0]) == pytest.approx(2.0 + 0.5 / DT)

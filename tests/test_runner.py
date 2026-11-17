@@ -1,5 +1,3 @@
-"""Check saved run data, config hashes, and that a run resumes exactly."""
-
 import csv
 import dataclasses
 import json
@@ -57,20 +55,15 @@ def rows(file):
 
 @pytest.mark.parametrize("kind", ("plain", "pool", "curriculum"))
 def test_a_resumed_run_trains_on_exactly(tmp_path, monkeypatch, kind):
-    """The run stops in its last checkpoint, after its last rows. The resume runs the last
-    update again from the checkpoint before, and must write the same rows."""
-
     pooled = kind == "pool"
     cfg = dataclasses.replace(small(), checkpoint_every=1)
     if pooled:
-        # Generations 0 and 1 of two updates, each update one per side.
         cfg = config.TrainConfig(
             task="chase", preset="default", num_envs=64, num_steps=8, num_minibatches=2,
             total_timesteps=8 * 64 * 8, generations=1, checkpoint_every=1, log_every=100,
         )
         monkeypatch.setattr(pool, "HEDGE_EPISODES", 4)
     if kind == "curriculum":
-        # The drones go blind right after update 3, the checkpoint the resume starts from.
         cfg = dataclasses.replace(cfg, task="avoidance", preset="d_inf")
         harder = lambda params, row: params.replace(sight=0.0) if row["update"] == 3 else None
         monkeypatch.setattr(avoidance, "curriculum", harder)

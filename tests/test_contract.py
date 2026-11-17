@@ -1,5 +1,3 @@
-"""Check the env contract of swarm/envs/__init__.py on every task and preset."""
-
 import importlib
 import sys
 from pathlib import Path
@@ -13,7 +11,6 @@ import pytest
 TASKS = ("circle_swap", "chase", "avoidance", "random_goals")
 ENVS = {task: importlib.import_module(f"swarm.envs.{task}") for task in TASKS}
 EPISODES = 3
-# The vmap and the loop round differently, and a tumbling drone grows the difference.
 COMPARED = 50
 
 

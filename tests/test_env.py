@@ -1,5 +1,3 @@
-"""Check cascade goal tracking, episode endings, and batched env behavior."""
-
 import sys
 from pathlib import Path
 
@@ -9,10 +7,9 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from swarm.envs import chase, circle_swap, core
+from swarm.envs import chase, circle_swap, core, random_goals
 from swarm.learn import config, evaluate, vecenv
 
-# One drone, so the cascade flies straight across the circle with nobody to hit.
 SOLO = circle_swap.EnvParams(roles=("drone",))
 
 
@@ -45,8 +42,6 @@ def test_the_fatal_step_pays_the_crash_penalty():
 
 
 def chase_scene(x, limit):
-    """One chase scene with the drones level at x, `limit` steps before its step limit."""
-
     params = chase.PRESETS["default"]
     cfg = config.TrainConfig(task="chase", preset="default", num_envs=1)
     _, vec = vecenv.reset(jax.random.PRNGKey(0), chase, params, cfg)
@@ -57,7 +52,6 @@ def chase_scene(x, limit):
 
 
 def test_the_step_limit_bootstraps_unless_the_task_ends_the_episode():
-    # Far apart, nothing happens before the step limit.
     step, vec, params = chase_scene([[5.0, 0.0, 8.0], [-5.0, 0.0, 8.0]], 2)
     _, vec, _, done, info = step(vec)
     assert not bool(done[0])
@@ -66,7 +60,6 @@ def test_the_step_limit_bootstraps_unless_the_task_ends_the_episode():
     assert list(info["bootstrap"][0]) == [1.0, 1.0], "the step limit is not terminal"
     assert int(vec.limit[0]) == params.max_steps, "the next episode is not full length"
 
-    # The evader hangs in the pursuer's net on the last step: the catch wins.
     step, vec, _ = chase_scene([[0.0, 0.0, 8.0], [0.2, 0.0, 7.1]], 1)
     _, _, _, done, info = step(vec)
     assert bool(done[0]) and bool(info["end"]["caught_e"][0])
@@ -83,13 +76,11 @@ def test_chase_reads_its_drone_count_from_roles(pursuers):
     action = jnp.zeros((n, chase.NUM_ACTIONS))
     _, _, reward, done, info = chase.step(jax.random.PRNGKey(1), state, action, params)
 
-    # The own state, then 7 columns and a flag for each of the K slots. No goal.
     assert obs.actor["pursuer"].shape == (pursuers, 20 + 8 * k)
     assert obs.actor["evader"].shape == (1, 20 + 8 * k)
     assert reward.shape == (n,) and done.shape == () and info["end"]["caught_e"].shape == ()
     assert chase.reference(state, params).shape == (n, 3)
 
-    # Every other drone has a slot, and the flag says which are the same role.
     actor = jnp.concatenate([obs.actor["pursuer"], obs.actor["evader"]])
     slots, filled = actor[:, 20 : 20 + 7 * k].reshape(n, k, 7), actor[:, 20 + 7 * k :]
     role = jnp.array([params.roles[i] == "pursuer" for i in range(n)])
@@ -102,8 +93,6 @@ THREE = chase.EnvParams(roles=("pursuer",) * 3 + ("evader",))
 
 
 def chase_step(x):
-    """One step of 3v1 chase from the drones level at x."""
-
     _, state = chase.reset(jax.random.PRNGKey(0), THREE)
     drone = state.drone.replace(x=jnp.array(x), R=jnp.stack([jnp.eye(3)] * THREE.n_drones))
     action = jnp.zeros((THREE.n_drones, chase.NUM_ACTIONS))
@@ -111,7 +100,6 @@ def chase_step(x):
 
 
 def test_one_catch_pays_every_pursuer():
-    # The evader touches the net of pursuer 1, 0.9 m under it. The others are clear.
     x = [[-6.0, 0.0, 8.0], [0.0, 0.0, 8.0], [6.0, 0.0, 8.0], [0.2, 0.0, 7.1]]
     _, _, reward, done, info = chase_step(x)
     assert bool(done) and bool(info["end"]["caught_e"])
@@ -120,8 +108,6 @@ def test_one_catch_pays_every_pursuer():
 
 
 def test_a_net_on_another_pursuer_kills_both():
-    # Pursuer 0 touches pursuer 1's net 0.9 m under it, 1.03 m from its centre. That is
-    # beyond the 0.8 m contact distance, so only the net can end this.
     x = [[0.3, 0.4, 7.1], [0.0, 0.0, 8.0], [6.0, 0.0, 8.0], [-6.0, 0.0, 8.0]]
     _, _, _, done, info = chase_step(x)
     assert list(info["alive"]) == [False, False, True, True]
@@ -129,8 +115,6 @@ def test_a_net_on_another_pursuer_kills_both():
 
 
 def test_chase_starts_keep_the_drones_apart_and_inside_the_box():
-    """Also when the paths pilot puts the evader on its path first."""
-
     keys = jax.random.split(jax.random.PRNGKey(0), 256)
     _, state = jax.vmap(chase.reset, in_axes=(0, None))(keys, THREE)
     _, start = chase.PILOTS["paths"](THREE, jnp.array([3]))
@@ -145,8 +129,22 @@ def test_chase_starts_keep_the_drones_apart_and_inside_the_box():
 
 
 def test_after_a_failure_only_the_survivor_bootstraps():
-    # The evader starts under the floor, far from the pursuer.
     step, vec, _ = chase_scene([[5.0, 0.0, 8.0], [-5.0, 0.0, -0.5]], 100)
     _, _, _, done, info = step(vec)
     assert bool(done[0]) and bool(info["end"]["crash_e"][0])
     assert list(info["bootstrap"][0]) == [1.0, 0.0], "pursuer, evader"
+
+
+def test_a_dead_drone_keeps_its_state():
+    params = random_goals.EnvParams(roles=("drone",) * 2)
+    key = jax.random.PRNGKey(0)
+    _, before = random_goals.reset(key, params)
+    under_the_floor = before.drone.x.at[0, 2].set(-1.0)
+    before = before.replace(drone=before.drone.replace(x=under_the_floor))
+
+    action = jnp.zeros((2, random_goals.NUM_ACTIONS))
+    _, after, _, _, info = random_goals.step(key, before, action, params)
+
+    assert list(info["alive"]) == [False, True]
+    same = jax.tree.map(lambda a, b: bool(jnp.all(a[0] == b[0])), after.drone, before.drone)
+    assert all(jax.tree.leaves(same)), "the dead drone moved"

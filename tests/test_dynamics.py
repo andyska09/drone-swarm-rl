@@ -1,6 +1,3 @@
-"""The plant must reproduce the C++ reference trajectories, and the analytic cases
-must hold. Regenerate the references with tools/mrs_golden/build.sh."""
-
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +15,7 @@ from swarm.sim import dynamics as d
 GOLDEN = ROOT / "tests" / "golden"
 SCENARIOS = ("free_fall", "hover", "tumble", "spin_down", "random")
 DT = 0.01
-TOL = 1e-9  # measured worst case is 1.1e-13 over 500 steps
+TOL = 1e-9
 
 CMD = slice(1, 5)
 COLS = {
@@ -51,9 +48,6 @@ def hover_rpm(params):
     return jnp.sqrt(params.mass * params.g / (params.n_motors * params.kf))
 
 
-# | ---------------------------- goldens ---------------------------- |
-
-
 def test_params_match_reference():
     p = d.default_params()
     ref = dict(line.split() for line in (GOLDEN / "params.txt").read_text().splitlines())
@@ -83,11 +77,7 @@ def test_matches_golden_trajectory(name):
         np.testing.assert_allclose(got, want, atol=TOL, rtol=0, err_msg=f"{name}.{field}")
 
 
-# | --------------------------- analytic ---------------------------- |
-
-
 def test_free_fall_matches_half_g_t_squared():
-    # Both drag and the min_rpm floor have to go, or the drone does not fall freely.
     p = d.default_params(air_resistance_coeff=0.0, min_rpm=0.0)
     traj = rollout(d.rest_state(0.0), jnp.zeros((100, 4)), p)
 
@@ -113,7 +103,6 @@ def test_equal_rpm_makes_no_torque():
 
 
 def test_split_throttle_is_pure_pitch():
-    # Motors 1 and 3 up, 0 and 2 down: pitch only, and only while R is still level.
     p = d.default_params()
     rpm = hover_rpm(p) + jnp.array([-500.0, 500.0, -500.0, 500.0])
     dot = d.derivative(d.rest_state().replace(rpm=rpm), p)
@@ -140,9 +129,6 @@ def test_rotation_stays_orthonormal_over_1e5_steps():
     R = traj.R[-1]
     assert float(jnp.abs(R.T @ R - jnp.eye(3)).max()) < 1e-6
     assert float(jnp.abs(traj.omega[-1]).max()) > 1.0, "the drone never started spinning"
-
-
-# | ------------------------- infrastructure ------------------------- |
 
 
 def test_step_preserves_dtypes_and_shapes():
@@ -182,8 +168,6 @@ def test_vmap_matches_python_loop():
 
 
 def test_float32_tracks_float64():
-    """Runs a rollout in a child process, where x64 is off and everything is float32."""
-
     out = subprocess.run(
         [sys.executable, __file__], cwd=ROOT, capture_output=True, text=True, check=True
     )
