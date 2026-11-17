@@ -11,12 +11,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 JOB = Path(__file__).resolve().parent / "job.sh"
-# The A100 partitions and their time limits in hours, shortest first.
 PARTITIONS = {"amdgpufast": 4, "amdgpu": 24, "amdgpulong": 72, "amdgpuextralong": 504}
 
 
 def job_name(train):
-    """The start of the run folder name, so squeue and runs/ match."""
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("--task")
     p.add_argument("--preset")
@@ -29,7 +27,6 @@ def job_name(train):
 
 
 def partition(walltime):
-    """The shortest partition that takes this walltime, given as H:MM:SS."""
     hours = int(walltime.split(":")[0])
     return next(name for name, limit in PARTITIONS.items() if hours < limit)
 

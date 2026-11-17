@@ -1,6 +1,3 @@
-"""Browse every eval in the viewer, any two specs side by side, and the training curves of any
-run: python run/replay.py"""
-
 import argparse
 import functools
 import http.server
@@ -12,8 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def evals():
-    """Newest first: every directory under runs/ that eval.py finished writing."""
-
     found = sorted(
         ROOT.glob("runs/*/evals/*/trajectory.npz"),
         key=lambda p: p.stat().st_mtime,
@@ -35,9 +30,6 @@ def evals():
 
 
 def runs():
-    """Newest first: every run under runs/ with a metrics.csv, and its roles. The roles come
-    from here because config.json can hold Infinity, which the browser's JSON cannot read."""
-
     found = sorted(
         ROOT.glob("runs/*/metrics.csv"),
         key=lambda p: p.stat().st_mtime,
@@ -53,8 +45,6 @@ def runs():
 
 
 def specs():
-    """Every task spec, then every paper spec."""
-
     tasks = sorted(ROOT.glob("research/notes/tasks/task_*.md"))
     papers = sorted(ROOT.glob("research/notes/literature/specs/*.md"))
     return [

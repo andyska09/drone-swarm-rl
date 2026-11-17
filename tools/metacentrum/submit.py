@@ -14,7 +14,6 @@ JOB = Path(__file__).resolve().parent / "job.sh"
 
 
 def job_name(train):
-    """The start of the run folder name, so qstat and logs/ match runs/."""
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("--task")
     p.add_argument("--preset")
@@ -31,7 +30,6 @@ def submit(a, train):
            "-l", f"select=1:ncpus={a.ncpus}:ngpus=1:mem={a.mem}:gpu_cap={a.gpu_cap}",
            "-l", f"walltime={a.walltime}",
            "-j", "oe", "-o", f"{ROOT}/logs/",
-           # -v splits on commas; a value in quotes keeps them (--set hidden=128,128).
            "-v", f"ROOT={ROOT},ARGS='{' '.join(train)}'",
            str(JOB)]
     if a.dry_run:

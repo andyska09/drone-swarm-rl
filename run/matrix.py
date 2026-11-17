@@ -1,7 +1,3 @@
-"""Every pursuer against every evader of a pool run: python run/matrix.py runs/<name>
-
-Writes the pursuer's win rate to runs/<name>/matrix.csv and draws it in matrix.png."""
-
 import argparse
 import csv
 import pathlib

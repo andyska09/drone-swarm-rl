@@ -1,9 +1,3 @@
-"""Read a run directory back: its config, its env and its saved files. Write its log and
-its csv files. And the commit that a run or an eval records.
-
-evaluate and pool read and write runs here, because runner imports them: `learn/` imports one way,
-rundir, ppo, vecenv, seats, evaluate, pool, runner."""
-
 import csv
 import dataclasses
 import importlib
@@ -54,16 +48,12 @@ def load_config(run):
 
 
 def load_env(run):
-    """The task module and the env the run trained in, rebuilt from its config.json."""
-
     spec = json.loads((Path(run) / "config.json").read_text())
     env = importlib.import_module(f"swarm.envs.{spec['train']['task']}")
     return env, _from_json(env.EnvParams, spec["env"])
 
 
 def _from_json(cls, record):
-    """JSON turned the nested classes into dicts, and the tuples and arrays into lists."""
-
     kinds = {f.name: f.type for f in dataclasses.fields(cls)}
     values = {}
     for name, value in record.items():
