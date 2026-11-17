@@ -83,9 +83,8 @@ boundary. No hand-rolled batch dimensions.
 
 This costs a discipline: no Python `if` on a value that came out of an array, no
 `.item()`, no shapes that depend on values. MRS's `if (v.norm() != 0)
-v.normalize()` becomes a `jnp.where` with a safe norm
-(`sqrt(sum(v*v) + 1e-12)`, because `norm` has a NaN gradient at zero). Same for
-the mixer's saturation branches.
+v.normalize()` becomes `norm(v) * v`, which has no division and so no branch. The
+mixer's saturation branches become `jnp.where`.
 
 A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
 
@@ -94,8 +93,9 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
 - PID carries `(integral, last_error)` explicitly as `PIDState`. No hidden
   object state, because the whole loop has to be jittable.
 - Three MRS behaviours replicated as-is, not fixed:
-  - **The rate controller's output is never clamped.** It is constructed with
-    `saturation = -1`, and the clamp is guarded by `if (saturation > 0)`. Despite
+  - **The rate controller's output is never clamped.** MRS constructs it with
+    `saturation = -1`, and guards the clamp by `if (saturation > 0)`. We give it an
+    infinite limit. Despite
     the docs saying roll/pitch/yaw are normalized to `[-1,1]`, they are not — the
     mixer's desaturation is what actually bounds them. Load-bearing.
   - **Derivative kick on the first step.** `last_error` starts at 0, so a step
@@ -122,7 +122,8 @@ A `test_vmap_matches_python_loop` gate makes this real rather than aspirational.
 - The acceleration rung has no PID. It turns a desired force into an orientation
   by oblique projection, and into a throttle by projecting that force on the
   *current* body z. MRS takes the square root of that unguarded, so an inverted
-  drone yields NaN. Replicated as-is.
+  drone yields NaN. We clamp the projection at 0: a propeller only pushes, so an
+  inverted drone gets the lowest throttle.
 - Only the heading branch of the cascade is implemented, not the heading-rate
   branch. A position command flows through the heading branch; the `TiltHdgRate`
   variant and its `getYawRateIntrinsic` machinery are unused.
@@ -159,9 +160,9 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
 
 - **One file per task.** Each task lives in `swarm/envs/<task>.py` with `reset`,
   `step`, `get_obs`, `reference` and a `PRESETS` dict. `swarm/envs/__init__.py`
-  holds the contract every task file meets, the shared `Obs`, and
-  `make(task, preset)`, which loads a task by name, so adding a task needs no
-  registry. The contract between `envs/` and `learn/` stays narrow: an obs the learner
+  holds the shared `Obs` and `make(task, preset)`, which loads a task by name, so
+  adding a task needs no registry. What every task file holds is in
+  [tasks/env_contract.md](tasks/env_contract.md). The contract between `envs/` and `learn/` stays narrow: an obs the learner
   never looks inside, three flags per drone, the pilot names and the metric shapes. So a
   new task changes nothing in `learn/`. `core.py` holds what the tasks share. The trainer handles automatic
   episode resets, so we do not need gymnax's auto-reset base class. Single-drone
@@ -207,8 +208,7 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   more acrobatic flight, where we allow ±4 rad/s in roll and pitch.
 - **One centre.** `center` is the middle of the arena box, and each task spawns
   its drones and draws its goals around it.
-- **Drone failure.** The default rule kills a drone that flips over, because
-  `acceleration_controller` can return NaN when the drone is inverted. A task with
+- **Drone failure.** The default rule kills a drone that flips over. A task with
   other rules writes its own `is_dead`. Contact at 0.80 m between centres is the MRS
   rule (`multirotor_simulator.cpp:342`, `crit_dist = arm+prop+arm+prop`), and MRS
   ships `collisions: {enabled: true, crash: true}`, so contact kills there too. The

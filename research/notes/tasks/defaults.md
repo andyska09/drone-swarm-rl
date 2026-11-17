@@ -237,7 +237,8 @@ step:
 1. The motors limit $a$. The vertical part gets thrust first, and the sideways part gets
    what is left. The thrust stays between the thrust at $n_{\min}$ and at $n_{\max}$.
 2. The MRS acceleration controller turns $a$ into an attitude and a throttle. It keeps
-   the drone's heading. A NaN throttle becomes 0.
+   the drone's heading. A drone turned more than 90° from the wanted force gets the
+   lowest throttle.
 3. The MRS attitude controller, with the cascade's gains and a yaw rate limit of
    2 rad/s, turns the attitude into body rates.
 4. The throttle and the body rates become the action, clipped to $[-1, 1]$.
