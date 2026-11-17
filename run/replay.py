@@ -6,11 +6,12 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNS = ROOT / "runs"
 
 
 def evals():
     found = sorted(
-        ROOT.glob("runs/*/evals/*/trajectory.npz"),
+        RUNS.glob("**/evals/*/trajectory.npz"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -21,7 +22,7 @@ def evals():
         out.append(
             {
                 "path": d.relative_to(ROOT).as_posix(),
-                "run": d.parent.parent.name,
+                "run": d.parent.parent.relative_to(RUNS).as_posix(),
                 "name": d.name,
                 "summary": spec.get("summary", {}),
             }
@@ -31,13 +32,13 @@ def evals():
 
 def runs():
     found = sorted(
-        ROOT.glob("runs/*/metrics.csv"),
+        RUNS.glob("**/metrics.csv"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
     return [
         {
-            "name": metrics.parent.name,
+            "name": metrics.parent.relative_to(RUNS).as_posix(),
             "roles": json.loads((metrics.parent / "config.json").read_text())["env"]["roles"],
         }
         for metrics in found
