@@ -1,5 +1,3 @@
-"""N drones chase one evader and catch it with a net hung under the pursuer's body."""
-
 import flax.struct
 import jax
 import jax.numpy as jnp
@@ -9,25 +7,18 @@ from swarm.sim import control, dynamics, guidance
 
 NUM_ACTIONS = 4
 PROGRESS = ("ep_length", "death_rate", "caught_e", "coll_pp")
-# `paths` draws one of these for each episode, all three equally likely.
 PATHS = ("hover", "circle", "figure8")
 
 
 @flax.struct.dataclass
 class RewardConfig:
-    """step, cmd, coll_pe and outside are per second: the reward multiplies them by
-    policy_dt. progress is per metre. catch, coll_pp and fail are paid once."""
-
-    # Each pursuer earns it for each metre that its own net closes on the evader.
     progress: float = 0.25
-    # The evader earns it while it flies.
     step: float = 4.0
     cmd: float = 0.02
     catch: float = 30.0
     coll_pe: float = 10.0
     coll_pp: float = 10.0
     fail: float = 30.0
-    # The evader pays it while it is outside the arena box.
     outside: float = 0.0
 
 
@@ -37,7 +28,6 @@ class EnvParams(core.Common):
 
     roles: tuple = flax.struct.field(pytree_node=False, default=("pursuer", "evader"))
     max_steps: int = flax.struct.field(pytree_node=False, default=1000)
-    # Without walls, only a crash ends an episode.
     walls: bool = flax.struct.field(pytree_node=False, default=True)
 
     sense_pursuer: tuple = flax.struct.field(pytree_node=False, default=())
@@ -45,13 +35,9 @@ class EnvParams(core.Common):
 
     net_side: float = 1.0
     net_offset: float = 0.4
-    # With body_catch, a pursuer has no net: it catches the evader by touching it.
     body_catch: bool = flax.struct.field(pytree_node=False, default=False)
-    # With net_kills, a net that touches another pursuer is a coll_pp.
     net_kills: bool = flax.struct.field(pytree_node=False, default=True)
 
-    # At the start, every two drones are this far apart. A drone farther than 1.54 m
-    # from a pursuer cannot touch its net.
     spacing: float = 2.0
 
     waypoint_range: float = 3.0
@@ -62,42 +48,31 @@ class EnvParams(core.Common):
 class EnvState:
     drone: dynamics.State
     rate_pid: control.PIDState
-    key: jnp.ndarray  # the pilots draw an episode's randomness from it
+    key: jnp.ndarray
     alive: jnp.ndarray
     time: jnp.ndarray
 
 
 def _sides(params):
-    """Drone rows: every pursuer, and the one evader. `roles` is static."""
-
     return role_slices(params.roles)["pursuer"], params.roles.index("evader")
 
 
 def _drop(params):
-    """The net hangs by net_offset"""
-
     return params.net_offset + 0.5 * params.net_side
 
 
 def net_centre(drone, params):
-    """The middle of the net square, straight down the body z axis."""
-
     pursuers, _ = _sides(params)
     return drone.x[pursuers] - _drop(params) * drone.R[pursuers, :, 2]
 
 
 def catch_gap(drone, params):
-    """(P,): the distance from the evader to each pursuer's net centre, or with
-    body_catch to the pursuer itself."""
-
     pursuers, evader = _sides(params)
     point = drone.x[pursuers] if params.body_catch else net_centre(drone, params)
     return core.norm(drone.x[evader] - point)
 
 
 def net_frame(drone, params):
-    """(P, N, 3): every drone seen from every pursuer's net. The net is a square in the body yz plane, so x is the distance across it and (y, z) the spot on it."""
-
     pursuers, _ = _sides(params)
     p = jnp.einsum(
         "pji,pkj->pki", drone.R[pursuers], drone.x - drone.x[pursuers][:, None]
@@ -106,11 +81,6 @@ def net_frame(drone, params):
 
 
 def in_net(drone, params):
-    """(P, N): drone k touches pursuer p's net.
-
-    The square has no thickness. The drone is a ball, so it touches the square when its centre is within one body radius of the plane and sits over the square.
-    """
-
     p = net_frame(drone, params)
     return jnp.all(jnp.abs(p[..., 1:]) <= 0.5 * params.net_side, axis=-1) & (
         jnp.abs(p[..., 0]) <= core.body_radius(params)
@@ -125,8 +95,6 @@ def is_caught(drone, params):
 
 
 def net_collision(drone, params):
-    """(N,): a pursuer's net touches another pursuer. Both of them die."""
-
     pursuers, evader = _sides(params)
     hit = in_net(drone, params).at[:, evader].set(False)
     netter = jnp.zeros(params.n_drones, bool).at[pursuers].set(jnp.any(hit, axis=-1))
@@ -138,7 +106,6 @@ def get_obs(state, params):
     own = core.own_obs(d, core.wall_dist(d, params))
     sense = {"pursuer": params.sense_pursuer, "evader": params.sense_evader}
     slices = role_slices(params.roles)
-    # Each role senses its own blocks, so the rows of each role have their own width.
     actor = {
         role: jnp.concatenate([own, core.others(d, params, True, sense[role])], -1)[
             rows
@@ -157,22 +124,15 @@ def get_obs(state, params):
 
 
 def crashed(drone, params):
-    """Through the ground, or a non-finite state."""
-
     floor = params.center[2] - 0.5 * params.arena[2]
     return (drone.x[:, 2] < floor) | ~jnp.all(jnp.isfinite(drone.x), axis=-1)
 
 
 def failed(drone, params):
-    """A crash, and with walls also a wall or the ceiling."""
-
     return core.out_of_arena(drone, params) if params.walls else crashed(drone, params)
 
 
 def coll_pp(drone, params):
-    """(N,): a pursuer against another pursuer, body on body, and with a net and net_kills
-    also a net on a body. Ends the episode."""
-
     _, evader = _sides(params)
     hit = core.hits(drone, params).at[evader].set(False).at[:, evader].set(False)
     hit = jnp.any(hit, axis=-1)
@@ -182,23 +142,16 @@ def coll_pp(drone, params):
 
 
 def coll_pe(drone, params):
-    """(P,): a pursuer body against the evader body. It costs, and with body_catch it is
-    the capture."""
-
     pursuers, evader = _sides(params)
     return core.hits(drone, params)[pursuers, evader]
 
 
 def reference(state, params):
-    """Nobody flies to a fixed point: a pursuer chases a drone and the evader runs."""
-
     del state
     return jnp.full((params.n_drones, 3), jnp.nan)
 
 
 def scenery(state, params):
-    """Each drone's net for the viewer: its side and its rope, 0 for no net."""
-
     del state
     pursuers, _ = _sides(params)
     net = jnp.array([params.net_side, params.net_offset]) * (not params.body_catch)
@@ -206,20 +159,16 @@ def scenery(state, params):
 
 
 def compute_reward(before, d, rate_ref, alive, fail, collide, caught, params):
-    """`before` and `d` are the drones at the start and at the end of the step."""
-
     cfg = params.reward
     pursuers, evader = _sides(params)
     closed = catch_gap(before, params) - catch_gap(d, params)
     progress = jnp.zeros(params.n_drones).at[pursuers].set(cfg.progress * closed)
 
-    # A pursuer-evader collision costs both sides the same.
     hit = coll_pe(d, params)
     both = jnp.zeros(params.n_drones).at[pursuers].set(hit).at[evader].set(jnp.any(hit))
 
     clock = jnp.zeros(params.n_drones).at[evader].set(cfg.step) - cfg.coll_pe * both
     clock = clock.at[evader].add(-cfg.outside * core.out_of_arena(d, params)[evader])
-    # One catch pays every pursuer and bills the evader once.
     catch = jnp.full(params.n_drones, cfg.catch).at[evader].set(-cfg.catch)
 
     return (
@@ -245,9 +194,6 @@ def _waypoint(key, x, params):
 
 
 def _starts(key, x, free, params):
-    """x with the `free` drones drawn again: uniform in the box, `margin` in from every
-    face. The first of 16 draws that keeps every two drones `spacing` apart wins."""
-
     centre = jnp.asarray(params.center)
     limit = core.half(params) - params.margin
     draws = centre + jax.random.uniform(
@@ -278,7 +224,6 @@ def step(key, state, action, params):
     drone, rate_pid, rate_ref = core.fly(state.drone, state.rate_pid, action, params)
 
     caught = jnp.any(is_caught(drone, params)) & jnp.all(state.alive)
-    # The net hangs through the hitbox, so a catch is a catch, not a collision.
     fail = state.alive & failed(drone, params) & ~caught
     collide = state.alive & coll_pp(drone, params) & ~caught
     died = fail | collide
@@ -297,22 +242,17 @@ def step(key, state, action, params):
     )
     done = caught | ~jnp.all(alive)
 
-    # A failure through the floor, or a broken state, is a crash. The rest is OOB.
     crash = fail & crashed(drone, params)
     oob = fail & ~crash
     crash_p, oob_p = jnp.any(crash[pursuers]), jnp.any(oob[pursuers])
-    # A coll_pp is a pursuer failure too.
     fail_p, fail_e = crash_p | oob_p | jnp.any(collide), fail[evader]
 
     on_net = net_frame(drone, params)[:, evader, 1:]
     info = {
         "alive": alive,
         "flying": alive,
-        # Only a catch is terminal. After a failure the survivors bootstrap.
         "bootstrap": jnp.full(params.n_drones, ~caught),
         "end": {
-            # One outcome per episode, the first that holds in this order. Then comes the
-            # trainer's `time_limit`.
             "caught_e": caught,
             "fail_pe": fail_p & fail_e,
             "crash_p": crash_p & ~fail_e,
@@ -328,7 +268,6 @@ def step(key, state, action, params):
             ),
         },
         "step": {
-            # The nearest catch_gap, averaged over the chase.
             "distance": jnp.min(catch_gap(drone, params)),
             "coll_pe": jnp.any(coll_pe(drone, params)),
         },
@@ -337,19 +276,12 @@ def step(key, state, action, params):
 
 
 def _aim(drone, params):
-    """(N, 3): a pursuer flies its NET onto the evader, so it aims `_drop` above it.
-    Flying its body there would hold the evader above the square and never catch. The
-    evader's row is the evader itself."""
-
     pursuers, evader = _sides(params)
     aim = drone.x[evader] + _drop(params) * drone.R[pursuers, :, 2]
     return jnp.broadcast_to(drone.x[evader], drone.x.shape).at[pursuers].set(aim)
 
 
 def cascade(params, rows):
-    """The cascade: a pursuer flies its net onto the evader, and the evader flies to a
-    waypoint, then to the next one."""
-
     _, evader = _sides(params)
     is_evader = (jnp.asarray(rows) == evader)[:, None]
 
@@ -374,8 +306,6 @@ def cascade(params, rows):
 
 
 def frpn(params, rows):
-    """FRPN: each drone flies its net onto where the evader will be."""
-
     _, evader = _sides(params)
 
     def act(state, obs, pids):
@@ -390,8 +320,6 @@ def frpn(params, rows):
 
 
 def apf(params, rows):
-    """APF: each drone is pushed away from the pursuers and from the faces of the box."""
-
     pursuers, _ = _sides(params)
     lo = jnp.asarray(params.center) - core.half(params)
     hi = jnp.asarray(params.center) + core.half(params)
@@ -410,9 +338,6 @@ def apf(params, rows):
 
 
 def paths(params, rows):
-    """Each drone follows a flat path drawn for the episode: a hover, a circle or a
-    figure-eight inside the box. It starts on the path, with the path's velocity."""
-
     dt, n = params.policy_dt, len(rows)
     lo = jnp.asarray(params.center) - core.half(params) + params.margin
     hi = jnp.asarray(params.center) + core.half(params) - params.margin
@@ -434,7 +359,6 @@ def paths(params, rows):
         k_paths, k_place = jax.random.split(state.key)
         routes = jax.vmap(draw)(jax.random.split(k_paths, n))
         on = jax.vmap(lambda p: at(p, 0.0))(routes)
-        # The other drones start again, so they keep their spacing from the paths.
         others = jnp.ones(params.n_drones, bool).at[rows].set(False)
         x = _starts(k_place, state.drone.x.at[rows].set(on[:, 0]), others, params)
         drone = state.drone.replace(x=x, v=state.drone.v.at[rows].set(on[:, 1]))
@@ -471,7 +395,6 @@ PRESETS = (
         "nemecek": NEMECEK,
         "3v1": EnvParams(roles=("pursuer",) * 3 + ("evader",)),
     }
-    # The paths pilot flies the evader, and only the pursuers learn.
     | {
         "_".join((f"paths_{p}v1",) + sense): EnvParams(
             roles=("pursuer",) * p + ("evader",),
@@ -494,9 +417,7 @@ PRESETS = (
             net_kills=False,
         ),
     }
-    # Both sides learn, and only the pursuer senses more.
     | {"_".join(("default", "p", *p)): EnvParams(sense_pursuer=p) for p in SENSES[1:]}
-    # Each side senses at least one block of the other.
     | {
         "_".join(("nemecek", "p", *p, "e", *e)): NEMECEK.replace(
             sense_pursuer=p, sense_evader=e

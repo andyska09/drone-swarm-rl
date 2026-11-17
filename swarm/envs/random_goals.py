@@ -1,5 +1,3 @@
-"""N drones fly to random goals, one after another. A dead drone leaves, the others fly on."""
-
 import flax.struct
 import jax
 import jax.numpy as jnp
@@ -9,13 +7,12 @@ from swarm.sim import control, dynamics
 
 NUM_ACTIONS = 4
 PROGRESS = ("ep_length", "death_rate", "goals", "contact")
-# One draw of 10 drones keeps the spacing about 1 time in 4.
 START_DRAWS = 64
 
 
 @flax.struct.dataclass
 class RewardConfig:
-    goal: float = 1.0  # per metre closer to the goal
+    goal: float = 1.0
     crash: float = 30.0
 
 
@@ -25,7 +22,6 @@ class EnvParams(core.Common):
 
     max_steps: int = flax.struct.field(pytree_node=False, default=1000)
 
-    # The starts and the goals lie in this box around `center`.
     goal_box: tuple = flax.struct.field(pytree_node=False, default=(20.0, 20.0, 1.0))
     goal_radius: float = 0.5
     spacing: float = 2.0
@@ -38,11 +34,11 @@ class EnvParams(core.Common):
 class EnvState:
     drone: dynamics.State
     rate_pid: control.PIDState
-    key: jnp.ndarray  # eval gives `step` the same key each step, so goals draw from this
+    key: jnp.ndarray
     goal: jnp.ndarray
     alive: jnp.ndarray
-    reached: jnp.ndarray  # the goals that each drone reached
-    contact: jnp.ndarray  # the drone died by touching another drone
+    reached: jnp.ndarray
+    contact: jnp.ndarray
     closest: jnp.ndarray
 
 
@@ -120,7 +116,6 @@ def step(key, state, action, params):
     contact = jnp.any(core.hits(flown, params) & both, axis=-1)
     died = contact | (state.alive & core.lost(flown, params))
     alive = state.alive & ~died
-    # A dead drone stays where the step found it, so a broken state cannot reach the others.
     drone, rate_pid = core.select_rows(
         alive, (flown, flown_pid), (state.drone, state.rate_pid)
     )
@@ -145,7 +140,6 @@ def step(key, state, action, params):
     info = {
         "alive": alive,
         "flying": alive,
-        # Only the death of the last drone ends the episode, and a death is terminal.
         "bootstrap": jnp.zeros(params.n_drones, bool),
         "end": {
             "goals": new_state.reached,
@@ -160,8 +154,6 @@ def step(key, state, action, params):
 
 
 def cascade(params, rows):
-    """The cascade flies each drone to its goal."""
-
     return core.cascade_pilot(params, rows, lambda state: state.goal[rows])
 
 
