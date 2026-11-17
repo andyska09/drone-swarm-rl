@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 
 from swarm import envs
-from swarm.learn import config, ppo
+from swarm.learn import config, ppo, vecenv
 
 
 def train(updates, seed=0, **overrides):
@@ -36,6 +36,12 @@ def test_metrics_carry_the_env_measurements():
     metrics = train(1)[0]
     assert "distance" in metrics, "an info scalar the env declared did not reach the metrics"
     assert set(metrics) >= {"return", "ep_length", "death_rate", "explained_var", "approx_kl"}
+
+
+def test_no_gradient_reaches_the_input_scale():
+    x = jnp.array([1.0, -2.0, 0.5])
+    grad = jax.grad(lambda scale: vecenv.normalized(scale, x).sum())(vecenv.normalizer(3))
+    assert all(bool(jnp.all(g == 0.0)) for g in jax.tree.leaves(grad))
 
 
 def test_an_update_that_cannot_move_measures_no_policy_change():

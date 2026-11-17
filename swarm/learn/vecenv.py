@@ -1,5 +1,3 @@
-"""Batch scenes, end episodes at their step limit, reset them, and normalize rewards and inputs."""
-
 import flax.struct
 import jax
 import jax.numpy as jnp
@@ -20,15 +18,12 @@ class VecState:
     ret: jnp.ndarray
     ep_return: jnp.ndarray
     ep_length: jnp.ndarray
-    limit: jnp.ndarray  # the step that ends each episode on time
-    flying: jnp.ndarray  # each drone's flag before the step
-    seat: any = None  # the carry of a seat that flies some rows, per scene
+    limit: jnp.ndarray
+    flying: jnp.ndarray
+    seat: any = None
 
 
 def normalizer(width):
-    """One scale per column. At first it leaves each column as it is."""
-
-    # A typed count, so a run resumed from latest.pkl compiles the same program.
     return Normalizer(jnp.zeros(width), jnp.ones(width), jnp.full(width, 1e-4, dtype=float))
 
 
@@ -45,36 +40,27 @@ def welford(n, batch):
 
 
 def normalized(n, x):
-    # The optimizer holds an input's scale with the weights, so no gradient may reach it.
     n = jax.lax.stop_gradient(n)
     return (x - n.mean) / jnp.sqrt(n.var + 1e-8)
 
 
 def select(pick, a, b):
-    """Select leaves from a for the scenes `pick` marks and from b for the rest."""
-
     return jax.tree.map(
         lambda x, y: jnp.where(pick.reshape((-1,) + (1,) * (x.ndim - 1)), x, y), a, b
     )
 
 
 def at_limit(info, ended, reached):
-    """`time_limit`: the step limit ends an episode where it is `reached`, unless the
-    task ended it at the same step. -> the flag, and `info` with it in `end`."""
-
     time_limit = reached & ~ended
     return time_limit, {**info, "end": {**info["end"], "time_limit": time_limit}}
 
 
 def reset(key, env, params, cfg, start=None):
-    """`start(states) -> (states, carry)` begins each episode of a seat."""
-
     key, k, k_time = jax.random.split(key, 3)
     obs, env_state = jax.vmap(env.reset, in_axes=(0, None))(
         jax.random.split(k, cfg.num_envs), params
     )
 
-    # Shorten the first episodes to spread the step limits across updates.
     limit = params.max_steps - jax.random.randint(k_time, (cfg.num_envs,), 0, params.max_steps)
     seat = None
     if start is not None:
@@ -84,7 +70,6 @@ def reset(key, env, params, cfg, start=None):
     vec = VecState(
         env=env_state,
         key=key,
-        # One scale per drone column, so a pursuer and an evader are not pooled.
         rew_norm=normalizer(params.n_drones),
         ret=jnp.zeros((cfg.num_envs, params.n_drones)),
         ep_return=jnp.zeros((cfg.num_envs, params.n_drones)),
@@ -97,9 +82,6 @@ def reset(key, env, params, cfg, start=None):
 
 
 def step(vec, action, env, params, cfg, learns=1.0, start=None):
-    """`learns` is 1 for each drone column whose reward scale may move. `start` is
-    as in `reset`."""
-
     key, k_step, k_reset = jax.random.split(vec.key, 3)
     n = cfg.num_envs
 
@@ -132,7 +114,6 @@ def step(vec, action, env, params, cfg, learns=1.0, start=None):
     env_state = select(done, fresh_state, env_state)
     next_obs = select(done, fresh_obs, obs)
 
-    # The terminal step carries the largest return, so measure before clearing.
     rew_norm = vec.rew_norm
     ret = vec.ret * cfg.gamma + reward
     if cfg.normalize_reward:
