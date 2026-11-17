@@ -1,5 +1,9 @@
 [FORMAT]
-max-line-length=100
+max-line-length=120
+
+[TYPECHECK]
+generated-members=replace
+ignored-classes=Field
 
 [MESSAGES CONTROL]
 # This repo names math symbols in capitals (R, F, S), writes a docstring only where a
