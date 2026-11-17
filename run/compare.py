@@ -1,9 +1,3 @@
-"""Put runs side by side: python run/compare.py runs/<a> runs/<b> ...
-
-First every eval that the runs hold, one column each. Then each run's training curve: for
-each role that learns, the policy's std, its lr / std, the KL and the clip fraction, then
-the task's PROGRESS metrics. Under it, the std of each action at the last checkpoint."""
-
 import argparse
 import csv
 import importlib
@@ -17,9 +11,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from swarm.learn import ppo, rundir, runner
 
 UPDATES = (50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000)
-WINDOW = 10  # each point of the curve averages the updates this close to it
-ONE_ACTION = 0.5 * (math.log(2 * math.pi) + 1)  # the entropy of one action at std 1
-LEARNER = ("std", "lr", "lr/std", "approx_kl", "clipfrac")  # the columns of each role that learns
+WINDOW = 10
+ONE_ACTION = 0.5 * (math.log(2 * math.pi) + 1)
+LEARNER = ("std", "lr", "lr/std", "approx_kl", "clipfrac")
 
 
 def number(text):
@@ -53,7 +47,6 @@ def print_curve(run):
     with (run / "metrics.csv").open() as f:
         rows = [{k: number(v) for k, v in row.items()} for row in csv.DictReader(f)]
 
-    # A role that a pilot flies leaves its entropy column empty.
     learners = [
         k[len("entropy"):] for k in runner.progress_columns(rows[0], ("entropy",))
         if any(not math.isnan(row[k]) for row in rows)

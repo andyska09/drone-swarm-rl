@@ -1,5 +1,3 @@
-"""Two drones fly head-on through a closed square tube, each to the other's start."""
-
 import flax.struct
 import jax
 import jax.numpy as jnp
@@ -97,8 +95,6 @@ def get_obs(state, params):
     )
     clock = params.timeout - state.time * params.policy_dt
 
-    # Each drone sees the world through F = yaw(turn) S, where S mirrors y if `mirror`.
-    # Its body y axis flips with the mirror, so its R stays a rotation.
     flip = jnp.where(state.mirror[:, None], jnp.array([1.0, -1.0, 1.0]), 1.0)
     F = jax.vmap(core.yaw)(state.turn) * flip[:, None, :]
     on = lambda v: jnp.einsum("nij,nj->ni", F, v)
@@ -106,13 +102,11 @@ def get_obs(state, params):
         x=on(d.x),
         v=on(d.v),
         R=F @ d.R * flip[:, None, :],
-        # A rate is a pseudo-vector, so the mirror flips roll and yaw, not pitch.
         omega=flip[:, 1:2] * flip * d.omega,
     )
     walls = core.box_dist(
         p * flip, flip[:, :, None] * R * flip[:, None, :], half(state, params)
     )
-    # Each drone measures the others in its own body frame, mirrored with its world.
     mirrored = d.replace(R=d.R * flip[:, None, :])
     actor = jnp.concatenate(
         [
@@ -148,8 +142,6 @@ def compute_reward(arrive, died, params):
 
 
 def action_signs(state, params):
-    """A drone that sees the world in a mirror flies mirrored roll and yaw rates."""
-
     del params
     s = jnp.where(state.mirror, -1.0, 1.0)
     return jnp.stack([jnp.ones_like(s), s, jnp.ones_like(s), s], axis=-1)
@@ -228,7 +220,6 @@ def step(key, state, action, params):
     info = {
         "alive": alive,
         "flying": alive & ~arrived,
-        # Every end of the task is terminal.
         "bootstrap": jnp.zeros(params.n_drones, bool),
         "end": {
             "success": finished,
@@ -258,9 +249,6 @@ def curriculum(params, metrics):
 
 
 def cascade(params, rows):
-    """The cascade flies each drone to its goal. It reads the true world, so it sends a
-    mirrored drone mirrored commands, and `step` mirrors them back."""
-
     fly, start = core.cascade_pilot(params, rows, lambda state: state.goal[rows])
 
     def act(state, obs, pids):

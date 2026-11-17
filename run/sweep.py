@@ -1,9 +1,3 @@
-"""The table of a sweep, in markdown: python run/sweep.py runs/<sweep>
-
-A sweep is runs/<sweep>/<config>/<run>, with one run per seed and one eval in each run.
-A row is one config: the mean of each column over its seeds, and the lowest and the
-highest SCORE. The best config comes first. A config with no eval has no row."""
-
 import argparse
 import json
 import pathlib

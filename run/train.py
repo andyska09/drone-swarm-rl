@@ -1,5 +1,3 @@
-"""Train a policy: python run/train.py --task circle_swap --preset pair --steps 5e6"""
-
 import argparse
 import pathlib
 import sys

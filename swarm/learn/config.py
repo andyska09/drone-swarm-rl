@@ -1,5 +1,3 @@
-"""PPO hyperparameters and run settings."""
-
 from dataclasses import dataclass
 
 
@@ -13,7 +11,6 @@ class TrainConfig:
     num_steps: int = 64
     total_timesteps: int = 100_000_000
 
-    # The start. With adaptive_lr, each role's lr then follows its KL (ppo.adapt_lr).
     lr: float = 2e-4
     adaptive_lr: bool = True
 
@@ -27,18 +24,12 @@ class TrainConfig:
     ent_coef: float = 0.001
     max_grad_norm: float = 0.5
 
-    # Above 0, chase trains against pools of frozen opponents: generation 0, then
-    # this many more (pool.py). At 0 both sides learn at once.
     generations: int = 0
 
-    # "mlp", or "attention": the teammates go through attention (ppo.Perceiver), so any
-    # number of them fits. "attention" reads the inputs unscaled: normalize_obs=false.
     net: str = "mlp"
     hidden: tuple = (256, 256)
     activation: str = "tanh"
-    # The std a new policy starts at.
     init_std: float = 1.0
-    # Each pool phase sets the learner's std back to init_std.
     reset_std: bool = True
 
     normalize_reward: bool = True

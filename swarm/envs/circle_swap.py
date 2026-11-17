@@ -1,5 +1,3 @@
-"""N drones on a circle, each flying to the opposite point; any contact ends the episode."""
-
 import flax.struct
 import jax.numpy as jnp
 
@@ -13,7 +11,7 @@ PROGRESS = ("ep_length", "death_rate")
 @flax.struct.dataclass
 class RewardConfig:
     distance: float = 1.0
-    crash: float = 25.0  # per drone in the scene
+    crash: float = 25.0
     spin: float = 0.1
     close: float = 10.0
     orient: float = 1.0
@@ -51,7 +49,6 @@ def get_obs(state, params):
     )
     return Obs(
         actor=core.by_role(actor, params.roles),
-        # The goal drives the reward, so the critic cannot score a state without it.
         critic=jnp.concatenate([core.scene_obs(d), state.goal.reshape(-1)]),
     )
 
@@ -112,14 +109,12 @@ def step(key, state, action, params):
     )
 
     reward = compute_reward(new_state, state.alive, died, params)
-    # Shared fate: one death ends the episode, so nobody ever observes a dead drone.
     done = ~jnp.all(alive)
 
     distance = core.norm(new_state.goal - drone.x)
     info = {
         "alive": alive,
         "flying": alive,
-        # A death is terminal for the survivors too.
         "bootstrap": jnp.zeros(params.n_drones, bool),
         "end": {
             "distance": distance,
@@ -132,8 +127,6 @@ def step(key, state, action, params):
 
 
 def cascade(params, rows):
-    """The cascade flies each drone to its goal."""
-
     return core.cascade_pilot(params, rows, lambda state: state.goal[rows])
 
 

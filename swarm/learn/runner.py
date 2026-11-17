@@ -1,11 +1,3 @@
-"""Run PPO updates and save configuration, metrics, and checkpoints.
-
-One loop runs every run, as a list of phases. A plain run has one phase, in which every
-role learns. A run of a preset with `piloted` has one phase, in which the pilot flies one
-role and the other roles learn. A pool run has one phase per generation, with one learner for
-each side (pool.py). latest.pkl holds all that the loop needs, so every run resumes from
-it."""
-
 import csv
 import dataclasses
 import functools
@@ -22,7 +14,6 @@ import numpy as np
 from swarm import envs
 from swarm.learn import pool, ppo, rundir, seats, vecenv
 
-# A frozen role's columns of these stay empty in metrics.csv.
 LEARNER_STATS = (
     "policy_loss", "value_loss", "entropy", "clipfrac", "approx_kl", "explained_var"
 )
@@ -30,8 +21,6 @@ LEARNER_STATS = (
 
 @dataclasses.dataclass
 class State:
-    """All that the loop carries from update to update. latest.pkl saves it."""
-
     update: int
     ts: dict
     env_params: object
@@ -40,15 +29,10 @@ class State:
 
 
 class OnePhase:
-    """The phases of a plain run: one, in which every role learns. Piloted and
-    pool.Phases have the same members."""
-
     sides = (None,)
     count = 1
 
     def rival_seat(self, env_params, side):
-        """No pool flies in a plain run."""
-
         del env_params, side
 
     def begin(self, path, generation, env_params, ts, key, learners):
@@ -60,9 +44,6 @@ class OnePhase:
 
 
 class Piloted:
-    """The phase of a preset with `piloted`: its pilot flies one role as the only member of
-    a pool of one block, and the other roles learn."""
-
     sides = (None,)
     count = 1
 
@@ -76,7 +57,6 @@ class Piloted:
 
     def begin(self, path, generation, env_params, ts, key, learners):
         del path, generation, learners
-        # The block's weights never fly, because its member, 0, is the pilot.
         weights = jax.tree.map(lambda x: jnp.zeros_like(x)[None], ts[self.role].params["actor"])
         one_block = (jnp.zeros(1, jnp.int32), weights)
         key, k_reset, k_learn = jax.random.split(key, 3)
@@ -90,8 +70,6 @@ class Piloted:
 
 
 def progress_columns(row, names):
-    """A per-role metric arrives as `<name>_<r>`, so every role of it prints."""
-
     return [k for p in names for k in row if k == p or k.startswith(p + "_")]
 
 
@@ -119,8 +97,6 @@ def new_run(cfg, env_params, root="runs"):
 
 
 def _cut(file, keep):
-    """Keep only the rows of a csv file that `keep` accepts."""
-
     if not file.exists():
         return
     with file.open(newline="") as f:
@@ -142,8 +118,6 @@ def snapshot(path, update, ts):
 
 
 def save(path, state):
-    """A numbered snapshot of the weights, and latest.pkl with all that a resume needs."""
-
     ts = state.ts
     weights = snapshot(path, state.update, ts)
     with (path / "latest.pkl").open("wb") as f:
@@ -154,8 +128,6 @@ def save(path, state):
                 "step": {r: int(t.step) for r, t in ts.items()},
                 "key": jax.device_get(state.key),
                 "learners": jax.device_get(state.learners),
-                # Not as numpy: the update compiles the env params in, and XLA folds a
-                # numpy constant, which rounds differently.
                 "env_params": state.env_params,
             },
             f,
@@ -163,7 +135,7 @@ def save(path, state):
 
 
 def start_wandb(cfg, path):
-    import wandb  # Optional dependency, loaded only when logging is enabled.
+    import wandb
 
     return wandb.init(
         project="drone-swarm",
@@ -183,9 +155,6 @@ def _phases(cfg, env, env_params):
 
 
 def _per_phase(cfg, phases):
-    """The updates of one phase. Every learner runs once in each update, so `--steps`
-    counts the env steps of all of them."""
-
     per_phase = cfg.num_updates // len(phases.sides) // phases.count
     if per_phase == 0:
         raise ValueError(f"{cfg.num_updates} updates cannot fill {phases.count} phases")
@@ -193,8 +162,6 @@ def _per_phase(cfg, phases):
 
 
 def _updates(cfg, env, env_params, phases):
-    """Each learner's compiled update. A pool side's update flies its rival's pool."""
-
     return {
         side: ppo.make(cfg, env, env_params, phases.rival_seat(env_params, side))[1]
         for side in phases.sides
@@ -206,14 +173,11 @@ def train(cfg, root="runs", use_wandb=False):
     phases = _phases(cfg, env, env_params)
     path = new_run(cfg, env_params, root)
     ts, learner = ppo.make(cfg, env, env_params)[0](jax.random.PRNGKey(cfg.seed))
-    # A pool run's phases replace this learner with one for each side.
     state = State(0, ts, env_params, learner.key, [learner])
     return _run(cfg, env, path, state, phases, use_wandb)
 
 
 def resume(path, use_wandb=False):
-    """Run a run on from its last checkpoint."""
-
     path = Path(path)
     cfg = rundir.load_config(path)
     env, _ = rundir.load_env(path)
@@ -229,8 +193,6 @@ def resume(path, use_wandb=False):
         for role, t in ts.items()
     }
 
-    # What ran after the checkpoint goes, so the files read as one run. A phase that has
-    # not started yet weighs its pool again.
     done = saved["update"]
     started = -(-done // _per_phase(cfg, phases))
     _cut(path / "metrics.csv", lambda row: int(row["update"]) <= done)
@@ -291,7 +253,6 @@ def _run(cfg, env, path, state, phases, use_wandb):
                     + "  ".join(f"{k} {row[k]:8.3f}" for k in progress_columns(row, env.PROGRESS)),
                 )
 
-        # Before the save, so a resume starts with the params of the next update.
         if hasattr(env, "curriculum"):
             harder = env.curriculum(state.env_params, row)
             if harder is not None:

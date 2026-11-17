@@ -1,6 +1,3 @@
-"""Pools for chase, AMSPBH: in each generation both sides learn at once, each against
-the other side's pool of frozen opponents, weighted by a Hedge sampler."""
-
 import functools
 import math
 import pickle
@@ -16,11 +13,9 @@ from swarm.learn import evaluate, ppo, rundir, seats, vecenv
 GAMMA_H, ETA_H = 0.7, 2.0
 HEDGE_EPISODES = 600
 BLOCKS = 64
-# The first member of each pool.
 SEEDS = {"pursuer": "frpn", "evader": "paths"}
 SIDES = ("evader", "pursuer")
 RIVAL = {"pursuer": "evader", "evader": "pursuer"}
-# A side wins on these outcomes, and `fail_pe` is half a win to each side.
 WINS = {
     "pursuer": ("caught_e", "crash_e", "OOB_e"),
     "evader": ("time_limit", "crash_p", "OOB_p", "coll_pp"),
@@ -28,8 +23,6 @@ WINS = {
 
 
 def hedge(win_rates):
-    """An opponent's weight grows with how often it beats the learner."""
-
     c = 1.0 - np.asarray(win_rates, float)
     power = c**ETA_H
     share = power / power.sum() if power.sum() > 0 else np.full(len(c), 1.0 / len(c))
@@ -37,9 +30,6 @@ def hedge(win_rates):
 
 
 def blocks(weights):
-    """Each block's member. A member of weight p gets p × BLOCKS blocks, rounded by
-    largest remainder."""
-
     quota = np.asarray(weights) * BLOCKS
     count = np.floor(quota).astype(int)
     count[np.argsort(count - quota, kind="stable")[: BLOCKS - count.sum()]] += 1
@@ -47,14 +37,10 @@ def blocks(weights):
 
 
 def members(side, generation):
-    """The pool of `side` at the end of generation − 1: its seed, then its policies."""
-
     return [SEEDS[side]] + [f"{side}_{g:02d}" for g in range(generation)]
 
 
 def with_std(t, std):
-    """The TrainState with its actor's std set to `std` for every action."""
-
     actor = t.params["actor"]
     log_std = jnp.full_like(actor["params"]["log_std"], math.log(std))
     weights = {**actor["params"], "log_std": log_std}
@@ -62,10 +48,6 @@ def with_std(t, std):
 
 
 def match(cfg, env, env_params, pilots, role, episodes):
-    """`role`'s win rate over the eval seeds, both sides flying their mean. `pilots`
-    gives each role a name from the task's PILOTS, or None for a network. The returned
-    function takes the networks' weights, {role: params}."""
-
     slices = envs.role_slices(env_params.roles)
     keys = jax.random.split(jax.random.PRNGKey(evaluate.EVAL_SEED), episodes)
     fixed = {r: env.PILOTS[s](env_params, slices[r]) for r, s in pilots.items() if s}
@@ -85,8 +67,6 @@ def match(cfg, env, env_params, pilots, role, episodes):
 
 
 def check(cfg, env_params):
-    """A pool run needs pursuers and an evader, and blocks of one size."""
-
     if set(env_params.roles) != set(SIDES):
         raise ValueError(f"pool training needs pursuers and an evader, not {env_params.roles}")
     if cfg.num_envs % BLOCKS:
@@ -94,9 +74,6 @@ def check(cfg, env_params):
 
 
 def matches(cfg, env, env_params, episodes):
-    """win_rate(role, pilots, weights): `role`'s win rate in one pairing, as in `match`.
-    Each pairing compiles once."""
-
     compiled = {}
 
     def win_rate(role, pilots, weights):
@@ -109,9 +86,6 @@ def matches(cfg, env, env_params, episodes):
 
 
 def scorer(cfg, env, env_params):
-    """win_rate(side, member, weights): `side`'s win rate against one member of its
-    rival's pool."""
-
     win_rate = matches(cfg, env, env_params, HEDGE_EPISODES)
 
     def score(side, member, weights):
@@ -122,10 +96,6 @@ def scorer(cfg, env, env_params):
 
 
 def opponents(path, generation, side, ts, win_rate):
-    """`side`'s rival pool in `generation`, as it was at the end of generation − 1, each
-    member weighted by Hedge. -> the pool, (each block's member, each block's actor
-    weights), and its rows of hedge.csv."""
-
     rival = RIVAL[side]
     names = members(rival, generation)
     nets = {name: load_member(path, rival, name) for name in names[1:]}
@@ -134,7 +104,6 @@ def opponents(path, generation, side, ts, win_rate):
     ]
     weights = hedge(rates)
 
-    # The seed's blocks carry placeholder weights that never fly.
     member = blocks(weights)
     actors = [jax.tree.map(jnp.zeros_like, ts[rival].params["actor"])] + [
         nets[name]["actor"] for name in names[1:]
@@ -159,9 +128,6 @@ def save_member(path, side, generation, params, update):
 
 
 class Phases:
-    """The phases of a pool run, one per generation. In generation k both sides learn,
-    each against its rival's pool up to generation k − 1."""
-
     sides = SIDES
 
     def __init__(self, cfg, env, env_params):
@@ -171,15 +137,10 @@ class Phases:
         self.win_rate = scorer(cfg, env, env_params)
 
     def rival_seat(self, env_params, side):
-        """The seat that flies `side`'s rival: its pool, whose member 0 is the rival's seed."""
-
         rival = RIVAL[side]
         return seats.pool_seat(self.cfg, self.env, env_params, rival, SEEDS[rival])
 
     def begin(self, path, generation, env_params, ts, key, learners):
-        """Each side gets fresh episodes against its rival's pool, and keeps its reward
-        scale. -> the learners, ts and key."""
-
         scale = {learner.side: learner.vec.rew_norm for learner in learners}
         fresh = []
         for side in SIDES:
@@ -200,8 +161,6 @@ class Phases:
             obs, vec = vecenv.reset(k_reset, self.env, env_params, self.cfg, start)
             if side in scale:
                 vec = vec.replace(rew_norm=scale[side])
-            # The std shrinks within a phase, and the learner must explore again against
-            # a new pool.
             if self.cfg.reset_std:
                 ts = {**ts, side: with_std(ts[side], self.cfg.init_std)}
             train = {side: True, RIVAL[side]: False}
@@ -209,7 +168,5 @@ class Phases:
         return fresh, ts, key
 
     def end(self, path, generation, ts, update):
-        """Each side's policy joins its pool."""
-
         for side in SIDES:
             save_member(path, side, generation, ts[side].params, update)

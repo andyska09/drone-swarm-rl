@@ -1,9 +1,3 @@
-"""Who flies a seat: a network, or one of the task's PILOTS. Eval and training both use it.
-
-A seat flies some rows of one scene. `act(state, obs, carry)` gives their actions and
-the next carry, and `start(state)` gives the state and the first carry of an episode.
-"""
-
 import jax
 import jax.numpy as jnp
 
@@ -23,9 +17,6 @@ def net_policy(cfg, env, weights, slices):
 
 
 def combine(net, fixed, slices):
-    """One act and start for the scene. The net flies its roles, and each fixed seat,
-    {role: (act, start)}, flies the rows of its own role."""
-
     if not fixed:
         return net, lambda state: (state, None)
 
@@ -47,13 +38,6 @@ def combine(net, fixed, slices):
 
 
 def pool_seat(cfg, env, env_params, role, seed):
-    """A pool of opponents flies `role` in a batch of scenes, one member per block of
-    scenes. Member 0 is `seed`, one of the task's PILOTS. Any other member is a frozen
-    network that flies its mean.
-
-    `pool` is (member, weights): each block's member and each block's actor weights.
-    Returns the rows it flies, and its act and start over the whole batch."""
-
     rows = envs.role_slices(env_params.roles)[role]
     seed_act, seed_start = env.PILOTS[seed](env_params, rows)
     actor = ppo.make_actor(ppo.make_net(cfg, env)[0], {role: rows})

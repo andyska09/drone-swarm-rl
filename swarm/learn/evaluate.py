@@ -1,5 +1,3 @@
-"""Measure a policy: fixed eval seeds, mean actions, no auto-reset, per-episode only."""
-
 import dataclasses
 import json
 from pathlib import Path
@@ -12,7 +10,6 @@ from swarm import envs
 from swarm.learn import ppo, rundir, vecenv
 from swarm.learn.seats import combine, net_policy
 
-# Far from any training seed, so eval never flies an episode training saw.
 EVAL_SEED = 1_000_000
 TRAJECTORIES = 8
 
@@ -31,9 +28,6 @@ def _saved(run, source, checkpoint):
 
 
 def make_policy(cfg, env, env_params, run, checkpoint, seats):
-    """Who flies each role: this run's weights, another run's, or one of the task's
-    PILOTS."""
-
     slices = envs.role_slices(env_params.roles)
     for role in seats:
         if role not in slices:
@@ -58,11 +52,7 @@ def _hold(done, new, old):
 
 
 def rollout(key, env, env_params, act, start):
-    """One episode to its own end or to `max_steps`. Per step: drone, reference, action,
-    reward, info, live."""
-
     _, state = env.reset(key, env_params)
-    # A path seat puts its drone on its path, so the obs is built after.
     state, carry = start(state)
     obs = env.get_obs(state, env_params)
 
@@ -72,9 +62,7 @@ def rollout(key, env, env_params, act, start):
         next_obs, next_state, reward, ended, info = env.step(
             key, state, action, env_params
         )
-        # The step limit ends the episode at the last step, as in training.
         _, info = vecenv.at_limit(info, ended, t == env_params.max_steps - 1)
-        # Nothing resets here, so hold the scene at the step the episode ended.
         state = _hold(done, next_state, state)
         obs = _hold(done, next_obs, obs)
         live = ~done
@@ -94,17 +82,12 @@ def rollout(key, env, env_params, act, start):
 
 
 def summarize(reward, info, live, slices):
-    """One number per metric of one episode, by the rules of `ppo.episode_metrics`."""
-
     last = jnp.arange(live.shape[0]) == live.sum() - 1
     info = {**info, "ep_return": jnp.cumsum(reward, axis=0), "ep_length": jnp.cumsum(live)}
     return ppo.episode_metrics(info, last, live, slices, lead=1)
 
 
 def eval_env(run, preset=None):
-    """The env that eval flies: the run's recorded env, or another preset of its task,
-    with the task's eval_params on top."""
-
     env, env_params = rundir.load_env(run)
     if preset is not None:
         env_params = env.PRESETS[preset]
@@ -165,9 +148,6 @@ def evaluate(run, episodes=1024, checkpoint="latest", seats=(), name=None, prese
 
 
 def save_replay(out, cfg, env, env_params, act, start, keys):
-    """Fly the episodes of `keys` again and write what the viewer reads:
-    trajectory.npz and header.json."""
-
     def trace(key):
         drone, goal, action, _, _, live = rollout(key, env, env_params, act, start)
         return drone, action, goal, live
@@ -175,7 +155,6 @@ def save_replay(out, cfg, env, env_params, act, start, keys):
     drone, action, goal, live = jax.jit(jax.vmap(trace))(keys)
     scenery = {}
     if hasattr(env, "scenery"):
-        # The scenery stays fixed in an episode, so the reset state holds it.
         scenery = jax.vmap(
             lambda k: env.scenery(env.reset(k, env_params)[1], env_params)
         )(keys)
