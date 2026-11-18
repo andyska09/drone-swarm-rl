@@ -91,6 +91,7 @@ python run/replay.py                                   # serve + open the 3D vie
 python run/plot.py runs/<name>/evals/<eval>            # time plots of one episode
 python run/compare.py runs/<a> runs/<b>                # evals and training curves side by side
 python run/sweep.py runs/<name>                        # the table of an experiment, one row per config
+python run/info.py runs/<name> --show std approx_kl    # what the files of each run hold; no --show prints all: --help
 bash tools/mrs_golden/build.sh      # regenerate tests/golden/ from the C++
 python3 tools/metacentrum/submit.py --walltime 1:00:00 -- --task chase --preset default --set generations=13 --steps 1.4e9  # on MetaCentrum: tools/metacentrum/metacentrum.md. 1 h is enough for a 1.4e9 pool run: always give --walltime 1:00:00
 python3 tools/rci/submit.py --walltime 1:00:00 -- ...  # the same on RCI: tools/rci/rci.md
