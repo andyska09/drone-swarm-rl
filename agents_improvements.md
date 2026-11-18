@@ -15,5 +15,4 @@
 
 ## todos
 
-- The changes in `run/replay.py` and the dashboard for the deeper folders.
 - How the code handles a drone whose state turns NaN. Now each task has its own NaN check, and `ppo.py` hides a NaN value in the bootstrap with `isfinite`. A fix in `fly` with a flag for each task was too complicated, and I took it back. It needs a better design first.
