@@ -1,6 +1,6 @@
 # research/ — notes, papers and the reference code
 
-- `notes/` — working notes, Czech is fine. `design_choices.md` holds the shared design
+- `notes/` — working notes `design_choices.md` holds the shared design
   decisions and their reasons. `tasks/` holds the task specs: `defaults.md` for what
   every task shares, and `task_<name>.md` for one task. `experiment_logs/` holds the
   experiments, one file each. `literature/` holds the literature reviews,

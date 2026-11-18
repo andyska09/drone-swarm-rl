@@ -60,8 +60,4 @@
   are `jax.vmap` at the env boundary. No Python branches on array values, no
   `.item()`, no value-dependent shapes — `test_vmap_matches_python_loop` enforces it.
 - `conftest.py` turns on `jax_enable_x64` because the C++ is double precision.
-- One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
-  MRS re-orthonormalizes as `R·L⁻¹`, which is not orthonormal and drifts ~3e-3 off
-  SO(3); we use `R·L⁻ᵀ`. Hover is not a gate — it is an equilibrium, so a
-  transposed allocation matrix or a missing `ω × Jω` sails through it. Only
-  `tumble` and `spin_down` exercise the torque path.
+
