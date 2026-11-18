@@ -15,7 +15,8 @@ Write every file in the
 
 ## The design
 
-The top of the file. Write it with the user (preferably use /grilling), before the run:
+The top of the file. Before the run, the agent writes a draft and lists its picks. The
+user edits it:
 
 ```markdown
 # 02_lr_ent
@@ -31,8 +32,8 @@ The top of the file. Write it with the user (preferably use /grilling), before t
   the values that differ from the base.
 - A batch script on RCI holds 40 jobs at most.
 
-The design is done when the user pushes the file and the batch script. The push is the
-approval.
+The design is done when the user pushes the file, and the batch script if it has one. The
+push is the approval.
 
 ## The results
 

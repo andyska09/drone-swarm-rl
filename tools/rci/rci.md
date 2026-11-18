@@ -190,7 +190,22 @@ rsync -av YOUR_USERNAME@login3.rci.cvut.cz:/mnt/personal/YOUR_USERNAME/drone-swa
 A run folder name holds a time stamp and a hash, so it never clashes with a run made
 on the Mac. Then run `run/eval.py`, `run/matrix.py` and `run/replay.py` on the Mac as usual.
 
+## From the Mac
+
+Three scripts do steps 3 to 5 from the Mac. They need a `Host rci` entry in
+`~/.ssh/config` that points to `login3` with your username. Each one prints its usage
+when it gets no argument.
+
+| script | what it does |
+|---|---|
+| `tools/rci/local_submit.sh '<submit command>'` | Stops if a job waits in the queue. Pulls. Stops if the commit is not the pushed one. Runs the command and prints the job numbers on one line. |
+| `tools/rci/local_wait.sh <job numbers>` | Reads `sacct` every 10 minutes. Ends when every job has an end state. |
+| `tools/rci/local_copy.sh <name>` | Copies `runs/<name>` to the Mac with no `checkpoints/`. Counts the runs, the `latest.pkl` files and the `eval.json` files. |
+
 ## Traps
+
+- **Submit from a login shell.** `job.sh` needs `ml`, and only a login shell has it. So
+  `local_submit.sh` sends its commands into `bash -l`.
 
 - **A job runs the code that is in the repo when it starts, not when you submit it.** A
   `git pull` while a job waits in the queue changes what it runs. A running job is safe,
