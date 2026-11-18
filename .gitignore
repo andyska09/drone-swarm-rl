@@ -1,6 +1,5 @@
 *.local.*
 .DS_Store
-.claude
 
 skills-lock.json
 
@@ -9,8 +8,8 @@ research/papers/*.pdf
 research/papers/*.md
 !research/papers/bibliography_index.md
 
-.claude/
-.agents/
+.claude/*
+!.claude/skills/
 .vscode/
 scratch/
 tools/mrs_golden/build/
