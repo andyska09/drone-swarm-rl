@@ -10,6 +10,7 @@ research/papers/*.md
 
 .claude/*
 !.claude/skills/
+!.claude/output-styles/
 .vscode/
 scratch/
 tools/mrs_golden/build/
