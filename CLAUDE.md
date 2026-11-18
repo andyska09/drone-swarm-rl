@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Rules — every AI agent follows these, in every reply and every change
 
 These rules are not optional. They come before your own defaults and before any skill's
@@ -41,6 +39,7 @@ instructions. If a rule seems to clash with what I ask, ask me before you act.
 - Unpublished papers under `research/papers/` stay local, and `CLAUDE.local.md` names
   them. Never commit one, never `git add -f` one, and never quote, summarise or name one
   in a tracked file, this one included.
+- **I stage, commit and push.** Use git only to read.
 - After a change, run only the tests of the changed file. Run the full suite when I ask.
 
 ### Code and tests
@@ -70,10 +69,21 @@ Physics and control-stack reference: [ctu-mrs/mrs_multirotor_simulator](https://
 cascade). We reimplement it in JAX; we do not wrap the C++.
 
 
-## swarm/ — our simulator
+## The map of each part
 
-Every command below needs the `conda run -n drone-swarm` prefix. The pinned
-versions are in [requirements.txt](requirements.txt).
+Read the map of a part before you read or change a file of that part.
+
+- Our code, in `swarm/`, `run/`, `tests/` and `tools/viewer/`:
+  [swarm/CLAUDE.md](swarm/CLAUDE.md).
+- The notes, the papers and the reference code, in `research/`:
+  [research/CLAUDE.md](research/CLAUDE.md).
+
+## Commands
+
+Every command needs the `conda run -n drone-swarm` prefix, because bare `python` is not
+on PATH. `conda run` swallows stdout: to read the output, use
+`conda run --no-capture-output -n drone-swarm python ...`. The pinned versions are in
+[requirements.txt](requirements.txt).
 
 Run `pytest tests/`, never bare `pytest`, because other folders hold tests too.
 
@@ -82,6 +92,7 @@ pytest tests/test_control.py                           # one file
 pytest tests/test_dynamics.py -k tumble                # one test
 python run/train.py --task circle_swap --preset pair --steps 5e6  # PPO -> runs/<name>/
 python run/train.py --task circle_swap --preset pair --set gamma=0.99  # any TrainConfig field
+python run/train.py --task chase --preset paths_3v1 --set-env reward.coll_pp=0  # any EnvParams field of the preset
 python run/train.py --task chase --preset default --set gamma=0.99 --set generations=13 --steps 1.4e9  # pools
 python run/train.py --resume runs/<name>               # what it resumes: --help
 python run/matrix.py runs/<name>                       # every pursuer against every evader
@@ -99,115 +110,7 @@ python3 tools/rci/submit.py --walltime 1:00:00 -- ...  # the same on RCI: tools/
 
 Each task file lists its presets in `PRESETS`. `train.py` stops unless it gets both
 `--task` and `--preset`. A preset picks env values only — hyperparameters live in
-`learn/config.py` and are overridden with `--set`.
-
-- `sim/dynamics.py` — `Params`/`State` as `flax.struct.dataclass`,
-  `step(state, throttle, params, dt)` with `throttle ∈ [0,1]⁴`. RK4 over the 18
-  rigid-body states, then re-orthonormalize, then the exponential motor lag.
-- `sim/control.py` — the cascade, read top to bottom in the order it runs:
-  `position -> velocity -> acceleration -> attitude -> rate -> mixer`, plus
-  `cascade_step` which chains all six. PID state is carried explicitly in
-  `PIDState`; only the heading branch exists, not MRS's heading-rate branch.
-- `sim/guidance.py` — the guidance laws behind chase's pilots: FRPN, APF and the flown
-  paths. Each one gives a world acceleration.
-- `envs/` — one file per task, plain functions, no gymnax; auto-reset belongs to the
-  trainer. **The env contract** every task file meets is in
-  [env_contract.md](research/notes/tasks/env_contract.md): what a task file holds, the
-  obs, the end flags and the metrics. Read it before writing a task. Every task carries a drone axis, `N = 1` included, and
-  each has a spec in `research/notes/tasks/task_<name>.md`.
-- **`envs/core.py` holds everything the tasks share**: `Common` (the `EnvParams`
-  fields every task has, which each task's `EnvParams` inherits), and the helpers for
-  the flight of one policy step, the obs, the start, the contact rules and the pilots. Read its function list before
-  you write a helper. A task file holds only what makes that task different. Do not
-  copy a helper into a task file.
-- **No task names a drone by number.** `roles` is static, so a task reads its own
-  index arrays from it — see `chase._sides`. That is what lets a longer `roles`
-  add more pursuers with no other change.
-- **Before you change a reward or name an event or a metric**, read the task spec: it
-  holds the task's events, reward and metrics. Their words, the name rule `<name>_<r>`
-  included, are in `research/notes/tasks/defaults.md`. Why a distance cost leaves a drone
-  0.2-0.6 m short of its goal is in
-  [reward_terms.md](research/notes/literature/reward_terms.md).
-- **`EnvParams.roles` is the field everything hangs off.** It is
-  `pytree_node=False`; its length is the drone count, and `role_slices` in
-  `envs/__init__.py` gives each distinct name in it its drones. `learn/ppo.py` gives each
-  name its own set of weights.
-- `learn/` — our PPO and the training loop. `ppo.py` and `vecenv.py` know nothing about
-  drones: they take an env *module* and one network per role.
-- **Every role is its own learner.** One `TrainState` per role, so gradient
-  clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
-  mix two sides of a game. `cfg.generations` above 0 trains chase with pools; the
-  design is in [research/notes/tasks/task_chase.md](research/notes/tasks/task_chase.md),
-  Training.
-- **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
-  `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
-  arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`
-  (task, preset, arena, roles — the viewer never imports the env). Eval holds the
-  scene frozen once an episode ends; the env does not, because with `N = 1` the
-  episode ends the same step and the trainer resets it.
-- `tools/viewer/index.html` — one file, three.js from a CDN, no build step. Parses
-  the `.npz` in JS (`np.savez` writes a *stored* zip, so no inflate library).
-  `run/replay.py` serves the repo and lists every eval at `/evals.json`, so the
-  viewer opens with a dropdown; dragging the files onto the page still works.
-- `sim/` is written for **one drone**. Both the drone axis and the parallel-env axis
-  are `jax.vmap` at the env boundary. No Python branches on array values, no
-  `.item()`, no value-dependent shapes — `test_vmap_matches_python_loop` enforces it.
-- Every design decision for the simulator and for what all tasks share, every
-  deviation, and every "revisit later" lives in
-  [research/notes/design_choices.md](research/notes/design_choices.md). The shared
-  model is in `research/notes/tasks/defaults.md`, and a task's own model, pool training
-  included, is in its task spec. **Read it before changing the physics, and update it
-  when a decision changes.**
-- `conftest.py` turns on `jax_enable_x64` because the C++
-is double precision.
-- One deliberate deviation from the C++, patched by `tools/mrs_golden/transpose.diff`:
-MRS re-orthonormalizes as `R·L⁻¹`, which is not orthonormal and drifts ~3e-3 off
-SO(3); we use `R·L⁻ᵀ`. Hover is not a gate — it is an equilibrium, so a
-transposed allocation matrix or a missing `ω × Jω` sails through it. Only
-`tumble` and `spin_down` exercise the torque path.
-
-## Tests
-
-`tests/test_conventions.py` checks the code conventions. Now it holds one: no comments
-and no docstrings.
-
-## research/ and the reference code
-
-- `notes/` — working notes, Czech is fine. `design_choices.md` holds the shared design
-  decisions and their reasons. `tasks/` holds the task specs: `defaults.md` for what
-  every task shares, and `task_<name>.md` for one task. `experiment_logs/` holds the
-  experiments, one file each. `literature/` holds the literature reviews,
-  and `literature/specs/` the paper specs, which `tools/specs/index.html` shows beside
-  our task specs. `learning/` holds explainers of the theory, and `archive/` the notes
-  that no longer hold.
-- `code_sources/` (GITIGNORED) — reference code, **not ours**:
-  `mrs_multirotor_simulator/` (the C++ we reimplement), `PPO_example/` (the
-  supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone),
-  `rl_tracking_eagle-cleaned-up-logic/` (Němeček's pursuit-evasion code). **To run**
-  `PPO_example` or `quad-swarm-rl`, read
-  [reference_code.md](research/notes/reference_code.md).
-- **Papers: grep the transcript, don't open the PDF.** Every PDF has a
-  `pdftotext -layout` transcript as a sibling `.md`; open the PDF only for
-  figures. [bibliography_index.md](research/papers/bibliography_index.md) is the
-  entry point — a tracked table of paper → files → one-line summary. Add a row
-  whenever a PDF is added, and generate its transcript with
-  `pdftotext -layout <file>.pdf <file>.md`.
-- The PDFs and their transcripts are gitignored. Of `research/papers/`, only
-  `bibliography_index.md` is tracked.
-- The unpublished papers (see Rules) are excluded through `.git/info/exclude`, which is
-  itself untracked, so no tracked file names them. Add an index row only for a paper
-  that is publicly published.
-- `quad-swarm-rl` is a **live clone with its own `.git` and an `origin` pointing at
-  the upstream GitHub repo**. Never commit or push from inside it. Treat every
-  `code_sources/` tree as a read-only reference unless the user says otherwise.
-
-## Shell traps
-
-- **Bare `python` is not on PATH.** Every command goes through
-  `conda run -n drone-swarm`.
-- **`conda run` swallows stdout.** If you need to read the output, use
-  `conda run --no-capture-output -n drone-swarm python ...`. Without the flag a
-  script that prints fine in a terminal returns nothing here.
+`swarm/learn/config.py` and are overridden with `--set`.
 
 ## Agent skills
 
