@@ -13,3 +13,12 @@ python3 tools/rci/submit.py --walltime 2:00:00 --seeds 0 1 -- \
     --set net=attention \
     --out runs/05_attention/net_attention
 ```
+
+## Results
+
+| config | seeds | caught_e | min | max | coll_pp | death_rate_p |
+|---|---|---|---|---|---|---|
+| net_attention | 2/2 | 0.988 | 0.987 | 0.989 | 0.009 | 0.007 |
+
+- The attention net catches 0.988: 0.989 and 0.987 in the two seeds.
+- The MLP of `04_new_base` catches 0.975: 0.979 and 0.971.
