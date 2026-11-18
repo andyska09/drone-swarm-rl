@@ -12,3 +12,12 @@ python3 tools/rci/submit.py --walltime 0:30:00 --seeds 0 1 -- \
     --set gamma=0.995 --set clip_eps=0.1 --set num_steps=128 \
     --out runs/04_new_base/gamma0.995_clip_eps0.1_num_steps128
 ```
+
+## Results
+
+| config | seeds | caught_e | min | max | coll_pp | death_rate_p |
+|---|---|---|---|---|---|---|
+| gamma0.995_clip_eps0.1_num_steps128 | 2/2 | 0.975 | 0.971 | 0.979 | 0.022 | 0.016 |
+
+- The three changes together catch 0.975: 0.979 and 0.971 in the two seeds.
+- The best row of `03_breadth`, `clip_eps` 0.1 alone, is 0.945.
