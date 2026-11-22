@@ -28,7 +28,7 @@ def frpn(dp, dv, gain=6.677, weight=0.337):
     return gain * ((1.0 - weight) * (dp + dv * t_go) / (t_go**2 + 1e-6) + weight * dp)
 
 
-def apf(x, v, x_p, v_p, lo, hi):
+def apf(x, v, x_p, v_p, lo, hi, factor=1.0):
     k_p, k_w, c_p, c_w, r_w, e_p, e_w = 2.135, 57.89, 1.370, 29.71, 9.997, 1.032, 0.5652
 
     r = x - x_p
@@ -42,7 +42,7 @@ def apf(x, v, x_p, v_p, lo, hi):
     toward = jnp.maximum(-inward * v, 0.0)
     base = jnp.maximum(1.0 / (gap + 1e-6) - 1.0 / r_w, 0.0)
     wall = jnp.where(gap < r_w, (k_w + c_w * toward) * base**e_w, 0.0)
-    return push + jnp.sum(inward * wall, axis=0)
+    return factor * push + jnp.sum(inward * wall, axis=0)
 
 
 def _unit(shape, theta):

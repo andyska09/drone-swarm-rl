@@ -305,7 +305,7 @@ def frpn(params, rows):
     return act, lambda state: (state, core.per_row(control.pid_init(), len(rows)))
 
 
-def apf(params, rows):
+def apf(params, rows, factor=1.0, limited=True):
     pursuers, _ = _sides(params)
     lo = jnp.asarray(params.center) - core.half(params)
     hi = jnp.asarray(params.center) + core.half(params)
@@ -314,10 +314,11 @@ def apf(params, rows):
         del obs
         d = state.drone
         own = jax.tree.map(lambda q: q[rows], d)
-        a = jax.vmap(guidance.apf, in_axes=(0, 0, None, None, None, None))(
-            own.x, own.v, d.x[pursuers], d.v[pursuers], lo, hi
+        a = jax.vmap(guidance.apf, in_axes=(0, 0, None, None, None, None, None))(
+            own.x, own.v, d.x[pursuers], d.v[pursuers], lo, hi, factor
         )
-        a = jax.vmap(guidance.speed_limit)(a, own.v)
+        if limited:
+            a = jax.vmap(guidance.speed_limit)(a, own.v)
         return core.accelerate(own, a, pids, params)
 
     return act, lambda state: (state, core.per_row(control.pid_init(), len(rows)))
