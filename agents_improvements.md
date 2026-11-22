@@ -1,6 +1,6 @@
 
 - nuance leads to slop
-- stop agents from writing markdown/comments
+- stop agents from writing excessive markdown/comments
 - no code comments
 - better experiments logs
     - no stories. just result tables or something. no prose.
@@ -14,5 +14,7 @@
     
 
 ## todos
+
+- need to get rid of design decisions, long (slopped, like chase_modal etc.) outdated experiment logs. 
 
 - How the code handles a drone whose state turns NaN. Now each task has its own NaN check, and `ppo.py` hides a NaN value in the bootstrap with `isfinite`. A fix in `fly` with a flag for each task was too complicated, and I took it back. It needs a better design first.
