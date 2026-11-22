@@ -2,7 +2,7 @@
 
 Every run in which a drone senses more of the other drones than their offset and velocity:
 what it was, what it scored, and why the setup is as it is. The presets are in
-[task_chase.md](../tasks/task_chase.md). The runs with the base obs are in
+[task_chase.md](../tasks/task_chase_3v1.md). The runs with the base obs are in
 [chase_pools_log.md](chase_pools_log.md).
 
 ## Facts

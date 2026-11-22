@@ -1,7 +1,7 @@
 # Task tunnel — run log
 
 The runs of the tunnel task and their results. The spec is in
-[task_tunnel.md](../archive/task_tunnel.md).
+[task_tunnel.md](task_tunnel.md).
 
 ## Facts
 
@@ -27,7 +27,7 @@ reached a meeting.
 - In seed 1, 61% of the wall deaths came less than 1.5 m from a bend.
 
 So the score mixed two skills: flying the tube and dodging. This is why the avoidance
-task exists ([avoidance_log.md](avoidance_log.md)).
+task exists ([avoidance_log.md](../experiment_logs/avoidance_log.md)).
 
 ## Reasons for the spec, 2026-10-25
 

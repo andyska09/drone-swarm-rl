@@ -1,9 +1,11 @@
 # Chase — pool runs, run log
 
 What each pool run was and what it scored, and why the setup changed. The task, its pool
-training and the hand-written opponents are in [task_chase.md](../tasks/task_chase.md).
-This log holds only the base obs: the offset and the velocity of the other drone. A run in
-which a drone senses more is in [chase_modal_log.md](chase_modal_log.md).
+training and the hand-written opponents are in [task_chase.md](../tasks/task_chase_1v1.md).
+This log holds only the base obs: the offset and the velocity of the other drone. What
+the runs in which a drone senses more showed is in
+[00_before.md](../experiment_logs/chase_3v1/00_before.md), Sensing. Those runs are in the archived
+[chase_modal_log.md](chase_modal_log.md).
 
 ## Facts
 
@@ -21,7 +23,7 @@ which a drone senses more is in [chase_modal_log.md](chase_modal_log.md).
 - **Pools replace the duel's swap** ([chase_duel_log.md](chase_duel_log.md)).
 - **After a failure, the survivors bootstrap.** A failure used to be terminal for every
   drone. So the pursuer gained when the evader failed, because it stopped paying the
-  clock. Now only a catch is terminal ([task_chase.md](../tasks/task_chase.md#episode-end)).
+  clock. Now only a catch is terminal ([task_chase.md](../tasks/task_chase_1v1.md#events)).
 - **The adaptive lr replaced `anneal_lr`.**
 - **One learned std per action, with a clip.** It replaced Gavin's per-state std with a
   `tanh` squash after the pool run `chase_default_s0_20261011-103639_797201`. There the
@@ -49,13 +51,13 @@ which a drone senses more is in [chase_modal_log.md](chase_modal_log.md).
 ## Pool training results
 
 Every run here trains both sides against pools of frozen opponents
-([task_chase.md](../tasks/task_chase.md#pools)), with `generations=13` and
+([task_chase.md](../tasks/task_chase_1v1.md#pools)), with `generations=13` and
 `gamma=0.99`. So each run has 14 generations, 0 to 13.
 
 `run/matrix.py` flies every pursuer against every evader and writes
 `runs/<run>/matrix.csv`. Each cell is one pair. It holds the share of 1024 episodes that
 the pursuer wins. Both sides fly their mean action, on the fixed eval seeds.
-[task_chase.md](../tasks/task_chase.md#the-opponent-mix) says what counts as a win.
+[task_chase.md](../tasks/task_chase_1v1.md#the-opponent-mix) says what counts as a win.
 
 The last four columns of the table leave out the seeds `frpn` and `paths`, APF and the
 cascade. Each column is the plain mean of these cells, for pursuer g against evader e,
@@ -85,7 +87,7 @@ the lowest and the highest value of a set, not a mean.
 
 Every run is seed 0 unless the row says otherwise. `default` is the 32 × 32 × 16 m
 box, and `small` is 24 × 24 × 16 m. `open` is `default` with open walls, as in
-[Episode end](../tasks/task_chase.md#episode-end). `nemecek` is `open` in a 20 × 20 × 10 m box.
+[Episode end](../tasks/task_chase_1v1.md#events). `nemecek` is `open` in a 20 × 20 × 10 m box.
 
 ### What the runs show
 
@@ -104,7 +106,7 @@ pursuer cannot see which evader of the pool it flies against.
 
 ### Against the papers
 
-How the three setups differ: [comparisons.md](../archive/comparisons.md), Chase.
+How the three setups differ: [comparisons.md](comparisons.md), Chase.
 
 | | ours | [Roncero v3](../../papers/2506.02849v3.md) | [Němeček](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) |
 |---|---|---|---|
