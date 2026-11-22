@@ -45,7 +45,7 @@
 - **Every role is its own learner.** One `TrainState` per role, so gradient
   clipping, Adam state, the adaptive lr, advantage scaling and reward scaling never
   mix two sides of a game. `cfg.generations` above 0 trains chase with pools; the
-  design is in [task_chase.md](../research/notes/tasks/task_chase.md), Training.
+  design is in [task_chase_1v1.md](../research/notes/tasks/task_chase_1v1.md), Training.
 - **Eval writes into the run it measures**, at `runs/<run>/evals/<name>/`:
   `eval.json` (summary + checkpoint + seeds + commit), `episodes.npz` (per-episode
   arrays), `trajectory.npz` (the first 8 episodes, full state + action), `header.json`

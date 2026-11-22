@@ -1,18 +1,18 @@
-# chase
+# chase 3v1
 
-Pursuers chase one evader. Each pursuer carries a net under its body and catches the
-evader with it. Both sides learn. In the paths presets and the APF presets, a pilot flies
-the evader, and only the pursuers learn.
+Three pursuers chase one evader. Each pursuer carries a net under its body and catches
+the evader with it. In the paths presets and the APF preset, a pilot flies the evader,
+and only the pursuers learn. In `3v1`, both sides learn.
 
-Log: [chase_pools_log.md](../experiment_logs/chase_pools_log.md), and before the pools
-[chase_duel_log.md](../experiment_logs/chase_duel_log.md). The presets in which a drone
-senses more, and the paths presets: [chase_modal_log.md](../experiment_logs/chase_modal_log.md)
+This spec covers the presets of `chase` with three pursuers. The presets with one pursuer
+are in [chase 1v1](task_chase_1v1.md).
+
+Log: [chase_3v1/](../experiment_logs/chase_3v1/).
 
 ## Setup
 
-- One drone has the role `evader`, and $P$ drones have the role `pursuer`. Each role has
-  its own policy. Each preset sets $P$ to 1 or 3.
-- The world is the arena box of the preset.
+- One drone has the role `evader`, and three drones have the role `pursuer`. Each role
+  has its own policy, so the three pursuers share one.
 - Each pursuer tries to catch the evader with its net. The evader tries to stay free
   until the time runs out.
 - $e$ is the evader, and $p$ is a pursuer.
@@ -48,10 +48,10 @@ Default.
 
 | input | content | size |
 |---|---|---|
-| actor | the default, with the sensed blocks of the role in each slot | $20 + (8 + s) K$ |
-| critic | the default | $18N + 4$ per drone of the other role, plus the actor input |
+| actor | the default, with the sensed blocks of the role in each slot | $44 + 3s$ |
+| critic | the default | $120 + 3s$ for a pursuer, 128 for the evader |
 
-- Each drone sees every other drone, at any distance, so $K = N - 1$.
+- Each drone sees every other drone, at any distance, so $K = 3$.
 - Each slot of others also holds the sensed blocks of the role of drone $i$, after the
   role flag, in this order:
 
@@ -60,22 +60,17 @@ Default.
 | attitude | $\operatorname{vec}(R_i^\top R_j)$, the attitude of drone $j$ in the body frame of drone $i$ | 9 |
 | rpm | $n_{j,k} / n_{\max}$ for $k = 1, \dots, 4$, each motor speed of drone $j$ as a share of the top speed | 4 |
 
-- $s$ is the size of the sensed blocks of the role: 0, 9, 4 or 13. The preset sets the
-  blocks of each role.
-- In the duel, the actor input is $28 + s$ wide, and the critic input is $68 + s$ wide.
-- With open walls, a drone can fly outside the box. Then some of its wall distances are
-  negative.
+- $s$ is the size of the sensed blocks of the pursuers: 0, 9, 4 or 13. The preset sets
+  them. The evader senses no block, so its actor input is 44 wide.
 
 ## Events
 
 - **Capture:** the evader touches the net of a pursuer.
-- **Fail:** with closed walls, a drone leaves the box. With open walls, a drone goes below
-  the floor. The drone dies. A fail at the floor is a crash, and a fail at a wall or the
-  ceiling is an OOB.
+- **Fail:** a drone leaves the box. The drone dies. A fail at the floor is a crash, and a
+  fail at a wall or the ceiling is an OOB.
 - **coll_pp:** a pursuer touches another pursuer, or the net of one pursuer touches the
   other. Both pursuers die.
 - **coll_pe:** a pursuer touches the evader. The episode goes on.
-- **Outside:** the evader is outside the box. The episode goes on.
 - **End:** the episode ends at a capture, at a death, or after $T$ steps. A capture is
   terminal for every drone. A death is terminal for the drones that died, and a
   truncation for the others. The step limit is a truncation.
@@ -86,7 +81,7 @@ Default.
 $$
 \begin{aligned}
 r_p ={}& \lambda_{\text{prog}} \left( g_{p,t-1} - g_{p,t} \right) + \Delta t \left( - \lambda_{\text{PE}}\, [\text{coll\_pe}_p] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_p \rVert \right) + \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{PP}}\, [\text{coll\_pp}_p] - \lambda_{\text{fail}}\, [\text{fail}_p] \\
-r_e ={}& \Delta t \left( \lambda_{\text{step}} - \lambda_{\text{PE}}\, [\text{coll\_pe}_p \text{ for some } p] - \lambda_{\text{out}}\, [\text{outside}] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_e \rVert \right) - \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{fail}}\, [\text{fail}_e]
+r_e ={}& \Delta t \left( \lambda_{\text{step}} - \lambda_{\text{PE}}\, [\text{coll\_pe}_p \text{ for some } p] - \lambda_{\text{cmd}} \lVert \omega^{\text{cmd}}_e \rVert \right) - \lambda_{\text{catch}}\, [\text{capture}] - \lambda_{\text{fail}}\, [\text{fail}_e]
 \end{aligned}
 $$
 
@@ -101,7 +96,6 @@ $$
 | $\lambda_{\text{prog}}$ | 0.25 per m |
 | $\lambda_{\text{PE}}$ | 10.0 |
 | $\lambda_{\text{cmd}}$ | 0.02 per rad/s |
-| $\lambda_{\text{out}}$ | 0, or 57.0 (see Presets) |
 | $\lambda_{\text{catch}}$ | 30.0 |
 | $\lambda_{\text{PP}}$ | 10.0 |
 | $\lambda_{\text{fail}}$ | 30.0 |
@@ -123,50 +117,22 @@ $$
 | `coll_pe` | mean over the steps | the share of steps with a coll_pe for some $p$ |
 
 The first seven metrics are the outcomes. Each episode gets exactly one: the first that
-holds, in the order of the table, or else `time_limit`. These eight add up to 1 for any
-$N$.
+holds, in the order of the table, or else `time_limit`. These eight add up to 1.
 
 ## Presets
 
-| preset | $L$ | $c$ | walls | $\lambda_{\text{out}}$ |
-|---|---|---|---|---|
-| `default` | 32 × 32 × 16 m | (0, 0, 8) m | closed | 0 |
-| `small` | 24 × 24 × 16 m | (0, 0, 8) m | closed | 0 |
-| `open` | 32 × 32 × 16 m | (0, 0, 8) m | open | 57.0 |
-| `nemecek` | 20 × 20 × 10 m | (0, 0, 5) m | open | 57.0 |
+Every preset has the default box, with closed walls.
 
-- The floor is at $z = 0$ in every preset.
-- In these four presets, $P = 1$, no role senses a block, and both sides learn.
-
-Each other preset is one of these four, with these changes:
-
-| preset | from | $P$ | the pursuer senses | the evader senses | the evader in training |
-|---|---|---|---|---|---|
-| `3v1` | `default` | 3 | none | none | learns |
-| `paths_1v1` | `default` | 1 | none | none | paths |
-| `paths_1v1_attitude` | `default` | 1 | attitude | none | paths |
-| `paths_1v1_rpm` | `default` | 1 | rpm | none | paths |
-| `paths_1v1_attitude_rpm` | `default` | 1 | attitude, rpm | none | paths |
-| `paths_3v1` | `default` | 3 | none | none | paths |
-| `paths_3v1_attitude` | `default` | 3 | attitude | none | paths |
-| `paths_3v1_rpm` | `default` | 3 | rpm | none | paths |
-| `paths_3v1_attitude_rpm` | `default` | 3 | attitude, rpm | none | paths |
-| `paths_3v1_body` | `default` | 3 | none | none | paths |
-| `paths_3v1_netpass` | `default` | 3 | none | none | paths |
-| `apf_1v1` | `default` | 1 | none | none | APF |
-| `apf_3v1` | `default` | 3 | none | none | APF |
-| `default_p_attitude` | `default` | 1 | attitude | none | learns |
-| `default_p_rpm` | `default` | 1 | rpm | none | learns |
-| `default_p_attitude_rpm` | `default` | 1 | attitude, rpm | none | learns |
-| `nemecek_p_attitude_e_attitude` | `nemecek` | 1 | attitude | attitude | learns |
-| `nemecek_p_attitude_e_rpm` | `nemecek` | 1 | attitude | rpm | learns |
-| `nemecek_p_attitude_e_attitude_rpm` | `nemecek` | 1 | attitude | attitude, rpm | learns |
-| `nemecek_p_rpm_e_attitude` | `nemecek` | 1 | rpm | attitude | learns |
-| `nemecek_p_rpm_e_rpm` | `nemecek` | 1 | rpm | rpm | learns |
-| `nemecek_p_rpm_e_attitude_rpm` | `nemecek` | 1 | rpm | attitude, rpm | learns |
-| `nemecek_p_attitude_rpm_e_attitude` | `nemecek` | 1 | attitude, rpm | attitude | learns |
-| `nemecek_p_attitude_rpm_e_rpm` | `nemecek` | 1 | attitude, rpm | rpm | learns |
-| `nemecek_p_attitude_rpm_e_attitude_rpm` | `nemecek` | 1 | attitude, rpm | attitude, rpm | learns |
+| preset | the pursuers sense | the evader in training |
+|---|---|---|
+| `3v1` | none | learns |
+| `paths_3v1` | none | paths |
+| `paths_3v1_attitude` | attitude | paths |
+| `paths_3v1_rpm` | rpm | paths |
+| `paths_3v1_attitude_rpm` | attitude, rpm | paths |
+| `paths_3v1_body` | none | paths |
+| `paths_3v1_netpass` | none | paths |
+| `apf_3v1` | none | APF |
 
 In `paths_3v1_body`, a pursuer catches the evader with its body:
 
@@ -179,13 +145,20 @@ In `paths_3v1_netpass`, a coll_pp is a touch between the bodies of two pursuers.
 
 ## Training
 
-- Runs set $\gamma$ = 0.99.
-- In the paths presets and the APF presets, only the pursuers learn, against the pilot of
+- In the paths presets and the APF preset, only the pursuers learn, against the pilot of
   the preset, in one phase. The network of the evader keeps its first weights and never
-  flies.
-- In the other presets, with $G = 0$ generations, both sides learn at the same time,
-  against each other. With $G > 0$, each side learns against a pool of frozen opponents,
-  as below. Runs use $G$ = 13.
+  flies. These runs use the values of the table.
+- In `3v1`, with $G = 0$ generations, both sides learn at the same time, against each
+  other. With $G > 0$, each side learns against a pool of frozen opponents, as below.
+
+| setting, against a pilot | value |
+|---|---|
+| $\gamma$ | 0.995 |
+| PPO clip | 0.1 |
+| entropy weight | 0.003 |
+| learning rate | 1.25e−4, constant |
+| batch | 4096 environments × 128 steps per update |
+| input scale | off |
 
 ### Pools
 
@@ -216,7 +189,7 @@ In `paths_3v1_netpass`, a coll_pp is a touch between the bodies of two pursuers.
 Before each phase, the learner plays each member $j$ of the opposing pool for 600
 episodes, as in eval. $w_j$ is the learner's win rate:
 
-| the pursuer wins | the evader wins | half a win to each side |
+| the pursuers win | the evader wins | half a win to each side |
 |---|---|---|
 | `caught_e`, `crash_e`, `OOB_e` | `time_limit`, `crash_p`, `OOB_p`, `coll_pp` | `fail_pe` |
 
@@ -246,7 +219,7 @@ A role can be flown by its network, or by one of these pilots:
 | APF | evader | a potential field that pushes away from the pursuers and the walls |
 | paths | evader | a hover, a circle or a figure-eight, drawn for each episode |
 
-In the paths presets, the paths pilot flies the evader. In the APF presets, the APF pilot
+In the paths presets, the paths pilot flies the evader. In the APF preset, the APF pilot
 flies it.
 
 The reference points of the cascade:
@@ -317,6 +290,6 @@ $$
 
 ### The win-rate matrix
 
-After a pool run, every pursuer plays every evader: FRPN, the cascade and the pursuer
-pool, against paths, APF, the cascade and the evader pool. Each pair flies 1024 episodes,
-as in eval. A cell holds the pursuer's win rate.
+After a pool run, every pursuer side plays every evader: FRPN, the cascade and the
+pursuer pool, against paths, APF, the cascade and the evader pool. Each pair flies 1024
+episodes, as in eval. A cell holds the win rate of the pursuers.
