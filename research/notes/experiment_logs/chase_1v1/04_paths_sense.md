@@ -2,7 +2,7 @@
 
 **Question:** Does one pursuer catch the paths evader more often, or sooner, when it senses the attitude or the motor speeds of the evader?
 **Differs from** the code of today: the task was `chase_modal`, with the presets `1v1`, `1v1_attitude`, `1v1_rpm` and `1v1_attitude_rpm`. They are `paths_1v1` to `paths_1v1_attitude_rpm` of `chase` now, and the table uses these names. The reward is the one before the progress reward. Settings: `gamma=0.99`, 2e8 steps (762 updates), the adaptive lr, `ent_coef=0.001`, seeds 0 to 2.
-**Runs:** MetaCentrum, 12 runs, 2026-10-28, commit `23b65a8`. The code of today cannot load these runs. The 12 runs of the same batch with three pursuers are in [chase_modal_log.md](../../archive/chase_modal_log.md#runs-2026-10-28).
+**Runs:** MetaCentrum, 12 runs, 2026-10-28, commit `23b65a8`. The code of today cannot load these runs. The 12 runs of the same batch with three pursuers are in [02_sense](../chase_3v1_before/02_sense.md).
 
 ## Results
 

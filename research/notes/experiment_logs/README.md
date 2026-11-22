@@ -53,8 +53,10 @@ The `<name>_log.md` files are from before 2026-11-16, in the old shape.
   experiment replaces them.
 - The three chase logs and the tunnel log are in [archive/](../archive/). Do not read one
   of them for the state now.
-- `chase_1v1/` holds the runs of the chase logs with one pursuer, one file for each
-  experiment, in the shape above. Such a file names the commit of its runs, because it
-  has no batch script. Its runs keep their old folder names in `runs/`.
-- `chase_3v1/00_before.md` is not an experiment. It holds what the runs with three
-  pursuers showed before `01_base_seeds`, as far as it still holds.
+- `chase_1v1/` holds the runs of the chase logs with one pursuer, and `chase_3v1_before/`
+  those with three pursuers, up to 2026-11-14. Each experiment has one file, in the shape
+  above. Such a file names the commit of its runs, because it has no batch script. Its
+  runs keep their old folder names in `runs/`.
+- `chase_3v1/` goes on from the last file of `chase_3v1_before/`. Many runs of
+  `chase_3v1_before/` are on older code: read the **Differs from** line of a file before
+  you use its numbers.

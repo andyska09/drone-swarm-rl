@@ -285,7 +285,7 @@ values: see the last item.
   calls this input the Agent-Specific Global State. With one input for all three pursuers
   of `paths_3v1`, the critic cannot show which pursuer flies into a hit, so the blame
   falls on all three. There the std grew to 12–29, and the catch stayed under 0.04. The
-  runs: [experiment_logs/chase_3v1/00_before.md](experiment_logs/chase_3v1/00_before.md).
+  runs: [09_critic_input](experiment_logs/chase_3v1_before/09_critic_input.md).
 - **Each network scales its input by a running mean and std**, and `normalize_obs=false`
   turns the scale off. The mean and std move once per update, after the epochs. We store
   raw obs and scale them again in the loss, so a move during the rollout makes the loss
@@ -294,21 +294,22 @@ values: see the last item.
   the 1v1 pools the scale gave no clear gain
   ([06_pools_input_scale](experiment_logs/chase_1v1/06_pools_input_scale.md)). In
   `paths_3v1` it lowered the catch
-  ([00_before.md](experiment_logs/chase_3v1/00_before.md)).
+  ([09_critic_input](experiment_logs/chase_3v1_before/09_critic_input.md)).
 - **The attention net has a norm on its Perceiver output.** `net=attention` reads the
   teammates through a Perceiver, so the size of its input does not depend on their
   number. A LayerNorm with no scale and no bias sits on the output of each query. Without
   it, the output grows from 0.59 to about 2000 and saturates the first layer of the
   trunk, so the policy reads neither its own block nor the evader. The net reads unscaled
   inputs, so it needs `normalize_obs=false`. The runs:
-  [00_before.md](experiment_logs/chase_3v1/00_before.md).
+  [21_attention](experiment_logs/chase_3v1_before/21_attention.md) and
+  [22_attention_norm](experiment_logs/chase_3v1_before/22_attention_norm.md).
 - **`ent_coef` defaults to 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** At
   0.01 the std breaks. The math: [learning/05-RL.md](learning/05-RL.md). The runs:
   [experiment_logs/chase_1v1/01_duel.md](experiment_logs/chase_1v1/01_duel.md). The best
   value depends on the lr. In `paths_3v1` with a constant lr, 0.003 catches more than
   0.001 at every lr ([02_lr_ent](experiment_logs/chase_3v1/02_lr_ent.md)). With the
   adaptive lr, 0.003 blew the std up
-  ([00_before.md](experiment_logs/chase_3v1/00_before.md)).
+  ([13_ent_adaptive_lr](experiment_logs/chase_3v1_before/13_ent_adaptive_lr.md)).
 - **`gamma` defaults to 0.998**, a 5 s horizon at `policy_dt = 0.01 s`. A 2 s horizon
   (0.995) was too short for a 6.9 m flight that takes 3 to 4 s. Chase sets its own value.
   The pool runs set 0.99, Gavin's value at the same 100 Hz
@@ -323,7 +324,7 @@ values: see the last item.
   frozen role keeps its lr. `adaptive_lr=false` keeps the lr at `lr` for the whole run.
   In `paths_3v1` the rule stops the learning. The std falls, and with a small std a small
   change of the mean is a large KL, so the rule lowers the lr to its floor
-  ([00_before.md](experiment_logs/chase_3v1/00_before.md)).
+  ([12_freeze](experiment_logs/chase_3v1_before/12_freeze.md)).
 - **Chase against a pilot has its own base.** The `paths_*` and `apf_*` presets run with
   the flags of [04_new_base](experiment_logs/chase_3v1/04_new_base.md):
   `--set normalize_obs=false --set adaptive_lr=false --set lr=1.25e-4 --set ent_coef=0.003
@@ -384,7 +385,8 @@ The reasons for the values of the two chase specs,
 [tasks/task_chase_3v1.md](tasks/task_chase_3v1.md). Gavin is Gavin & Bronz 2026 and
 Gavin, Lacroix & Bronz 2026. Roncero is Sánchez Roncero et al. 2026, arXiv v3. Němeček
 is his thesis and his code. Their setups are in [literature/specs/](literature/specs/),
-and the runs in `experiment_logs/chase_1v1/` and `experiment_logs/chase_3v1/`.
+and the runs in `experiment_logs/chase_1v1/`, `experiment_logs/chase_3v1_before/` and
+`experiment_logs/chase_3v1/`.
 
 ### The task
 

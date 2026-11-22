@@ -7,7 +7,8 @@ and only the pursuers learn. In `3v1`, both sides learn.
 This spec covers the presets of `chase` with three pursuers. The presets with one pursuer
 are in [chase 1v1](task_chase_1v1.md).
 
-Log: [chase_3v1/](../experiment_logs/chase_3v1/).
+Log: [chase_3v1/](../experiment_logs/chase_3v1/), and before it
+[chase_3v1_before/](../experiment_logs/chase_3v1_before/).
 
 ## Setup
 

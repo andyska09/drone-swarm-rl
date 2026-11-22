@@ -2,10 +2,8 @@
 
 What each pool run was and what it scored, and why the setup changed. The task, its pool
 training and the hand-written opponents are in [task_chase.md](../tasks/task_chase_1v1.md).
-This log holds only the base obs: the offset and the velocity of the other drone. What
-the runs in which a drone senses more showed is in
-[00_before.md](../experiment_logs/chase_3v1/00_before.md), Sensing. Those runs are in the archived
-[chase_modal_log.md](chase_modal_log.md).
+This log holds only the base obs: the offset and the velocity of the other drone. A run in
+which a drone senses more is in [chase_modal_log.md](chase_modal_log.md).
 
 ## Facts
 
