@@ -67,7 +67,7 @@ two: Roncero eq. 8–11 and §IV-A, Němeček eq. 7.22–7.23 and Table 8.8.
 | wall buffer | `outside = 57`, evader only, outside the box, in `open` and `nemecek` | — | — | `λbnd = 1.0`, evader only | `λbnd`, evader only | — | `κb = 0.1` per step outside the box, evader only |
 | discount | 0.99 | 0.998 | not published | 0.99 | 0.99 | not stated | 0.99 |
 
-The full chase reward, with every sign, is in [task_chase.md](../tasks/task_chase.md),
+The full chase reward, with every sign, is in [task_chase.md](../tasks/task_chase_1v1.md),
 Reward. The full reward-term survey, including Hwangbo, Molchanov, Eschmann,
 SimpleFlight and Swift, is in [reward_terms.md](../literature/reward_terms.md).
 
@@ -76,7 +76,7 @@ SimpleFlight and Swift, is in [reward_terms.md](../literature/reward_terms.md).
 The whole `chase` setup beside [Roncero v3](../../papers/2506.02849v3.md) and
 [Němeček's thesis](../../papers/F3-BP-2026-Nemecek-Vaclav-bachelor_thesis.md) with his
 code. What the runs scored against theirs:
-[chase_pools_log.md](../experiment_logs/chase_pools_log.md).
+[chase_pools_log.md](chase_pools_log.md).
 
 | | ours | Roncero v3 | Němeček |
 |---|---|---|---|
