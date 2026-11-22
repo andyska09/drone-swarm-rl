@@ -1,7 +1,8 @@
 # Design choices
 
 Decisions for the simulator and for what every task shares: the env contract, the
-learner, eval and replay. Also every place we differ from the MRS C++ reference
+learner, eval and replay. The Chase section holds the reasons for the values of the two
+chase specs. Also every place we differ from the MRS C++ reference
 (`research/code_sources/mrs_multirotor_simulator`). One line of reasoning each. The
 shared model itself is in [tasks/defaults.md](tasks/defaults.md), and a task's own model,
 pool training included, is in its `tasks/task_<name>.md`. The runs behind a decision are
@@ -170,7 +171,8 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   actions and rewards.
 - **A preset names the setup of a run, all but the hyperparameters**: the box, the roles,
   what each role senses, and with `piloted` a pilot that flies one role in training. So
-  one task holds every setup of one game, and one spec describes them all.
+  one task holds every setup of one game. Chase has two specs, one for one pursuer and
+  one for three, so that each one stands beside the papers of its kind on the spec page.
 - **Update rates.** We chose 200 Hz physics to better resolve
   the motor's 0.03 s response time: six simulation steps per time constant,
   compared with three at 100 Hz. The rate controller is slower, with an
@@ -266,6 +268,9 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
 
 ## Learner
 
+These are the defaults of `swarm/learn/config.py`. Chase against a pilot runs on other
+values: see the last item.
+
 - **The bound is a clip, and the std is one learned number per action.** The action
   is `clip(mean + std·noise, −1, 1)`, the std is the same in every state, and
   `init_std = 1.0`. The log-prob and the entropy are the plain Gaussian's, in closed
@@ -274,14 +279,41 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   skrl, the PPO libraries of Isaac Lab, and of Němeček's SB3. A per-state std can
   shrink just where precision pays, near the evader, and that is where the pursuer
   must find its next move. The runs behind it:
-  [experiment_logs/chase_pools_log.md](experiment_logs/chase_pools_log.md).
-- **`ent_coef` is 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** PPO
-  shrinks the std by itself once precision pays, and the bonus fights exactly that. At
+  [experiment_logs/chase_1v1/02_pools.md](experiment_logs/chase_1v1/02_pools.md).
+- **The critic reads each drone's own actor input**, after the scene and the opponents'
+  actions, so each drone gets its own value. [MAPPO](https://arxiv.org/abs/2103.01955)
+  calls this input the Agent-Specific Global State. With one input for all three pursuers
+  of `paths_3v1`, the critic cannot show which pursuer flies into a hit, so the blame
+  falls on all three. There the std grew to 12–29, and the catch stayed under 0.04. The
+  runs: [experiment_logs/chase_3v1/00_before.md](experiment_logs/chase_3v1/00_before.md).
+- **Each network scales its input by a running mean and std**, and `normalize_obs=false`
+  turns the scale off. The mean and std move once per update, after the epochs. We store
+  raw obs and scale them again in the loss, so a move during the rollout makes the loss
+  read other inputs than the rollout did. They sit in the network's variables, so a
+  checkpoint, a frozen pool member, eval and a resume keep the values of that network. In
+  the 1v1 pools the scale gave no clear gain
+  ([06_pools_input_scale](experiment_logs/chase_1v1/06_pools_input_scale.md)). In
+  `paths_3v1` it lowered the catch
+  ([00_before.md](experiment_logs/chase_3v1/00_before.md)).
+- **The attention net has a norm on its Perceiver output.** `net=attention` reads the
+  teammates through a Perceiver, so the size of its input does not depend on their
+  number. A LayerNorm with no scale and no bias sits on the output of each query. Without
+  it, the output grows from 0.59 to about 2000 and saturates the first layer of the
+  trunk, so the policy reads neither its own block nor the evader. The net reads unscaled
+  inputs, so it needs `normalize_obs=false`. The runs:
+  [00_before.md](experiment_logs/chase_3v1/00_before.md).
+- **`ent_coef` defaults to 0.001, AMSPBH's value, and Gavin's 0.01 does not transfer.** At
   0.01 the std breaks. The math: [learning/05-RL.md](learning/05-RL.md). The runs:
-  [experiment_logs/chase_pools_log.md](experiment_logs/chase_pools_log.md).
+  [experiment_logs/chase_1v1/01_duel.md](experiment_logs/chase_1v1/01_duel.md). The best
+  value depends on the lr. In `paths_3v1` with a constant lr, 0.003 catches more than
+  0.001 at every lr ([02_lr_ent](experiment_logs/chase_3v1/02_lr_ent.md)). With the
+  adaptive lr, 0.003 blew the std up
+  ([00_before.md](experiment_logs/chase_3v1/00_before.md)).
 - **`gamma` defaults to 0.998**, a 5 s horizon at `policy_dt = 0.01 s`. A 2 s horizon
-  (0.995) was too short for a 6.9 m flight that takes 3 to 4 s. Chase sets 0.99
-  ([tasks/task_chase.md](tasks/task_chase.md), Training).
+  (0.995) was too short for a 6.9 m flight that takes 3 to 4 s. Chase sets its own value.
+  The pool runs set 0.99, Gavin's value at the same 100 Hz
+  ([tasks/task_chase_1v1.md](tasks/task_chase_1v1.md), Training). The runs against a pilot set
+  0.995: see the last item.
 - **The lr starts at 2e-4 and then follows the KL**, AMSPBH's lr and target with
   rsl_rl's rule. After the forward pass of each minibatch, the learner's mean
   `approx_kl` sets the lr, and the step of that same minibatch uses it, as in rsl_rl.
@@ -289,6 +321,17 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   closed form. The target is 0.016. KL > 0.032: lr ÷ 1.5. 0 < KL < 0.008: lr × 1.5. The
   lr stays in [1e-5, 1e-2]. Each role has its own lr in its own TrainState, so a
   frozen role keeps its lr. `adaptive_lr=false` keeps the lr at `lr` for the whole run.
+  In `paths_3v1` the rule stops the learning. The std falls, and with a small std a small
+  change of the mean is a large KL, so the rule lowers the lr to its floor
+  ([00_before.md](experiment_logs/chase_3v1/00_before.md)).
+- **Chase against a pilot has its own base.** The `paths_*` and `apf_*` presets run with
+  the flags of [04_new_base](experiment_logs/chase_3v1/04_new_base.md):
+  `--set normalize_obs=false --set adaptive_lr=false --set lr=1.25e-4 --set ent_coef=0.003
+  --set gamma=0.995 --set clip_eps=0.1 --set num_steps=128`. This base catches 0.975 in
+  `paths_3v1`. The experiments `01` to `04` in
+  [experiment_logs/chase_3v1/](experiment_logs/chase_3v1/) hold the runs behind each
+  value. The defaults in `config.py` stay as they are, because a change there also
+  changes the pool runs and the other tasks.
 
 ## Evaluation and replay
 
@@ -333,6 +376,88 @@ The values are in [tasks/defaults.md](tasks/defaults.md). This section keeps the
   `quadrotor_multi_visualization.py`. The shadow helps show altitude by spreading
   and fading as the drone rises. The arrow projects the current velocity 0.4 s
   ahead.
+
+## Chase
+
+The reasons for the values of the two chase specs,
+[tasks/task_chase_1v1.md](tasks/task_chase_1v1.md) and
+[tasks/task_chase_3v1.md](tasks/task_chase_3v1.md). Gavin is Gavin & Bronz 2026 and
+Gavin, Lacroix & Bronz 2026. Roncero is Sánchez Roncero et al. 2026, arXiv v3. Němeček
+is his thesis and his code. Their setups are in [literature/specs/](literature/specs/),
+and the runs in `experiment_logs/chase_1v1/` and `experiment_logs/chase_3v1/`.
+
+### The task
+
+- **The net has no thickness.** A drone is a ball of 0.40 m, the arm plus the propeller,
+  and a ball touches a plane when its centre is within one radius of it. At 15 m/s the
+  evader moves 0.15 m per policy step, so it cannot skip through the net.
+- **A capture wins over a death in the same step**, because the net square reaches into
+  the 0.80 m contact distance.
+- **Only a catch is terminal for the survivors.** Neither side gains when the other
+  fails, which is Gavin's rule. Roncero also bootstraps past an out-of-bounds (§III-B).
+- **`coll_pe` is a cost, and the episode goes on.** The pursuer must reach the evader to
+  catch it, and an end there teaches it to stand off (Gavin).
+- **A flipped drone keeps flying.** Gavin ends an episode on an exit and on a contact
+  between pursuers, and says nothing about the attitude.
+- **The drones start 2 m apart.** A drone touches a net only within 1.54 m of the
+  pursuer's centre, and a contact needs 0.80 m. So no catch and no contact can happen at
+  step 0.
+- **The pursuer earns progress in place of a clock and a distance cost.** With the clock,
+  the rest of an episode was worth about −5 to a pursuer that lives on, so a death also
+  ended its costs. The 0.25 per m is Roncero's weight, and the catch of 30 is our pick.
+- **The other weights are Gavin's.** His per-step weights are divided by the policy step,
+  so ours are per second and do not depend on the control rate.
+- **A `coll_pp` costs 10, Gavin's value.** A cost of 30 gave the same catch, 0.212
+  against 0.208, and a cost of 0 lowers it
+  ([03_breadth](experiment_logs/chase_3v1/03_breadth.md)).
+- **`open` and `nemecek` have Němeček's arena rules.** Only the ground ends an episode,
+  and the evader pays `outside` while it is outside the box. The 57 is his ratio: 0.1 per
+  step outside against 0.007 per step for survival, times our clock of 4. `nemecek` is the
+  box of his main runs.
+- **`small` exists** because the policies of a `default` pool run, put in a 24 × 24 × 16 m
+  box, caught the newest evader in 0.39 of the episodes, against 0.17 in 32 × 32 m.
+- **The evader is in slot 0 of the others.** With the old order, nearest first, the
+  evader of a 3v1 run was in the last slot in 71 % of the steps, so a teammate sat in
+  slot 0.
+
+### Pool training
+
+- **The method is AMSPBH of Roncero** (§III-C and §IV-A). Where the paper is silent, we
+  follow Němeček's code.
+- **Pools replaced the swap of the duel.** No duel run gave a good pursuer and a good
+  evader together ([01_duel](experiment_logs/chase_1v1/01_duel.md)).
+- **Both sides learn at once**, each against the other side's pool up to generation
+  k − 1. So neither side needs the other's new weights, and a run has 14 phases in place
+  of 28.
+- **The std reset at each phase is ours.** The std shrinks in a phase, and the learner
+  must explore again against the new pool. Without it the pursuer stopped learning after
+  generation 7 ([02_pools](experiment_logs/chase_1v1/02_pools.md)).
+- **FRPN and paths stay in the pools in every generation**, as in the paper (Fig. 6,
+  §IV-C).
+- **A frozen network flies its mean action**, as in Němeček's code.
+- **64 blocks with $\gamma_h$ = 0.7** give each member at least 3 blocks, in a pool of up
+  to 14 members.
+- **A `coll_pp` is an evader win.** One outcome holds for any number of pursuers, in the
+  order: caught, `fail_pe`, a pursuer failure, an evader failure, the time limit.
+
+### The pilots
+
+- **The lineup is Roncero's** (§IV-B): an FRPN pursuer, an APF evader and three path
+  evaders. The cascade is the easy opponent, with MRS's defaults.
+- **FRPN and APF have Němeček's code and values** (thesis, Tables 8.1 and 8.6). Roncero
+  does not publish all of his, and Němeček flew the same X500.
+- **FRPN and APF fly under a limit of 20 m/s² and 12 m/s.** Němeček's simulator cuts every
+  drone's speed to 12 m/s after each step. We cannot do that, because the network flies
+  the same physics. Without the limit FRPN reached about 19 m/s, and against a hover
+  evader it left the arena in 0.39 of the episodes.
+- **A pursuer pilot aims at the point one net drop above the evader**, so that its net
+  lands on the evader, not its body.
+- **The paths are Roncero's, 8 times larger and √8 times faster.** That keeps the turn
+  acceleration $v^2/r$ of each shape.
+- **The path picks where the evader starts.** Near a corner no full-size path fits around
+  a random start, and a shrunk path keeps its lap time, so it is also slower.
+- **A pilot keeps its heading**, and the cascade code stays as it is, because it must
+  match the C++ goldens.
 
 ## Revisit later
 
