@@ -1,8 +1,8 @@
 # chase
 
 Pursuers chase one evader. Each pursuer carries a net under its body and catches the
-evader with it. Both sides learn. In the paths presets, the paths pilot flies the evader,
-and only the pursuers learn.
+evader with it. Both sides learn. In the paths presets and the APF presets, a pilot flies
+the evader, and only the pursuers learn.
 
 Log: [chase_pools_log.md](../experiment_logs/chase_pools_log.md), and before the pools
 [chase_duel_log.md](../experiment_logs/chase_duel_log.md). The presets in which a drone
@@ -153,6 +153,8 @@ Each other preset is one of these four, with these changes:
 | `paths_3v1_attitude_rpm` | `default` | 3 | attitude, rpm | none | paths |
 | `paths_3v1_body` | `default` | 3 | none | none | paths |
 | `paths_3v1_netpass` | `default` | 3 | none | none | paths |
+| `apf_1v1` | `default` | 1 | none | none | APF |
+| `apf_3v1` | `default` | 3 | none | none | APF |
 | `default_p_attitude` | `default` | 1 | attitude | none | learns |
 | `default_p_rpm` | `default` | 1 | rpm | none | learns |
 | `default_p_attitude_rpm` | `default` | 1 | attitude, rpm | none | learns |
@@ -178,8 +180,9 @@ In `paths_3v1_netpass`, a coll_pp is a touch between the bodies of two pursuers.
 ## Training
 
 - Runs set $\gamma$ = 0.99.
-- In the paths presets, only the pursuers learn, against the paths evader, in one phase.
-  The network of the evader keeps its first weights and never flies.
+- In the paths presets and the APF presets, only the pursuers learn, against the pilot of
+  the preset, in one phase. The network of the evader keeps its first weights and never
+  flies.
 - In the other presets, with $G = 0$ generations, both sides learn at the same time,
   against each other. With $G > 0$, each side learns against a pool of frozen opponents,
   as below. Runs use $G$ = 13.
@@ -243,7 +246,8 @@ A role can be flown by its network, or by one of these pilots:
 | APF | evader | a potential field that pushes away from the pursuers and the walls |
 | paths | evader | a hover, a circle or a figure-eight, drawn for each episode |
 
-In the paths presets, the paths pilot flies the evader.
+In the paths presets, the paths pilot flies the evader. In the APF presets, the APF pilot
+flies it.
 
 The reference points of the cascade:
 
