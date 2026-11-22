@@ -7,7 +7,7 @@ Two drones fly opposite ways through a bent tube, each along its own line, and p
 other. The bends hide the drones from each other until late. The task measures what a
 drone must sense to pass the other drone.
 
-Log: [tunnel_log.md](../experiment_logs/tunnel_log.md)
+Log: [tunnel_log.md](tunnel_log.md)
 
 ## Setup
 
