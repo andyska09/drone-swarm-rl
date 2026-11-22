@@ -401,6 +401,7 @@ PRESETS = (
             net_kills=False,
         ),
     }
+    | {f"apf_{p}v1": EnvParams(roles=("pursuer",) * p + ("evader",), piloted=("evader", "apf")) for p in (1, 3)}
     | {"_".join(("default", "p", *p)): EnvParams(sense_pursuer=p) for p in SENSES[1:]}
     | {
         "_".join(("nemecek", "p", *p, "e", *e)): NEMECEK.replace(sense_pursuer=p, sense_evader=e)
