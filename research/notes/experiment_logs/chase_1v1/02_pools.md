@@ -2,7 +2,7 @@
 
 **Question:** Which box, and which std reset, lr and phase length, give the pursuer the highest win rate against the evaders of its own pool run?
 **Differs from** the code of today: the sides learn in turn, the evader first, so a run has 28 phases. The reward is the one before the progress reward. Settings: `gamma=0.99`, `generations=13`, 1.4e9 steps, seed 0. The table names what else differs for each run.
-**Runs:** 8 runs, 2026-10-14 to 2026-10-17, one commit for each run. More: [chase_pools_log.md](../../archive/chase_pools_log.md).
+**Runs:** 8 runs, 2026-10-14 to 2026-10-17, one commit for each run.
 
 - The run before these, `797201` (commit `dfc87ee`), had a std for each state and a tanh squash. The pursuer's roll and pitch std fell from 0.43 and 0.33 to 0.06 and 0.16, and from generation 6 no pursuer beat a new evader. A new std head on `pursuer_13` lifted its win rate against `evader_07` from 0.20 to 0.95 in 50 updates.
 - So these runs have one learned std per action with a clip, and most of them set the std back to 1.0 at each phase.

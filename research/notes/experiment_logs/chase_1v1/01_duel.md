@@ -2,7 +2,7 @@
 
 **Question:** Does the swap train a good pursuer and a good evader in one run of `chase` with one pursuer?
 **Differs from** the code of today: the two sides learn in turn. A turn ends when the pursuer's score crosses a limit, and never before `swap_min` updates. With `swap_min=0` the swap is off, and both sides learn in every update. The reward is the one before the progress reward: the pursuer pays a clock and a distance cost, and a catch pays 10. Settings: preset `duel` (the box of `default`), `gamma=0.99`, `lr=3e-4` with a linear decay, 4e8 steps (1525 updates), seed 0.
-**Runs:** 6 runs, 2026-09-20 to 2026-09-22, commits `47273bd` and `ac29531`. The code has no swap now. More tables: [chase_duel_log.md](../../archive/chase_duel_log.md).
+**Runs:** 6 runs, 2026-09-20 to 2026-09-22, commits `47273bd` and `ac29531`. The code has no swap now.
 
 - Two runs can have one hash, because the hash covers only the config. So the table names a run by its start time.
 - The critic reads the actor's input, or from `ac29531` the scene: the world state of both drones and the action of the opponent.
