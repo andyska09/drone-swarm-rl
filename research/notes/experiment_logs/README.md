@@ -47,5 +47,14 @@ measures. Every table in a file is one that the design or the user asked for.
 
 ## The old logs
 
-The `<name>_log.md` files in this folder are from before 2026-11-16. They stay as they
-are. Their `## Facts` lists still hold what those runs showed.
+The `<name>_log.md` files are from before 2026-11-16, in the old shape.
+
+- `avoidance_log.md` and `circle_swap_log.md` stay in this folder, because no newer
+  experiment replaces them.
+- The three chase logs and the tunnel log are in [archive/](../archive/). Do not read one
+  of them for the state now.
+- `chase_1v1/` holds the runs of the chase logs with one pursuer, one file for each
+  experiment, in the shape above. Such a file names the commit of its runs, because it
+  has no batch script. Its runs keep their old folder names in `runs/`.
+- `chase_3v1/00_before.md` is not an experiment. It holds what the runs with three
+  pursuers showed before `01_base_seeds`, as far as it still holds.
