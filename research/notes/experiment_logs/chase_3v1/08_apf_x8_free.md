@@ -17,3 +17,12 @@
 - One pursuer catches 0.977: 0.985 and 0.969 in the two seeds.
 - Three pursuers catch 0.451: 0.446 and 0.456 in the two seeds.
 - With three pursuers, `coll_pp` is 0.082. With one pursuer it is 0.
+
+The spread of the pursuers' actions in training, for the configs of this experiment and of `06_apf_one_pursuer`, as the mean of the two seeds. The std of each action starts at 1.0, and the table gives its value at the end of the run.
+
+| config | caught_e in training, last tenth | entropy_p, first tenth | entropy_p, last tenth | std thrust | std roll | std pitch | std yaw |
+|---|---|---|---|---|---|---|---|
+| apf_1v1 | 1.000 | 5.71 | 3.08 | 0.57 | 0.41 | 0.41 | 0.76 |
+| apf_3v1 | 0.932 | 5.87 | 6.92 | 1.04 | 0.98 | 0.96 | 3.71 |
+| apf_x8_free_1v1 | 0.977 | 5.64 | 4.03 | 0.62 | 0.56 | 0.52 | 1.07 |
+| apf_x8_free_3v1 | 0.373 | 5.88 | 9.48 | 2.58 | 1.41 | 1.38 | 10.77 |
