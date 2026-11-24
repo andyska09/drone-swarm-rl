@@ -5,28 +5,18 @@ TODOS
 - jak funguje jeden chytac? 
 - evader APF vic agilni. 
 
+
+- resolve the growing entropy in 3v1 training and why it failed to learn to catch the faster APF
+- finalize the attention design 
+- slower pursuer, edit the drone physics. APF keeps its limits from Nemecek. -> this way we train the 1v1 and 3v1 case 
+
+## Tips and tricks to try when something isnt training
+
 - lr ,ent coeff na konci snizovat (to znamena konst a pak linear decay or something)
 - nahodny restarty, delka epizody
 - koeff pro penalizaci cmd, postupne zvysovat
 - penazilace velikosti vah v rewardu primo
 - velikost site pro chytani jako curriculum
-
-## The plan
-
-All runs use the MLP with the settings of `04_new_base`, seeds 0 and 1.
-
-1. **Eval the basic APF.** Fly the two `04_new_base` policies against it, 4096 episodes. This needs no new code.
-2. **Test the agile variants, eval only.** Use the same policies, push factor 1, 2 and 4, each with and without the limits. You pick one from the table.
-3. **Add the code.** One pilot `apf_agile`, and the presets `apf_1v1`, `apf_3v1`, `apf_agile_1v1` and `apf_agile_3v1`. Update the chase spec.
-4. **Train the swarm.** `apf_3v1` and `apf_agile_3v1`.
-5. **Train one pursuer.** `paths_1v1`, `apf_1v1` and `apf_agile_1v1`, with the same steps.
-6. **Make one table.** Each policy against paths, APF and agile APF. The gain of the swarm is the 3v1 catch minus the 1v1 catch.
-
-
-
-
-
-
 
 ### Other approaches
 
