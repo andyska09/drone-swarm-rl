@@ -21,6 +21,6 @@ The spread of the pursuers' actions in training, as the mean of the two seeds. T
 
 | `ent_coef` | caught_e in training, last tenth | entropy_p, first tenth | entropy_p, last tenth | std thrust | std roll | std pitch | std yaw |
 |---|---|---|---|---|---|---|---|
-| 0.003 | 0.373 | 5.88 | 9.48 | 2.58 | 1.41 | 1.38 | 10.77 |
-| 0.001 | 0.635 | 5.56 | 2.53 | 0.44 | 0.32 | 0.33 | 0.79 |
-| 0 | 0.422 | 5.39 | −0.41 | 0.23 | 0.14 | 0.14 | 0.38 |
+| 0.003 | 0.373 | 5.87 | 9.48 | 2.58 | 1.41 | 1.38 | 10.76 |
+| 0.001 | 0.634 | 5.55 | 2.53 | 0.44 | 0.32 | 0.33 | 0.79 |
+| 0 | 0.422 | 5.39 | −0.40 | 0.23 | 0.14 | 0.14 | 0.38 |

@@ -29,5 +29,5 @@ The spread of the pursuers' actions in training, as the mean of the two seeds. T
 
 | steps | caught_e in training, last tenth | entropy_p, first tenth | entropy_p, last tenth | std thrust | std roll | std pitch | std yaw |
 |---|---|---|---|---|---|---|---|
-| 5e8 | 0.635 | 5.56 | 2.53 | 0.44 | 0.32 | 0.33 | 0.79 |
-| 1e9 | 0.774 | 5.38 | −0.08 | 0.20 | 0.12 | 0.13 | 0.83 |
+| 5e8 | 0.634 | 5.55 | 2.53 | 0.44 | 0.32 | 0.33 | 0.79 |
+| 1e9 | 0.774 | 5.38 | −0.07 | 0.20 | 0.12 | 0.13 | 0.83 |
