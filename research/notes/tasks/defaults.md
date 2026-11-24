@@ -98,6 +98,22 @@ $$
 | $n_{\min}$, $n_{\max}$ | 1170 rpm, 7800 rpm |
 | hover | 4255 rpm, a throttle of 0.4654 |
 
+A preset can give a role the weak drone. It is the same drone with two other values:
+
+| symbol | value |
+|---|---|
+| $n_{\max}$ | 5528 rpm |
+| $k_d$ | $2.122\, \pi l^2$ = 0.4167 kg/m |
+| hover | a throttle of 0.7080 |
+
+The two drones in level flight:
+
+| | the drone | the weak drone |
+|---|---|---|
+| top thrust $f / m$ | 32.96 m/s² | 16.55 m/s² |
+| top thrust to the side | 31.5 m/s² | 13.3 m/s² |
+| top speed | 32.7 m/s | 8.0 m/s |
+
 ### Action and control
 
 - The action is $a \in [-1, 1]^4$. A larger value is clipped to this range.

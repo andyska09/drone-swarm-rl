@@ -142,6 +142,7 @@ Each other preset is one of these four, with these changes:
 | `paths_1v1_rpm` | `default` | rpm | none | paths |
 | `paths_1v1_attitude_rpm` | `default` | attitude, rpm | none | paths |
 | `apf_1v1` | `default` | none | none | APF |
+| `apf_1v1_weak` | `default` | none | none | APF |
 | `apf_x8_free_1v1` | `default` | none | none | free APF×8 |
 | `default_p_attitude` | `default` | attitude | none | learns |
 | `default_p_rpm` | `default` | rpm | none | learns |
@@ -155,6 +156,8 @@ Each other preset is one of these four, with these changes:
 | `nemecek_p_attitude_rpm_e_attitude` | `nemecek` | attitude, rpm | attitude | learns |
 | `nemecek_p_attitude_rpm_e_rpm` | `nemecek` | attitude, rpm | rpm | learns |
 | `nemecek_p_attitude_rpm_e_attitude_rpm` | `nemecek` | attitude, rpm | attitude, rpm | learns |
+
+In `apf_1v1_weak`, the pursuer flies the weak drone.
 
 ## Training
 
@@ -234,8 +237,8 @@ A role can be flown by its network, or by one of these pilots:
 | free APF×8 | evader | the APF with 8 times the push from the pursuer. Only the motors limit it |
 | paths | evader | a hover, a circle or a figure-eight, drawn for each episode |
 
-In the paths presets, the paths pilot flies the evader. In `apf_1v1`, the APF pilot flies
-it, and in `apf_x8_free_1v1`, the free APF×8 pilot.
+In the paths presets, the paths pilot flies the evader. In `apf_1v1` and `apf_1v1_weak`,
+the APF pilot flies it, and in `apf_x8_free_1v1`, the free APF×8 pilot.
 
 The reference points of the cascade:
 

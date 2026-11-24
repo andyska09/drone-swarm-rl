@@ -362,6 +362,26 @@ and the runs in `experiment_logs/chase_1v1/`, `experiment_logs/chase_3v1_before/
 - **A pilot keeps its heading**, and the cascade code stays as it is, because it must
   match the C++ goldens.
 
+### The weak drone
+
+- **A role can fly a weak drone**, because one pursuer catches every evader pilot: 1.000
+  against the APF and 0.999 against the paths
+  ([06_apf_one_pursuer](experiment_logs/chase_3v1/06_apf_one_pursuer.md)). So no task
+  shows what three pursuers gain. The swarm needs an evader that one pursuer cannot catch.
+- **The limit lives in the drone, not in the pilot and not in the reward.** The same
+  physics then holds for a network and for a pilot. A network gives a throttle and body
+  rates, so the pilots' rule on the acceleration cannot hold it. A cost on the speed is
+  not a hard limit.
+- **The weak drone differs in two values: the top motor speed and the air drag.** The top
+  motor speed sets the top thrust. The top speed comes from the thrust against the drag,
+  so less thrust alone leaves the top speed far above the 12 m/s of the APF evader.
+- **The weak drone has 2/3 of the limits of the APF evader**: 8 m/s against 12 m/s, and
+  13.3 m/s² to the side against 20 m/s². So the evader is 1.5 times faster, inside the
+  0.8 to 2.0 of de Souza et al. 2021 (§V-A). At 5/6 the top speed of 10 m/s is above the
+  8.4 m/s that one pursuer flies now. At 1/2 the top thrust is only 1.4 times the weight.
+- **A probe confirms the top speed: 8.00 m/s in level flight.** From rest the weak drone
+  reaches 11.2 m/s² to the side, not 13.3, because the drag grows while it tilts.
+
 ## Revisit later
 
 - Quaternions instead of `R`, if a profile says the matrix costs. Note the cost

@@ -287,7 +287,7 @@ def cascade(params, rows):
         waypoint = jnp.where(reached, _waypoint(k_wp, d.x[evader], params), waypoint)
         points = jnp.where(is_evader, waypoint, _aim(d, params)[rows])
         own = jax.tree.map(lambda q: q[rows], d)
-        action, pids = core.cascade(own, points, pids, params)
+        action, pids = core.cascade(own, points, pids, params, rows)
         return action, (pids, waypoint, key)
 
     return act, start
@@ -302,7 +302,7 @@ def frpn(params, rows):
         own = jax.tree.map(lambda q: q[rows], d)
         a = jax.vmap(guidance.frpn)(_aim(d, params)[rows] - own.x, d.v[evader] - own.v)
         a = jax.vmap(guidance.speed_limit)(a, own.v)
-        return core.accelerate(own, a, pids, params)
+        return core.accelerate(own, a, pids, params, rows)
 
     return act, lambda state: (state, core.per_row(control.pid_init(), len(rows)))
 
@@ -321,7 +321,7 @@ def apf(params, rows, factor=1.0, limited=True):
         )
         if limited:
             a = jax.vmap(guidance.speed_limit)(a, own.v)
-        return core.accelerate(own, a, pids, params)
+        return core.accelerate(own, a, pids, params, rows)
 
     return act, lambda state: (state, core.per_row(control.pid_init(), len(rows)))
 
@@ -357,7 +357,7 @@ def paths(params, rows):
         own = jax.tree.map(lambda q: q[rows], state.drone)
         target = jax.vmap(lambda p: at(p, state.time * dt))(routes)
         a = jax.vmap(guidance.follow)(own.x, own.v, target)
-        action, pids = core.accelerate(own, a, pids, params)
+        action, pids = core.accelerate(own, a, pids, params, rows)
         return action, (pids, routes)
 
     return act, start
@@ -413,6 +413,14 @@ PRESETS = (
     | {
         f"{pilot}_{p}v1": EnvParams(roles=("pursuer",) * p + ("evader",), piloted=("evader", pilot))
         for pilot in ("apf", "apf_x8_free")
+        for p in (1, 3)
+    }
+    | {
+        f"apf_{p}v1_weak": EnvParams(
+            roles=("pursuer",) * p + ("evader",),
+            piloted=("evader", "apf"),
+            weak=("pursuer",),
+        )
         for p in (1, 3)
     }
     | {"_".join(("default", "p", *p)): EnvParams(sense_pursuer=p) for p in SENSES[1:]}

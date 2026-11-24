@@ -134,6 +134,7 @@ Every preset has the default box, with closed walls.
 | `paths_3v1_body` | none | paths |
 | `paths_3v1_netpass` | none | paths |
 | `apf_3v1` | none | APF |
+| `apf_3v1_weak` | none | APF |
 | `apf_x8_free_3v1` | none | free APF×8 |
 
 In `paths_3v1_body`, a pursuer catches the evader with its body:
@@ -144,6 +145,8 @@ In `paths_3v1_body`, a pursuer catches the evader with its body:
 - `catch_offset` is NaN.
 
 In `paths_3v1_netpass`, a coll_pp is a touch between the bodies of two pursuers.
+
+In `apf_3v1_weak`, the pursuers fly the weak drone.
 
 ## Training
 
@@ -222,8 +225,8 @@ A role can be flown by its network, or by one of these pilots:
 | free APF×8 | evader | the APF with 8 times the push from the pursuers. Only the motors limit it |
 | paths | evader | a hover, a circle or a figure-eight, drawn for each episode |
 
-In the paths presets, the paths pilot flies the evader. In `apf_3v1`, the APF pilot flies
-it, and in `apf_x8_free_3v1`, the free APF×8 pilot.
+In the paths presets, the paths pilot flies the evader. In `apf_3v1` and `apf_3v1_weak`,
+the APF pilot flies it, and in `apf_x8_free_3v1`, the free APF×8 pilot.
 
 The reference points of the cascade:
 

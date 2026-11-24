@@ -17,6 +17,10 @@ class Common:
     n_neighbors: int = flax.struct.field(pytree_node=False, default=6)
     piloted: tuple = flax.struct.field(pytree_node=False, default=())
 
+    weak: tuple = flax.struct.field(pytree_node=False, default=())
+    weak_max_rpm: float = 5528.0
+    weak_air_resistance_coeff: float = 2.122
+
     sim_dt: float = 0.005
     steps_per_action: int = flax.struct.field(pytree_node=False, default=2)
     max_steps: int = flax.struct.field(pytree_node=False, default=500)
@@ -80,53 +84,60 @@ def select_rows(pick, a, b):
     return jax.tree.map(lambda x, y: jnp.where(jnp.expand_dims(pick, tuple(range(1, x.ndim))), x, y), a, b)
 
 
-def cascade(drones, points, pids, params):
+def models(params, rows=slice(None)):
+    weak = params.model.replace(max_rpm=params.weak_max_rpm, air_resistance_coeff=params.weak_air_resistance_coeff)
+    each = [weak if role in params.weak else params.model for role in params.roles]
+    return jax.tree.map(lambda *leaves: jnp.stack(leaves)[rows], *each)
+
+
+def cascade(drones, points, pids, params, rows):
     gains = control.cascade_gains(params.model)
 
-    def one(drone, point, pid):
-        (throttle, rate_ref), pid = control.cascade_outer(drone, point, 0.0, pid, gains, params.model, params.policy_dt)
+    def one(drone, point, pid, model):
+        (throttle, rate_ref), pid = control.cascade_outer(drone, point, 0.0, pid, gains, model, params.policy_dt)
         return command_to_action(throttle, rate_ref, params), pid
 
-    return jax.vmap(one)(drones, points, pids)
+    return jax.vmap(one)(drones, points, pids, models(params, rows))
 
 
 def cascade_pilot(params, rows, goal):
     def act(state, obs, pids):
         del obs
-        return cascade(jax.tree.map(lambda a: a[rows], state.drone), goal(state), pids, params)
+        return cascade(jax.tree.map(lambda a: a[rows], state.drone), goal(state), pids, params, rows)
 
     return act, lambda state: (state, per_row(control.cascade_init(), len(rows)))
 
 
-def accelerate(drones, a, pids, params):
-    model, dt = params.model, params.policy_dt
+def accelerate(drones, a, pids, params, rows):
+    dt = params.policy_dt
     gains = control.attitude_gains(max_rate_yaw=params.max_rate_yaw)
 
-    def one(drone, a, pid):
+    def one(drone, a, pid, model):
         heading = jnp.arctan2(drone.R[1, 0], drone.R[0, 0])
         orientation, throttle = control.acceleration_controller(drone, guidance.drone_limit(a, model), heading, model)
         rate, pid = control.attitude_controller(drone, orientation, pid, gains, dt)
         return command_to_action(throttle, rate, params), pid
 
-    return jax.vmap(one)(drones, a, pids)
+    return jax.vmap(one)(drones, a, pids, models(params, rows))
 
 
 def fly(drone, pid, action, params):
     throttle, rate_ref = action_to_command(jnp.clip(action, -1.0, 1.0), params)
     gains = control.cascade_gains(params.model)
     rate_gains, allocation, dt = gains[3], gains[4], params.sim_dt
+    model = models(params)
 
     def substep(carry, _):
         drone, pid = carry
 
-        def one(d, r, t, p):
+        def one(d, r, t, p, model):
             group, p = control.rate_controller(d, r, t, p, rate_gains, dt, d_on_measurement=True)
             return (
-                dynamics.step(d, control.mixer(group, allocation), params.model, dt),
+                dynamics.step(d, control.mixer(group, allocation), model, dt),
                 p,
             )
 
-        return jax.vmap(one)(drone, rate_ref, throttle, pid), None
+        return jax.vmap(one)(drone, rate_ref, throttle, pid, model), None
 
     (drone, pid), _ = jax.lax.scan(substep, (drone, pid), None, length=params.steps_per_action)
     return drone, pid, rate_ref
@@ -192,7 +203,7 @@ def pairs(drone, params, sense=()):
     rel = lambda a: jnp.einsum("nji,nkj->nki", drone.R, a[None, :, :] - a[:, None, :])
     sensed = {
         "attitude": jnp.einsum("nji,kjl->nkil", drone.R, drone.R).reshape(n, n, 9),
-        "rpm": jnp.broadcast_to(drone.rpm / params.model.max_rpm, (n, n, 4)),
+        "rpm": jnp.broadcast_to(drone.rpm / models(params).max_rpm[:, None], (n, n, 4)),
     }
     return jnp.concatenate([rel(drone.x), rel(drone.v), *(sensed[s] for s in sense)], axis=-1)
 
