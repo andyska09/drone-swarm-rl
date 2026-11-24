@@ -10,6 +10,18 @@ def mean(values):
     return sum(values) / len(values)
 
 
+def own_eval(run):
+    config = json.loads((run / "config.json").read_text())
+    seats = {role: "checkpoint" for role in config["env"]["roles"]}
+    seats.update([config["env"]["piloted"]] if config["env"]["piloted"] else [])
+    own = (seats, config["train"]["preset"], "latest")
+    for file in sorted(run.glob("evals/*/eval.json")):
+        found = json.loads(file.read_text())
+        if (found["seats"], found["preset"], found["checkpoint"]) == own:
+            return found["summary"]
+    return None
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("sweep", type=pathlib.Path)
@@ -18,7 +30,7 @@ def main():
     rows = []
     for config in sorted(d for d in sweep.iterdir() if d.is_dir()):
         runs = [d for d in config.iterdir() if d.is_dir()]
-        evals = [json.loads(f.read_text())["summary"] for f in config.glob("*/evals/*/eval.json")]
+        evals = [found for found in map(own_eval, runs) if found]
         if evals:
             score = [e[SCORE] for e in evals]
             context = [mean([e[k] for e in evals]) for k in CONTEXT]
