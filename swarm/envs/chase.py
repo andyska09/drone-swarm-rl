@@ -1,3 +1,5 @@
+import functools
+
 import flax.struct
 import jax
 import jax.numpy as jnp
@@ -361,7 +363,13 @@ def paths(params, rows):
     return act, start
 
 
-PILOTS = {"cascade": cascade, "frpn": frpn, "apf": apf, "paths": paths}
+PILOTS = {
+    "cascade": cascade,
+    "frpn": frpn,
+    "apf": apf,
+    "apf_x8_free": functools.partial(apf, factor=8.0, limited=False),
+    "paths": paths,
+}
 
 SENSES = ((), ("attitude",), ("rpm",), ("attitude", "rpm"))
 
@@ -402,7 +410,11 @@ PRESETS = (
             net_kills=False,
         ),
     }
-    | {f"apf_{p}v1": EnvParams(roles=("pursuer",) * p + ("evader",), piloted=("evader", "apf")) for p in (1, 3)}
+    | {
+        f"{pilot}_{p}v1": EnvParams(roles=("pursuer",) * p + ("evader",), piloted=("evader", pilot))
+        for pilot in ("apf", "apf_x8_free")
+        for p in (1, 3)
+    }
     | {"_".join(("default", "p", *p)): EnvParams(sense_pursuer=p) for p in SENSES[1:]}
     | {
         "_".join(("nemecek", "p", *p, "e", *e)): NEMECEK.replace(sense_pursuer=p, sense_evader=e)

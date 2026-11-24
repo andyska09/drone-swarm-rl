@@ -1,7 +1,7 @@
 # chase 1v1
 
 One pursuer chases one evader. The pursuer carries a net under its body and catches the
-evader with it. Both sides learn. In the paths presets and the APF preset, a pilot flies
+evader with it. Both sides learn. In the paths presets and the APF presets, a pilot flies
 the evader, and only the pursuer learns.
 
 This spec covers the presets of `chase` with one pursuer. The presets with three pursuers
@@ -142,6 +142,7 @@ Each other preset is one of these four, with these changes:
 | `paths_1v1_rpm` | `default` | rpm | none | paths |
 | `paths_1v1_attitude_rpm` | `default` | attitude, rpm | none | paths |
 | `apf_1v1` | `default` | none | none | APF |
+| `apf_x8_free_1v1` | `default` | none | none | free APF×8 |
 | `default_p_attitude` | `default` | attitude | none | learns |
 | `default_p_rpm` | `default` | rpm | none | learns |
 | `default_p_attitude_rpm` | `default` | attitude, rpm | none | learns |
@@ -157,7 +158,7 @@ Each other preset is one of these four, with these changes:
 
 ## Training
 
-- In the paths presets and the APF preset, only the pursuer learns, against the pilot of
+- In the paths presets and the APF presets, only the pursuer learns, against the pilot of
   the preset, in one phase. The network of the evader keeps its first weights and never
   flies. These runs use the values of the table.
 - In the other presets, with $G = 0$ generations, both sides learn at the same time,
@@ -230,10 +231,11 @@ A role can be flown by its network, or by one of these pilots:
 | cascade | any | the default cascade, to the reference point below |
 | FRPN | pursuer | a guidance law that aims at where the evader will be |
 | APF | evader | a potential field that pushes away from the pursuer and the walls |
+| free APF×8 | evader | the APF with 8 times the push from the pursuer. Only the motors limit it |
 | paths | evader | a hover, a circle or a figure-eight, drawn for each episode |
 
-In the paths presets, the paths pilot flies the evader. In the APF preset, the APF pilot
-flies it.
+In the paths presets, the paths pilot flies the evader. In `apf_1v1`, the APF pilot flies
+it, and in `apf_x8_free_1v1`, the free APF×8 pilot.
 
 The reference points of the cascade:
 
@@ -263,7 +265,7 @@ $\Delta v = v_e - v_p$.
 ### APF
 
 $$
-a_e = \frac{k_{\text{pur}} + b_{\text{pur}}\, \sigma}{d_{ep}^{\,e_{\text{pur}}}}\, \hat r + \sum_{f:\ g_f < r_{\text{wall}}} \left( k_{\text{wall}} + b_{\text{wall}}\, \nu_f \right) \left( \frac{1}{g_f} - \frac{1}{r_{\text{wall}}} \right)^{e_{\text{wall}}} \hat n_f
+a_e = \phi\, \frac{k_{\text{pur}} + b_{\text{pur}}\, \sigma}{d_{ep}^{\,e_{\text{pur}}}}\, \hat r + \sum_{f:\ g_f < r_{\text{wall}}} \left( k_{\text{wall}} + b_{\text{wall}}\, \nu_f \right) \left( \frac{1}{g_f} - \frac{1}{r_{\text{wall}}} \right)^{e_{\text{wall}}} \hat n_f
 $$
 
 - $\hat r$ is the unit vector from the pursuer to the evader, and
@@ -277,6 +279,7 @@ $$
 | $k_{\text{pur}}$, $b_{\text{pur}}$, $e_{\text{pur}}$ | 2.135, 1.370, 1.032 |
 | $k_{\text{wall}}$, $b_{\text{wall}}$, $e_{\text{wall}}$ | 57.89, 29.71, 0.5652 |
 | $r_{\text{wall}}$ | 9.997 m |
+| $\phi$ | 1 for APF, 8 for free APF×8 |
 
 ### Paths
 
