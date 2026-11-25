@@ -3,7 +3,7 @@ import json
 import pathlib
 
 SCORE = "caught_e"
-CONTEXT = ("coll_pp", "death_rate_p")
+CONTEXT = ("coll_pp", "death_rate_p", "time_to_catch")
 
 
 def mean(values):
