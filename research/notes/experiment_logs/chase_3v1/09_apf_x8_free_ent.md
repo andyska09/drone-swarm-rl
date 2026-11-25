@@ -14,9 +14,6 @@
 | ent_coef0.001 | 2/2 | 0.706 | 0.687 | 0.726 | 0.136 | 0.094 |
 | ent_coef0 | 2/2 | 0.445 | 0.414 | 0.476 | 0.073 | 0.052 |
 
-- With `ent_coef` 0.001 the three pursuers catch 0.706: 0.726 and 0.687 in the two seeds.
-- With `ent_coef` 0 they catch 0.445. With 0.003 they catch 0.451, in `08_apf_x8_free`.
-
 The spread of the pursuers' actions in training, as the mean of the two seeds. The std of each action starts at 1.0, and the table gives its value at the end of the run. The row of 0.003 is `apf_x8_free_3v1` of `08_apf_x8_free`.
 
 | `ent_coef` | caught_e in training, last tenth | entropy_p, first tenth | entropy_p, last tenth | std thrust | std roll | std pitch | std yaw |

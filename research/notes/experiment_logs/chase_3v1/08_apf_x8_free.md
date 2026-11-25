@@ -5,7 +5,6 @@
 **Runs:** RCI, `tools/rci/sweeps/08_apf_x8_free.sh`, 4 jobs.
 
 - The free APF×8 evader has 8 times the push from the pursuers, and only the motors limit it. It is `apf_x8_free` of `07_apf_agile_eval`.
-- In `07_apf_agile_eval`, with no training against it, one pursuer catches 0.566 and three pursuers catch 0.497. The evader leaves the box in 0.226 and 0.124 of the episodes.
 
 ## Results
 
@@ -13,10 +12,6 @@
 |---|---|---|---|---|---|---|
 | apf_x8_free_1v1 | 2/2 | 0.977 | 0.969 | 0.985 | 0.000 | 0.005 |
 | apf_x8_free_3v1 | 2/2 | 0.451 | 0.446 | 0.456 | 0.082 | 0.057 |
-
-- One pursuer catches 0.977: 0.985 and 0.969 in the two seeds.
-- Three pursuers catch 0.451: 0.446 and 0.456 in the two seeds.
-- With three pursuers, `coll_pp` is 0.082. With one pursuer it is 0.
 
 The spread of the pursuers' actions in training, for the configs of this experiment and of `06_apf_one_pursuer`, as the mean of the two seeds. The std of each action starts at 1.0, and the table gives its value at the end of the run.
 

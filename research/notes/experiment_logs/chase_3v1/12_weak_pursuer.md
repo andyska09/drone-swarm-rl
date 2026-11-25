@@ -13,7 +13,6 @@
 | `v4_a7` | 4679 rpm | 4.244 | 4.0 m/s | 6.7 m/s² | 3 times faster |
 
 - The APF evader flies the base drone under its rule of 12 m/s and 20 m/s².
-- With the base drone, one pursuer catches 1.000 (`06_apf_one_pursuer`), and three pursuers catch 0.953 (`11_ent_easy`).
 - `ent_coef` is 0.001 for both presets. No run before this one tested 0.001 with one pursuer.
 - The catch of one pursuer is the number that the catch of three pursuers must beat.
 
@@ -28,6 +27,5 @@
 | apf_3v1_weak_v6_a13 | 2/2 | 0.721 | 0.675 | 0.767 | 0.140 | 0.094 | 5.469 |
 | apf_3v1_weak_v4_a7 | 2/2 | 0.148 | 0.116 | 0.180 | 0.173 | 0.116 | 6.669 |
 
-- One pursuer catches 0.999 with the first weak drone, 0.998 with `v6_a13` and 0.702 with `v4_a7`: 0.775 and 0.628 in the two seeds. With the base drone it catches 1.000, in `06_apf_one_pursuer`.
-- Three pursuers catch less than one pursuer with each weak drone: 0.748, 0.721 and 0.148. With the base drone they catch 0.953, in `11_ent_easy`.
+- Three pursuers catch less than one pursuer with each weak drone: 0.748, 0.721 and 0.148.
 - The time to catch grows from 3.66 s to 6.79 s for one pursuer, and from 5.16 s to 6.67 s for three. With the base drone it is 1.51 s, in `06_apf_one_pursuer`, and 2.58 s, in `11_ent_easy`.

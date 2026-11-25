@@ -23,4 +23,3 @@ Each cell is the mean of the two seeds. `apf` is the evader of `06_apf_one_pursu
 
 - One pursuer catches 0.965 or more against every variant but `apf_x8_free`, where it catches 0.566.
 - Three pursuers catch less than one pursuer against every variant. Their catch falls from 0.940 to 0.620 as the push grows to 8 times, and `coll_pp` rises from 0.059 to 0.300.
-- Against `apf_x8_free` the evader leaves the box in 0.226 of the episodes with one pursuer, and in 0.124 with three.

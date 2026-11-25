@@ -13,7 +13,7 @@ python3 tools/rci/submit.py --walltime 1:00:00 --seeds 0 1 -- \
     --out runs/10_apf_x8_free_long/steps1e9
 ```
 
-- In `09_apf_x8_free_ent`, with 5e8 steps, the three pursuers catch 0.706. The catch in training still rises at the end: 0.555, 0.580 and 0.648 in the last three tenths of seed 0.
+- In `09_apf_x8_free_ent`, with 5e8 steps, the catch in training still rises at the end: 0.555, 0.580 and 0.648 in the last three tenths of seed 0.
 - Beside the catch, the result is the std of each action at the end of the run.
 
 ## Results
@@ -21,9 +21,6 @@ python3 tools/rci/submit.py --walltime 1:00:00 --seeds 0 1 -- \
 | config | seeds | caught_e | min | max | coll_pp | death_rate_p |
 |---|---|---|---|---|---|---|
 | steps1e9 | 2/2 | 0.805 | 0.733 | 0.876 | 0.064 | 0.045 |
-
-- With 1e9 steps the three pursuers catch 0.805: 0.876 and 0.733 in the two seeds.
-- With 5e8 steps they catch 0.706, in `09_apf_x8_free_ent`.
 
 The spread of the pursuers' actions in training, as the mean of the two seeds. The std of each action starts at 1.0, and the table gives its value at the end of the run. The row of 5e8 steps is `ent_coef0.001` of `09_apf_x8_free_ent`. A tenth of the run with 1e9 steps is twice as long.
 
