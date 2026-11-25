@@ -10,6 +10,7 @@ from swarm.sim import control, dynamics, guidance
 NUM_ACTIONS = 4
 PROGRESS = ("ep_length", "death_rate", "caught_e", "coll_pp")
 PATHS = ("hover", "circle", "figure8")
+SWARM = "pursuer"
 
 
 @flax.struct.dataclass

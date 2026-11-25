@@ -23,6 +23,8 @@ PILOTS                  {name: pilot}, the hand-written pilots. pilot(params,
                         the drones of `rows`. A preset's `piloted` can name one
                         to fly a role in training
 PROGRESS                the metrics the trainer prints in its progress line
+SWARM                   only for the attention networks: the role with a free
+                        number of drones. Its drones go through the attention
 scenery(state, params)  only for what the viewer must draw: walls,
                         {"walls": (k, 3), the corners of a closed outline on
                         the floor in the world, "wall_height": ()}, or nets,
@@ -79,3 +81,5 @@ world   (N, 18), each drone's state in the world frame
 ```
 
 The attention networks read `own`, `pairs` and `world`. A task without them leaves None.
+They read each other drone of the `SWARM` role as one row of the attention, and each
+other drone through a fixed slot.

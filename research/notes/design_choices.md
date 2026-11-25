@@ -219,9 +219,15 @@ values: see the last item.
   ([06_pools_input_scale](experiment_logs/chase_1v1/06_pools_input_scale.md)). In
   `paths_3v1` it lowered the catch
   ([09_critic_input](experiment_logs/chase_3v1_before/09_critic_input.md)).
-- **The attention net has a norm on its Perceiver output.** `net=attention` reads the
-  teammates through a Perceiver, so the size of its input does not depend on their
-  number. A LayerNorm with no scale and no bias sits on the output of each query. Without
+- **With `net=attention`, the pursuers go through the attention, and the evader goes
+  straight in.** A network reads each other drone of the task's `SWARM` role as one row
+  of a Perceiver, so the size of its input does not depend on their number. Each other
+  drone has a fixed slot. So the weights of a pursuer fit any number of teammates, and
+  the weights of the evader fit any number of pursuers. A second evader has no slot.
+  Before, the evader read its pursuers through fixed slots, so its weights fitted one
+  number of pursuers only. No run has trained this evader yet.
+- **The attention net has a norm on its Perceiver output.** A LayerNorm with no scale
+  and no bias sits on the output of each query. Without
   it, the output grows from 0.59 to about 2000 and saturates the first layer of the
   trunk, so the policy reads neither its own block nor the evader. The runs:
   [21_attention](experiment_logs/chase_3v1_before/21_attention.md) and

@@ -48,7 +48,7 @@ class Actor(nn.Module):
     hidden: tuple = (256, 256)
     activation: str = "tanh"
     init_std: float = 1.0
-    attention: bool = False
+    attention: str = None
 
     @nn.compact
     def __call__(self, *parts):
@@ -62,7 +62,7 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     hidden: tuple = (256, 256)
     activation: str = "tanh"
-    attention: bool = False
+    attention: str = None
 
     @nn.compact
     def __call__(self, *parts):
@@ -76,8 +76,8 @@ def _join(parts, attention, activation):
     if not attention:
         (x,) = parts
         return x
-    own, rivals, mates = parts
-    return jnp.concatenate([own, rivals, Perceiver(activation)(mates)], -1)
+    own, fixed, tokens = parts
+    return jnp.concatenate([own, fixed, Perceiver(activation)(tokens)], -1)
 
 
 class Perceiver(nn.Module):
@@ -179,7 +179,7 @@ def normalize_by_role(adv, mask, slices):
 def make_net(cfg, env):
     if cfg.net not in ("mlp", "attention"):
         raise ValueError(f"net is 'mlp' or 'attention', not {cfg.net!r}")
-    attention = cfg.net == "attention"
+    attention = env.SWARM if cfg.net == "attention" else None
     return Actor(env.NUM_ACTIONS, cfg.hidden, cfg.activation, cfg.init_std, attention), Critic(
         cfg.hidden, cfg.activation, attention
     )
@@ -196,7 +196,7 @@ def repeat_rows(x, n):
     return jnp.broadcast_to(x[..., None, :, :], x.shape[:-2] + (n,) + x.shape[-2:])
 
 
-def attention_input(obs, role, drones, action=None):
+def attention_input(obs, role, drones, swarm, action=None):
     n = len(drones)
     rivals, mates = sides(drones, obs.world.shape[-2])
     own, pairs = obs.own[role], obs.pairs[role]
@@ -206,8 +206,9 @@ def attention_input(obs, role, drones, action=None):
         own = jnp.concatenate([own, obs.world[..., drones, :]], -1)
         pairs = jnp.concatenate([pairs, repeat_rows(obs.world, n)], -1)
         rival = jnp.concatenate([pairs[..., rivals, :], repeat_rows(action, n)[..., rivals, :]], -1)
-    rows = np.arange(n)[:, None]
-    return own, rival.reshape(rival.shape[:-2] + (-1,)), pairs[..., rows, mates, :]
+    mate = pairs[..., np.arange(n)[:, None], mates, :]
+    tokens, fixed = (mate, rival) if role == swarm else (rival, mate)
+    return own, fixed.reshape(fixed.shape[:-2] + (-1,)), tokens
 
 
 def opponent_slices(roles):
@@ -249,7 +250,7 @@ def make_actor(net, slices):
         for role, drones in slices.items():
             actor = params[role]["actor"]
             if net.attention:
-                x = attention_input(obs, role, drones)
+                x = attention_input(obs, role, drones, net.attention)
             else:
                 x = (scaled(actor, obs.actor[role]),)
             m, s = net.apply(actor, *x)
@@ -266,7 +267,7 @@ def make_critic(net, slices, opponents):
         for role, drones in slices.items():
             critic = params[role]["critic"]
             if net.attention:
-                x = attention_input(obs, role, drones, action)
+                x = attention_input(obs, role, drones, net.attention, action)
             else:
                 opp = opp_actions(action, opponents[role])
                 own = scaled(params[role]["actor"], obs.actor[role])
@@ -325,8 +326,9 @@ def make(cfg, env, env_params, pool_seat=None):
         def params(role, k):
             k_a, k_c = jax.random.split(k)
             if actor_net.attention:
-                actor_in = attention_input(one_scene, role, slices[role])
-                critic_in = attention_input(one_scene, role, slices[role], one_action)
+                swarm = actor_net.attention
+                actor_in = attention_input(one_scene, role, slices[role], swarm)
+                critic_in = attention_input(one_scene, role, slices[role], swarm, one_action)
                 return {
                     "actor": actor_net.init(k_a, *actor_in),
                     "critic": critic_net.init(k_c, *critic_in),
