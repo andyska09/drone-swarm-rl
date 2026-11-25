@@ -57,8 +57,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--seeds", nargs="+", type=int, help="one job per seed")
     p.add_argument("--ncpus", type=int, default=2)
-    p.add_argument("--mem", default="32G")
-    p.add_argument("--walltime", default="12:00:00")
+    p.add_argument("--mem", default="16G")
+    p.add_argument("--walltime", default="1:00:00")
     p.add_argument("--dry-run", action="store_true", dest="dry_run")
     a = p.parse_args(argv[:cut])
     train = argv[cut + 1 :]

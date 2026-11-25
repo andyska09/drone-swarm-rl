@@ -10,9 +10,9 @@ Every job asks for these resources. A flag changes one for that submit.
 | resource | default | flag |
 |---|---|---|
 | CPUs | 2 | `--ncpus` |
-| RAM | `32G` | `--mem` |
+| RAM | `16G` | `--mem` |
 | GPUs | 1 A100 40 GB | — |
-| time limit | 12 h | `--walltime`, as `H:MM:SS` |
+| time limit | 1 h | `--walltime`, as `H:MM:SS` |
 
 A partition is a job queue. `submit.py` picks it from the time limit. `sinfo` prints the
 limits that hold today. The `amd` in the names is the CPU of the node. The GPU is NVIDIA.
