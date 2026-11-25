@@ -5,7 +5,6 @@
 **Runs:** RCI, `tools/rci/sweeps/14_attention_presets.sh`, 10 jobs.
 
 - `05_attention` ran the attention net in `paths_3v1` with `ent_coef` 0.003. No run before this one tested it with 0.001, or against another evader.
-- No config has one pursuer. One pursuer has no teammate for the attention net to read.
 - The rows that the attention net must beat:
 
 | config | steps | MLP `caught_e` | MLP `coll_pp` | one pursuer `caught_e` | the MLP row is in |
