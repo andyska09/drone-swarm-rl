@@ -1,12 +1,10 @@
 # research/ — notes, papers and the reference code
 
-- `notes/` — working notes `design_choices.md` holds the shared design
-  decisions and their reasons. `tasks/` holds the task specs: `defaults.md` for what
+- `notes/` — working notes. `tasks/` holds the task specs: `defaults.md` for what
   every task shares, and `task_<name>.md` for one task. `experiment_logs/` holds the
   experiments, one file each. `literature/` holds the literature reviews,
   and `literature/specs/` the paper specs, which `tools/specs/index.html` shows beside
-  our task specs. `learning/` holds explainers of the theory, and `archive/` the notes
-  that no longer hold.
+  our task specs. `learning/` holds explainers of the theory.
 - `code_sources/` (GITIGNORED) — reference code, **not ours**:
   `mrs_multirotor_simulator/` (the C++ we reimplement), `PPO_example/` (the
   supervisor's JAX PPO), `quad-swarm-rl/` (PyTorch swarm, upstream clone),
