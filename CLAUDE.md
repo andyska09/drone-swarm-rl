@@ -120,4 +120,4 @@ None: the task specs in `research/notes/tasks/` take the place of issues. See `d
 
 ### Domain docs
 
-Single-context: `research/notes/tasks/defaults.md` is the glossary, and `research/notes/design_choices.md` holds the ADRs. See `docs/agents/domain.md`.
+Single-context: `research/notes/tasks/defaults.md` is the glossary, and the repo keeps no ADRs. See `docs/agents/domain.md`.
