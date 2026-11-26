@@ -93,15 +93,15 @@ $$
   and $g_t$ is its value at the end of step $t$. So the pursuer earns
   $\lambda_{\text{prog}}$ for each metre that its net closes on the evader.
 
-| symbol | value |
-|---|---|
-| $\lambda_{\text{step}}$ | 4.0 |
-| $\lambda_{\text{prog}}$ | 0.25 per m |
-| $\lambda_{\text{PE}}$ | 10.0 |
-| $\lambda_{\text{cmd}}$ | 0.02 per rad/s |
-| $\lambda_{\text{out}}$ | 0, or 57.0 (see Presets) |
-| $\lambda_{\text{catch}}$ | 30.0 |
-| $\lambda_{\text{fail}}$ | 30.0 |
+| symbol | value | source |
+|---|---|---|
+| $\lambda_{\text{step}}$ | 4.0 | [Gavin & Bronz, Nv1](../literature/specs/gavin_bronz_2026.md), 0.04 per step |
+| $\lambda_{\text{prog}}$ | 0.25 per m | [Roncero](../literature/specs/sanchez_roncero_2026.md) |
+| $\lambda_{\text{PE}}$ | 10.0 | [Gavin, Lacroix & Bronz, 1v1](../literature/specs/gavin_lacroix_bronz_2026.md), 0.1 per step |
+| $\lambda_{\text{cmd}}$ | 0.02 per rad/s | [Gavin, Lacroix & Bronz, 1v1](../literature/specs/gavin_lacroix_bronz_2026.md), 2e−4 per step |
+| $\lambda_{\text{out}}$ | 0, or 57.0 (see Presets) | [Němeček](../literature/specs/nemecek_2026.md), the ratio of 0.1 to 0.007 per step, times $\lambda_{\text{step}}$ |
+| $\lambda_{\text{catch}}$ | 30.0 | ours |
+| $\lambda_{\text{fail}}$ | 30.0 | [Gavin, Lacroix & Bronz, 1v1](../literature/specs/gavin_lacroix_bronz_2026.md) |
 
 ## Metrics
 
@@ -123,12 +123,12 @@ holds, in the order of the table, or else `time_limit`. These seven add up to 1.
 
 ## Presets
 
-| preset | $L$ | $c$ | walls | $\lambda_{\text{out}}$ |
-|---|---|---|---|---|
-| `default` | 32 × 32 × 16 m | (0, 0, 8) m | closed | 0 |
-| `small` | 24 × 24 × 16 m | (0, 0, 8) m | closed | 0 |
-| `open` | 32 × 32 × 16 m | (0, 0, 8) m | open | 57.0 |
-| `nemecek` | 20 × 20 × 10 m | (0, 0, 5) m | open | 57.0 |
+| preset | $L$ | $c$ | walls | $\lambda_{\text{out}}$ | source |
+|---|---|---|---|---|---|
+| `default` | 32 × 32 × 16 m | (0, 0, 8) m | closed | 0 | |
+| `small` | 24 × 24 × 16 m | (0, 0, 8) m | closed | 0 | ours |
+| `open` | 32 × 32 × 16 m | (0, 0, 8) m | open | 57.0 | [Němeček](../literature/specs/nemecek_2026.md), the open walls |
+| `nemecek` | 20 × 20 × 10 m | (0, 0, 5) m | open | 57.0 | [Němeček](../literature/specs/nemecek_2026.md) |
 
 - The floor is at $z = 0$ in every preset.
 - In these four presets, no role senses a block, and both sides learn.
@@ -216,10 +216,10 @@ $$
 \mu_j = \frac{\gamma_h}{M} + (1 - \gamma_h) \frac{c_j^{\eta_h}}{\sum_l c_l^{\eta_h}}, \qquad c_j = 1 - w_j
 $$
 
-| symbol | value |
-|---|---|
-| $\gamma_h$ | 0.7 |
-| $\eta_h$ | 2 |
+| symbol | value | source |
+|---|---|---|
+| $\gamma_h$ | 0.7 | [Roncero](../literature/specs/sanchez_roncero_2026.md) |
+| $\eta_h$ | 2 | [Roncero](../literature/specs/sanchez_roncero_2026.md) |
 
 - If every $c_j$ is 0, the second term is uniform.
 - The environments of each side form 64 blocks of the same size. Member $j$ flies in $64\, \mu_j$
@@ -260,10 +260,10 @@ $$
 $\Delta p = p_e + h R_p e_3 - p_p$ is the offset to the aim point, and
 $\Delta v = v_e - v_p$.
 
-| symbol | value |
-|---|---|
-| $G$ | 6.677 |
-| $W$ | 0.337 |
+| symbol | value | source |
+|---|---|---|
+| $G$ | 6.677 | [Němeček](../literature/specs/nemecek_2026.md) |
+| $W$ | 0.337 | [Němeček](../literature/specs/nemecek_2026.md) |
 
 ### APF
 
@@ -277,26 +277,26 @@ $$
   $\hat n_f$ is the unit normal of $f$ into the box, and
   $\nu_f = \max\left(0,\ -\hat n_f \cdot v_e\right)$ is the speed toward $f$.
 
-| symbol | value |
-|---|---|
-| $k_{\text{pur}}$, $b_{\text{pur}}$, $e_{\text{pur}}$ | 2.135, 1.370, 1.032 |
-| $k_{\text{wall}}$, $b_{\text{wall}}$, $e_{\text{wall}}$ | 57.89, 29.71, 0.5652 |
-| $r_{\text{wall}}$ | 9.997 m |
-| $\phi$ | 1 for APF, 8 for free APF×8 |
+| symbol | value | source |
+|---|---|---|
+| $k_{\text{pur}}$, $b_{\text{pur}}$, $e_{\text{pur}}$ | 2.135, 1.370, 1.032 | [Němeček](../literature/specs/nemecek_2026.md) |
+| $k_{\text{wall}}$, $b_{\text{wall}}$, $e_{\text{wall}}$ | 57.89, 29.71, 0.5652 | [Němeček](../literature/specs/nemecek_2026.md) |
+| $r_{\text{wall}}$ | 9.997 m | [Němeček](../literature/specs/nemecek_2026.md) |
+| $\phi$ | 1 for APF, 8 for free APF×8 | ours |
 
 ### Paths
 
 At the start of each episode, the evader draws a path:
 
-| what | value |
-|---|---|
-| shape | hover, circle or figure-eight, each with a chance of 1/3 |
-| size $r$ | hover 0. Circle $U[4.8, 8.0]$ m. Figure-eight $U[3.6, 7.2]$ m |
-| radii | $(r_x, r_y) = (\kappa_x r,\ \kappa_y r)$, with $\kappa_x, \kappa_y \sim U[0.85, 1.0]$ |
-| speed $V$ | $U[2.83, 5.66]$ m/s |
-| turn rate | $\Omega = \pm V / \bar r$, with $\bar r = (r_x + r_y)/2$ and a random sign |
-| start angle $\theta_0$ | $U[0, 2\pi)$ |
-| centre $c_{\text{path}}$ | uniform, where the whole path is 2 m inside the faces of the box. The height is uniform too |
+| what | value | source |
+|---|---|---|
+| shape | hover, circle or figure-eight, each with a chance of 1/3 | [Roncero](../literature/specs/sanchez_roncero_2026.md), the shapes |
+| size $r$ | hover 0. Circle $U[4.8, 8.0]$ m. Figure-eight $U[3.6, 7.2]$ m | [Roncero](../literature/specs/sanchez_roncero_2026.md), 8 times larger |
+| radii | $(r_x, r_y) = (\kappa_x r,\ \kappa_y r)$, with $\kappa_x, \kappa_y \sim U[0.85, 1.0]$ | |
+| speed $V$ | $U[2.83, 5.66]$ m/s | [Roncero](../literature/specs/sanchez_roncero_2026.md), $\sqrt{8}$ times faster |
+| turn rate | $\Omega = \pm V / \bar r$, with $\bar r = (r_x + r_y)/2$ and a random sign | |
+| start angle $\theta_0$ | $U[0, 2\pi)$ | |
+| centre $c_{\text{path}}$ | uniform, where the whole path is 2 m inside the faces of the box. The height is uniform too | |
 
 With $\theta = \theta_0 + \Omega t$, the path point $x(t)$ is:
 

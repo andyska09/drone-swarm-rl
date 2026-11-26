@@ -2,8 +2,7 @@
 
 Written at commit `5012840` (2026-09-17), for the `a_to_b` task: one drone flies to a
 fixed goal and stays. That task is gone since, and the PPO defaults have changed. "Ours"
-below means the reward and the defaults of that time. The task itself is in
-[archive/task_a_to_b.md](../archive/task_a_to_b.md).
+below means the reward and the defaults of that time.
 
 Our policy drifts around a point 0.2-0.6 m short of the goal at ~0.2 m/s. The
 cascade in the same seat parks at 0.014 m. This note tests five hypotheses

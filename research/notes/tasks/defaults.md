@@ -190,20 +190,20 @@ the critic gives each drone its own value.
 PPO, with one actor and one critic for each role. Each role has its own optimizer,
 learning rate, input scale, reward scale and advantage scale.
 
-| setting | value |
-|---|---|
-| actor | MLP 2 × 256, tanh. A Gaussian with one learned std per action, the same in every state. The std starts at 1.0. The drawn action is clipped to $[-1, 1]$ |
-| critic | MLP 2 × 256, tanh |
-| $\gamma$ | 0.998 |
-| GAE $\lambda$ | 0.95 |
-| PPO clip | 0.2 |
-| value loss weight | 0.5 |
-| entropy weight | 0.001 |
-| gradient norm clip | 0.5 |
-| optimizer | Adam, $\epsilon$ = 1e−5 |
-| learning rate | starts at 2e−4. At each minibatch, KL > 0.032 divides it by 1.5, and 0 < KL < 0.008 multiplies it by 1.5. It stays in [1e−5, 1e−2] |
-| batch | 4096 environments × 64 steps per update |
-| epochs × minibatches | 4 × 32 |
+| setting | value | source |
+|---|---|---|
+| actor | MLP 2 × 256, tanh. A Gaussian with one learned std per action, the same in every state. The std starts at 1.0. The drawn action is clipped to $[-1, 1]$ | |
+| critic | MLP 2 × 256, tanh | |
+| $\gamma$ | 0.998 | |
+| GAE $\lambda$ | 0.95 | |
+| PPO clip | 0.2 | |
+| value loss weight | 0.5 | |
+| entropy weight | 0.001 | [Roncero](../literature/specs/sanchez_roncero_2026.md) |
+| gradient norm clip | 0.5 | |
+| optimizer | Adam, $\epsilon$ = 1e−5 | |
+| learning rate | starts at 2e−4. At each minibatch, KL > 0.032 divides it by 1.5, and 0 < KL < 0.008 multiplies it by 1.5. It stays in [1e−5, 1e−2] | [Roncero](../literature/specs/sanchez_roncero_2026.md), the start and the KL target 0.016 |
+| batch | 4096 environments × 64 steps per update | |
+| epochs × minibatches | 4 × 32 | |
 
 - Each network reads $(x - \bar x) / \sqrt{s^2 + 10^{-8}}$ in place of its input $x$, with
   a running mean $\bar x$ and a running variance $s^2$ for each column. The critic scales

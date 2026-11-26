@@ -23,6 +23,8 @@ its kind on the spec page. A change to `chase` goes into both.
   pays for it. Neither repeats the other.
 - Use tables, formulas and short lists. Use a paragraph only for the purpose at the top.
 - Give each value once, with its unit.
+- A table of values can end with a `source` column. A cell links to the paper spec that
+  the value comes from, or says `ours`. A cell with no known source stays empty.
 - One word, one meaning. `defaults.md` holds the words and the shared symbols.
 - Write it in the [simple-english](../../../.claude/output-styles/simple-english.md) style.
 - Write formulas in LaTeX: `$...$` inline, and a `$$` line before and after a block.
