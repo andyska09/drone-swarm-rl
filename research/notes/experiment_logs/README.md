@@ -7,7 +7,7 @@ experiment is one question and the runs that answer it. `run/sweep.py` and
 The name is a number and some words, `02_lr_ent`. The same name marks the runs,
 `runs/<name>/`, and the batch script, `tools/rci/sweeps/<name>.sh`.
 
-A file holds the design, the tables, and short lines that state what a table shows. What
+A file holds the design, the tables, and short lines that say what a table measures. What
 we do next goes into the question of the next experiment.
 
 Write every file in the
@@ -40,7 +40,9 @@ push is the approval.
 Under `## Results`, after the run:
 
 1. The table that `python run/sweep.py runs/<name>` prints, as it is.
-2. At most 3 lines. Each line states only what the table shows.
+2. At most 3 lines, and only for what the table does not show: what a row or a column
+   measures, or where its numbers come from. No line repeats a number or a comparison
+   that the reader can read from the table.
 
 An analysis that the user asks for adds one table, under one line that says what it
 measures. Every table in a file is one that the design or the user asked for.
