@@ -2,10 +2,8 @@
 
 ## Read before you change
 
-- **The physics, or a decision that all tasks share:**
-  [design_choices.md](../research/notes/design_choices.md). It holds every design
-  decision for the simulator and for what all tasks share, every deviation, and every
-  "revisit later". Update it when a decision changes.
+- **The physics:** the simulator is a copy of MRS, in
+  [mrs_multirotor_simulator](../research/code_sources/mrs_multirotor_simulator/).
 - **A new task:** [env_contract.md](../research/notes/tasks/env_contract.md), the contract
   that every task file meets: what a task file holds, the obs, the end flags and the
   metrics.
